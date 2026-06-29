@@ -655,6 +655,84 @@ def test_scrape_videos_preserves_youtube_title_casing():
     assert scraper._format_discovered_title("NASA LIVE STREAM", "youtube") == "NASA LIVE STREAM"
 
 
+def test_parse_duration_iso8601():
+    assert scraper.parse_duration("PT1H2M3S") == 3723
+    assert scraper.parse_duration("PT45M") == 2700
+    assert scraper.parse_duration("P1DT2H") == 93600
+
+
+def test_parse_duration_clock_and_numeric():
+    assert scraper.parse_duration("12:34") == 754
+    assert scraper.parse_duration("1:02:03") == 3723
+    assert scraper.parse_duration(600) == 600
+    assert scraper.parse_duration("600") == 600
+
+
+def test_parse_duration_rejects_garbage():
+    assert scraper.parse_duration("") is None
+    assert scraper.parse_duration(None) is None
+    assert scraper.parse_duration("not-a-duration") is None
+    assert scraper.parse_duration(0) is None
+
+
+def test_normalize_url_encodes_query_values():
+    out = scraper.normalize_url("https://example.com/videos/?q=hot stuff&a=b")
+    assert " " not in out
+    assert "q=hot+stuff" in out
+    # tracking params are still stripped
+    assert "utm_source" not in scraper.normalize_url(
+        "https://example.com/v/?utm_source=x&id=7"
+    )
+
+
+def test_scrape_videos_extracts_ldjson_videoobject():
+    html = """
+    <html><head>
+    <script type="application/ld+json">
+    {
+      "@context": "https://schema.org",
+      "@type": "VideoObject",
+      "name": "JSON-LD Sample Scene",
+      "thumbnailUrl": "https://example.com/ld-thumb.jpg",
+      "uploadDate": "2021-05-04",
+      "duration": "PT22M30S",
+      "actor": [{"@type": "Person", "name": "Jane Doe"}],
+      "url": "https://example.com/video/ld-sample-scene/"
+    }
+    </script>
+    </head><body></body></html>
+    """
+    videos = scraper.scrape_videos(html, "https://example.com/videos/")
+    match = [v for v in videos if "ld-sample-scene" in v["url"]]
+    assert len(match) == 1
+    v = match[0]
+    assert v["title"] == "Json Ld Sample Scene"
+    assert v["thumb"] == "https://example.com/ld-thumb.jpg"
+    assert v["released_at"] == "2021-05-04T00:00:00"
+    assert v["duration"] == 1350
+    assert v["cast_names"] == "Jane Doe"
+
+
+def test_scrape_videos_extracts_ldjson_from_graph():
+    html = """
+    <script type="application/ld+json">
+    {
+      "@context": "https://schema.org",
+      "@graph": [
+        {"@type": "WebPage", "name": "ignore me"},
+        {"@type": "VideoObject", "name": "Graph Scene",
+         "url": "https://example.com/video/graph-scene/",
+         "duration": "PT5M"}
+      ]
+    }
+    </script>
+    """
+    videos = scraper.scrape_videos(html, "https://example.com/videos/")
+    match = [v for v in videos if "graph-scene" in v["url"]]
+    assert len(match) == 1
+    assert match[0]["duration"] == 300
+
+
 def test_migrate_legacy_videos_dir_moves_old_downloads(tmp_path):
     legacy_dir = tmp_path / "legacy_videos"
     target_dir = tmp_path / "project_videos"

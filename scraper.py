@@ -1,6 +1,7 @@
 import re
 import os
 import sys
+import time
 import json
 import hashlib
 import logging
@@ -8,7 +9,7 @@ import asyncio
 import warnings
 from datetime import datetime, timezone, timedelta
 from pathlib import Path
-from urllib.parse import urljoin, urlparse, parse_qs, urlunparse, urldefrag
+from urllib.parse import urljoin, urlparse, parse_qs, urlunparse, urldefrag, urlencode
 
 import httpx
 from bs4 import BeautifulSoup
@@ -16,10 +17,18 @@ from playwright_stealth import Stealth
 
 try:
     from curl_cffi.requests import AsyncSession as CurlSession
+    from curl_cffi.requests import Session as CurlSyncSession
     HAS_CURL_CFFI = True
 except ImportError:
     HAS_CURL_CFFI = False
     logging.warning("curl_cffi not installed — Cloudflare bypass unavailable")
+
+try:
+    import yt_dlp
+    HAS_YT_DLP = True
+except ImportError:
+    HAS_YT_DLP = False
+    logging.warning("yt-dlp not installed — YouTube channel scraping unavailable. Run: pip install yt-dlp")
 
 from playwright.async_api import async_playwright, BrowserContext
 from playwright.sync_api import sync_playwright
@@ -47,7 +56,7 @@ def normalize_url(url: str) -> str:
     p = urlparse(url)
     qs = parse_qs(p.query, keep_blank_values=False)
     qs = {k: v for k, v in qs.items() if k.lower() not in STRIP_PARAMS}
-    clean_qs = "&".join(f"{k}={v[0]}" for k, v in sorted(qs.items()))
+    clean_qs = urlencode([(k, v[0]) for k, v in sorted(qs.items())])
     path = p.path.rstrip("/") or "/"
     return urlunparse(p._replace(query=clean_qs, path=path, fragment=""))
 
@@ -199,6 +208,54 @@ def parse_release_date(val) -> str | None:
         dt = dt.astimezone(timezone.utc).replace(tzinfo=None)
     return dt.strftime("%Y-%m-%dT%H:%M:%S")
 
+
+_ISO_DURATION_RE = re.compile(
+    r"P(?:(\d+)W)?(?:(\d+)D)?(?:T(?:(\d+)H)?(?:(\d+)M)?(?:(\d+(?:\.\d+)?)S)?)?$",
+    re.I,
+)
+
+
+def parse_duration(val) -> int | None:
+    """
+    Parse a duration into integer seconds. Accepts:
+      * int/float seconds,
+      * ISO-8601 durations ('PT1H2M3S', 'PT45M', 'P1DT2H'),
+      * clock strings ('HH:MM:SS' or 'MM:SS'),
+      * plain numeric strings.
+    Returns None for anything unparseable or non-positive.
+    """
+    if val is None or isinstance(val, bool):
+        return None
+    if isinstance(val, (int, float)):
+        return int(val) if val > 0 else None
+    if not isinstance(val, str):
+        return None
+    s = val.strip()
+    if not s:
+        return None
+
+    m = _ISO_DURATION_RE.match(s)
+    if m and any(m.groups()):
+        weeks, days, hours, mins, secs = m.groups()
+        total = (
+            (int(weeks) * 604800 if weeks else 0)
+            + (int(days) * 86400 if days else 0)
+            + (int(hours) * 3600 if hours else 0)
+            + (int(mins) * 60 if mins else 0)
+            + (int(float(secs)) if secs else 0)
+        )
+        return total or None
+
+    if re.fullmatch(r"\d{1,2}(?::\d{1,2}){1,2}", s):
+        total = 0
+        for part in s.split(":"):
+            total = total * 60 + int(part)
+        return total or None
+
+    if s.isdigit():
+        return int(s) or None
+    return None
+
 # ── Platform Detection ────────────────────────────────────────────────────────
 
 VIDEO_EXTENSIONS = re.compile(r'\.(mp4|webm|ogg|mov|avi|mkv|m3u8)(\?|$)', re.I)
@@ -211,6 +268,18 @@ YOUTUBE_PATTERNS = [
 VIMEO_PAT = re.compile(r'vimeo\.com/(?:video/)?(\d+)')
 TWITCH_PAT = re.compile(r'twitch\.tv/videos/(\d+)')
 DAILYMOTION_PAT = re.compile(r'dailymotion\.com/video/([\w]+)')
+
+# Matches YouTube channel/user URLs (handle, channel ID, legacy /c/ and /user/)
+YOUTUBE_CHANNEL_RE = re.compile(
+    r'youtube\.com/(@[\w.-]+|channel/[\w-]+|c/[\w-]+|user/[\w-]+)(/videos)?/?$',
+    re.I,
+)
+
+
+def _is_youtube_channel_url(url: str) -> bool:
+    """Return True when the URL points to a YouTube channel (not a single video)."""
+    return bool(YOUTUBE_CHANNEL_RE.search(url))
+
 
 def detect_platform(url: str):
     for pat in YOUTUBE_PATTERNS:
@@ -238,7 +307,7 @@ def detect_platform(url: str):
                 f"https://www.dailymotion.com/embed/video/{vid}")
     if VIDEO_EXTENSIONS.search(url):
         return ("direct", url, None, url)
-    
+
     url_lower = url.lower()
     parsed_path = urlparse(url).path.rstrip("/")
     path_segments = [s for s in parsed_path.split("/") if s]
@@ -354,6 +423,95 @@ async def _enrich_youtube_videos(videos: list[dict]):
                 v["released_at"] = meta["released_at"]
 
         await asyncio.gather(*(enrich_one(v) for v in targets), return_exceptions=True)
+
+
+# ── YouTube Channel Scraper (yt-dlp) ─────────────────────────────────────────
+
+def _scrape_youtube_channel(channel_url: str, max_videos: int | None = None) -> list[dict]:
+    """
+    Use yt-dlp to extract every video from a YouTube channel page,
+    sorted newest-first (YouTube's default order on the /videos tab).
+    """
+    if not HAS_YT_DLP:
+        log.warning("yt-dlp is not installed; cannot scrape YouTube channel.")
+        return []
+
+    base = channel_url.rstrip("/")
+    if not base.endswith("/videos"):
+        base = base + "/videos"
+
+    ydl_opts = {
+        "quiet": True,
+        "no_warnings": True,
+        "extract_flat": "in_playlist",  # richer than True — returns upload_date when available
+        "skip_download": True,
+        "ignoreerrors": True,
+        "playliststart": 1,
+        # Ask YouTube to sort by newest first
+        "extractor_args": {
+            "youtubetab": {
+                "skip": ["webpage"],
+            }
+        },
+    }
+    if max_videos:
+        ydl_opts["playlistend"] = max_videos
+
+    videos: list[dict] = []
+    try:
+        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+            info = ydl.extract_info(base, download=False)
+            if not info:
+                log.warning(f"  yt-dlp: no info returned for {base}")
+                return []
+
+            entries = info.get("entries") or []
+
+            # YouTube returns videos newest-first on the /videos tab.
+            # We assign a synthetic released_at using the playlist position
+            # as a tiebreaker so DB sort order stays stable even when
+            # upload_date is missing from the flat extract.
+            now = datetime.now(timezone.utc)
+            total = len(entries)
+
+            for position, entry in enumerate(entries):
+                if not entry:
+                    continue
+                vid_id = entry.get("id")
+                if not vid_id:
+                    continue
+
+                title = (entry.get("title") or "").strip()
+
+                # Prefer real upload_date; fall back to position-based synthetic date
+                upload_date = entry.get("upload_date")  # 'YYYYMMDD' or None
+                released_at = None
+                if upload_date and len(upload_date) == 8:
+                    iso_date = f"{upload_date[:4]}-{upload_date[4:6]}-{upload_date[6:]}"
+                    released_at = parse_release_date(iso_date)
+
+                if not released_at:
+                    # Synthesise: position 0 = newest, so subtract position days
+                    # from now so newest video sorts highest in the DB.
+                    synthetic_dt = now - timedelta(minutes=position)
+                    released_at = synthetic_dt.strftime("%Y-%m-%dT%H:%M:%S")
+
+                videos.append({
+                    "url":         f"https://www.youtube.com/watch?v={vid_id}",
+                    "title":       title,
+                    "thumb":       f"https://img.youtube.com/vi/{vid_id}/hqdefault.jpg",
+                    "embed_url":   f"https://www.youtube.com/embed/{vid_id}",
+                    "platform":    "youtube",
+                    "released_at": released_at,
+                    "cast_names":  None,
+                    "duration":    parse_duration(entry.get("duration")),
+                })
+
+    except Exception as e:
+        log.warning(f"  yt-dlp channel scrape failed for {channel_url}: {e}")
+
+    log.info(f"  yt-dlp: {len(videos)} video(s) from {channel_url}")
+    return videos
 
 # ── Parsing Logic ─────────────────────────────────────────────────────────────
 
@@ -610,12 +768,14 @@ def scrape_videos(html: str, base_url: str) -> list[dict]:
                                   "published_at", "publishedat", "airdate",
                                   "release_date", "dateadded", "date_added"):
                             date_val = v
+                        if kl in ("duration", "length", "runtime") and dur_val is None:
+                            dur_val = parse_duration(v)
                     elif isinstance(v, (int, float)):
                         if kl in ("datereleased", "releasedate", "published_at",
                                   "timestamp", "release_date"):
                             date_val = v
                         if kl in ("duration", "length", "runtime", "seconds"):
-                            dur_val = int(v)
+                            dur_val = parse_duration(v)
                     elif isinstance(v, dict):
                         if kl in ("images", "image", "thumbnails", "photos",
                                   "screenshots", "poster", "covers"):
@@ -658,6 +818,97 @@ def scrape_videos(html: str, base_url: str) -> list[dict]:
 
         deep_scan(data)
 
+    # 4b. schema.org JSON-LD (VideoObject / Movie / Clip / Episode)
+    LDJSON_VIDEO_TYPES = {"videoobject", "movie", "clip", "episode", "tvepisode"}
+
+    def _ldjson_type_matches(obj: dict) -> bool:
+        t = obj.get("@type")
+        if isinstance(t, list):
+            return any(isinstance(x, str) and x.lower() in LDJSON_VIDEO_TYPES for x in t)
+        return isinstance(t, str) and t.lower() in LDJSON_VIDEO_TYPES
+
+    def _ldjson_thumb(obj: dict):
+        for key in ("thumbnailUrl", "thumbnail", "image"):
+            v = obj.get(key)
+            if isinstance(v, str) and v:
+                return v
+            if isinstance(v, list) and v:
+                first = v[0]
+                if isinstance(first, str):
+                    return first
+                if isinstance(first, dict):
+                    return first.get("url") or first.get("contentUrl")
+            if isinstance(v, dict):
+                return v.get("url") or v.get("contentUrl")
+        return None
+
+    def _ldjson_cast(obj: dict):
+        names: list[str] = []
+        for key in ("actor", "actors", "performer", "performers", "director"):
+            v = obj.get(key)
+            if isinstance(v, dict):
+                v = [v]
+            if isinstance(v, list):
+                for item in v:
+                    if isinstance(item, str) and item.strip():
+                        names.append(item.strip())
+                    elif isinstance(item, dict):
+                        n = (item.get("name") or "").strip()
+                        if n:
+                            names.append(n)
+        deduped = list(dict.fromkeys(names))
+        return ", ".join(deduped) if deduped else None
+
+    def _ldjson_url(obj: dict):
+        for key in ("url", "@id", "contentUrl", "embedUrl"):
+            v = obj.get(key)
+            if isinstance(v, str) and v:
+                return v
+            if isinstance(v, dict):
+                inner = v.get("url") or v.get("@id")
+                if isinstance(inner, str) and inner:
+                    return inner
+        return None
+
+    def _iter_ldjson_objects(node):
+        if isinstance(node, dict):
+            yield node
+            graph = node.get("@graph")
+            if isinstance(graph, (list, dict)):
+                yield from _iter_ldjson_objects(graph)
+            for key in ("itemListElement", "hasPart", "video", "item"):
+                child = node.get(key)
+                if isinstance(child, (list, dict)):
+                    yield from _iter_ldjson_objects(child)
+        elif isinstance(node, list):
+            for item in node:
+                yield from _iter_ldjson_objects(item)
+
+    for script_tag in soup.find_all("script", type="application/ld+json"):
+        raw = script_tag.string or script_tag.get_text()
+        if not raw or not raw.strip():
+            continue
+        try:
+            data = json.loads(raw)
+        except Exception:
+            continue
+        for obj in _iter_ldjson_objects(data):
+            if not isinstance(obj, dict) or not _ldjson_type_matches(obj):
+                continue
+            url_val = _ldjson_url(obj)
+            if not url_val:
+                continue
+            name = obj.get("name") or obj.get("headline")
+            title = name.strip() if isinstance(name, str) else None
+            add(
+                url_val,
+                title=title,
+                thumb=_ldjson_thumb(obj),
+                released_at=obj.get("uploadDate") or obj.get("datePublished"),
+                cast_names=_ldjson_cast(obj),
+                duration=parse_duration(obj.get("duration")),
+            )
+
     # 5. Raw regex fallback
     for path in re.findall(
             r'/(?:[a-z]{2}/)?(?:videos?|scenes?|movies?|episodes?|content)'
@@ -681,54 +932,77 @@ def scrape_videos(html: str, base_url: str) -> list[dict]:
 
 # ── Scraper Crawlers ──────────────────────────────────────────────────────────
 
+def _curl_request_args(url: str, site_id: str | None) -> tuple[dict, dict]:
+    """Build (headers, cookies) for an impersonated curl_cffi request."""
+    cookies: dict[str, str] = {}
+    if site_id:
+        cp = cookie_path(site_id)
+        if cp.exists():
+            try:
+                saved = json.loads(cp.read_text())
+                cookies = {c["name"]: c["value"] for c in saved
+                           if urlparse(url).netloc.endswith(
+                               c.get("domain", "").lstrip("."))}
+            except Exception:
+                pass
+
+    parsed = urlparse(url)
+    origin = f"{parsed.scheme}://{parsed.netloc}"
+    headers = {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+                      "AppleWebKit/537.36 (KHTML, like Gecko) "
+                      "Chrome/120.0.0.0 Safari/537.36",
+        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,"
+                  "image/avif,image/webp,*/*;q=0.8",
+        "Accept-Language": "en-US,en;q=0.9",
+        "Accept-Encoding": "gzip, deflate, br",
+        "Referer": origin + "/",
+        "Origin": origin,
+    }
+    return headers, cookies
+
+
+def _validate_curl_html(url: str, html: str, status_code: int) -> str | None:
+    """Reject 404s and suspiciously small (likely blocked) responses."""
+    if status_code == 404:
+        log.warning(f"  curl_cffi: 404 for {url} — check URL is correct")
+        return None
+    if len(html) < 5000:
+        log.info(f"  curl_cffi: response too small ({len(html)} chars, status={status_code}) — likely blocked")
+        return None
+    log.info(f"  curl_cffi: fetched {len(html):,} chars (status={status_code}): {url}")
+    return html
+
+
 async def _fetch_with_curl(url: str, site_id: str | None = None) -> str | None:
     if not HAS_CURL_CFFI:
         return None
     try:
-        cookies = {}
-        if site_id:
-            cp = cookie_path(site_id)
-            if cp.exists():
-                try:
-                    saved = json.loads(cp.read_text())
-                    cookies = {c["name"]: c["value"] for c in saved
-                               if urlparse(url).netloc.endswith(
-                                   c.get("domain", "").lstrip("."))}
-                except Exception:
-                    pass
-
-        parsed = urlparse(url)
-        origin = f"{parsed.scheme}://{parsed.netloc}"
-
+        headers, cookies = _curl_request_args(url, site_id)
         async with CurlSession(impersonate="chrome120") as session:
             r = await session.get(
-                url,
-                headers={
-                    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
-                                  "AppleWebKit/537.36 (KHTML, like Gecko) "
-                                  "Chrome/120.0.0.0 Safari/537.36",
-                    "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,"
-                              "image/avif,image/webp,*/*;q=0.8",
-                    "Accept-Language": "en-US,en;q=0.9",
-                    "Accept-Encoding": "gzip, deflate, br",
-                    "Referer": origin + "/",
-                    "Origin": origin,
-                },
-                cookies=cookies,
-                timeout=15,
-                allow_redirects=True,
+                url, headers=headers, cookies=cookies,
+                timeout=15, allow_redirects=True,
             )
-            html = r.text
-            if r.status_code == 404:
-                log.warning(f"  curl_cffi: 404 for {url} — check URL is correct")
-                return None
-            if len(html) < 5000:
-                log.info(f"  curl_cffi: response too small ({len(html)} chars, status={r.status_code}) — likely blocked")
-                return None
-            log.info(f"  curl_cffi: fetched {len(html):,} chars (status={r.status_code}): {url}")
-            return html
+            return _validate_curl_html(url, r.text, r.status_code)
     except Exception as e:
         log.warning(f"  curl_cffi failed for {url}: {e}")
+        return None
+
+
+def _fetch_with_curl_sync(url: str, site_id: str | None = None) -> str | None:
+    if not HAS_CURL_CFFI:
+        return None
+    try:
+        headers, cookies = _curl_request_args(url, site_id)
+        with CurlSyncSession(impersonate="chrome120") as session:
+            r = session.get(
+                url, headers=headers, cookies=cookies,
+                timeout=15, allow_redirects=True,
+            )
+            return _validate_curl_html(url, r.text, r.status_code)
+    except Exception as e:
+        log.warning(f"  curl_cffi (sync) failed for {url}: {e}")
         return None
 
 async def _make_context(p, site_id: str) -> BrowserContext:
@@ -769,6 +1043,28 @@ AGE_GATE_SELECTORS = [
     "text=Confirm Age", "[data-testid='age-gate-confirm']",
     "button:has-text('I am 18')",
 ]
+
+# How many consecutive empty pages to tolerate before stopping pagination.
+MAX_CONSECUTIVE_EMPTY = 2
+
+# Adaptive auto-scroll: scroll until the page height stops growing (lazy-load
+# settled) instead of waiting a fixed time.
+_AUTOSCROLL_JS = """
+    () => new Promise(resolve => {
+        let lastHeight = 0, stableTicks = 0, y = 0;
+        const start = Date.now();
+        const step = () => {
+            window.scrollBy(0, 800);
+            y += 800;
+            const h = document.body.scrollHeight;
+            if (h === lastHeight) { stableTicks++; } else { stableTicks = 0; lastHeight = h; }
+            const settled = stableTicks >= 3 && y >= h;
+            if (settled || Date.now() - start > 8000) resolve();
+            else setTimeout(step, 200);
+        };
+        step();
+    })
+"""
 
 async def _fetch_page(context: BrowserContext, url: str, first_page: bool = False) -> str:
     page = await context.new_page()
@@ -817,22 +1113,14 @@ async def _fetch_page(context: BrowserContext, url: str, first_page: bool = Fals
             except Exception:
                 continue
 
-    await page.wait_for_timeout(3000)
+    await page.wait_for_timeout(1000)
 
     try:
-        await page.evaluate("""
-            () => new Promise(resolve => {
-                let y = 0;
-                const step = () => {
-                    window.scrollBy(0, 600);
-                    y += 600;
-                    if (y < document.body.scrollHeight) setTimeout(step, 250);
-                    else resolve();
-                };
-                step();
-            })
-        """)
-        await page.wait_for_timeout(1500)
+        await page.evaluate(_AUTOSCROLL_JS)
+        try:
+            await page.wait_for_load_state("networkidle", timeout=4000)
+        except Exception:
+            await page.wait_for_timeout(800)
     except Exception:
         pass
 
@@ -873,21 +1161,13 @@ def _fetch_page_sync(context, url: str, first_page: bool = False) -> str:
                 except Exception:
                     continue
 
-        page.wait_for_timeout(3000)
+        page.wait_for_timeout(1000)
         try:
-            page.evaluate("""
-                () => new Promise(resolve => {
-                    let y = 0;
-                    const step = () => {
-                        window.scrollBy(0, 600);
-                        y += 600;
-                        if (y < document.body.scrollHeight) setTimeout(step, 250);
-                        else resolve();
-                    };
-                    step();
-                })
-            """)
-            page.wait_for_timeout(1500)
+            page.evaluate(_AUTOSCROLL_JS)
+            try:
+                page.wait_for_load_state("networkidle", timeout=4000)
+            except Exception:
+                page.wait_for_timeout(800)
         except Exception:
             pass
 
@@ -897,8 +1177,14 @@ def _fetch_page_sync(context, url: str, first_page: bool = False) -> str:
 
 def _scan_site_sync(site: dict) -> list[dict]:
     base_url = site["url"]
-    max_pages = _effective_max_pages(site)
     site_id = site["id"]
+
+    # ── YouTube channel shortcut (sync path) ─────────────────────────────
+    if _is_youtube_channel_url(base_url):
+        log.info(f"  [sync] Detected YouTube channel — using yt-dlp")
+        return _scrape_youtube_channel(base_url, max_videos=None)
+
+    max_pages = _effective_max_pages(site)
     all_videos = []
 
     with sync_playwright() as p:
@@ -926,16 +1212,40 @@ def _scan_site_sync(site: dict) -> list[dict]:
                 log.warning(f"  Cookie restore failed: {e}")
 
         try:
+            consecutive_empty = 0
             for page_num in range(1, max_pages + 1):
                 url = page_url(base_url, page_num)
                 log.info(f"  [sync] Page {page_num}/{max_pages}: {url}")
                 try:
-                    html = _fetch_page_sync(context, url, first_page=(page_num == 1))
+                    html = ""
+                    fetch_error = None
+                    for attempt in range(2):
+                        try:
+                            html = _fetch_page_sync(context, url, first_page=(page_num == 1))
+                            break
+                        except Exception as ex:
+                            fetch_error = ex
+                            if attempt == 0:
+                                time.sleep(1.0)
+                    if fetch_error and not html:
+                        raise fetch_error
+
+                    if len(html) < 5000 and HAS_CURL_CFFI:
+                        log.info(f"  [sync] Playwright got {len(html)} chars — trying curl_cffi fallback")
+                        curl_html = _fetch_with_curl_sync(url, site_id=site_id)
+                        if curl_html:
+                            html = curl_html
+
                     videos = scrape_videos(html, url)
                     log.info(f"  [sync] Page {page_num}: {len(videos)} video(s)")
                     if not videos:
-                        log.info(f"  [sync] Empty page {page_num}, stopping early")
-                        break
+                        consecutive_empty += 1
+                        log.info(f"  [sync] Empty page {page_num} ({consecutive_empty} in a row)")
+                        if consecutive_empty >= MAX_CONSECUTIVE_EMPTY:
+                            log.info("  [sync] Stopping after consecutive empty pages")
+                            break
+                        continue
+                    consecutive_empty = 0
                     all_videos.extend(videos)
                 except Exception as e:
                     log.error(f"  [sync] Error on page {page_num}: {e}")
@@ -958,6 +1268,10 @@ async def scan_site(site: dict, push_func=None):
     """
     Crawls a site and writes newly discovered video metadata to the SQLite DB.
     Optionally accepts a `push_func` (async callable) to broadcast SSE updates.
+
+    YouTube channel URLs (e.g. https://www.youtube.com/@WomensWrestlingForever)
+    are handled via yt-dlp instead of Playwright, which is much faster and more
+    reliable for bulk channel extraction.
     """
     async def push(msg: str):
         if push_func:
@@ -970,74 +1284,104 @@ async def scan_site(site: dict, push_func=None):
     await push(f"SCAN_START|{site_id}|{site.get('name') or base_url}")
 
     all_videos: list[dict] = []
+    skip_playwright = False  # set True when yt-dlp handles the fetch
 
-    try:
-        async with async_playwright() as p:
-            browser, context = await _make_context(p, site_id)
-            try:
-                for page_num in range(1, max_pages + 1):
-                    url = page_url(base_url, page_num)
-                    await push(f"PAGE|{site_id}|{page_num}|{max_pages}|{url}")
-                    log.info(f"  Page {page_num}/{max_pages}: {url}")
-                    try:
-                        html = ""
-                        fetch_error = None
-                        for attempt in range(2):
-                            try:
-                                html = await _fetch_page(context, url, first_page=(page_num == 1))
-                                break
-                            except Exception as ex:
-                                fetch_error = ex
-                                if attempt == 0:
-                                    await asyncio.sleep(1.0)
-                        if fetch_error and not html:
-                            raise fetch_error
+    # ── YouTube channel shortcut ──────────────────────────────────────────────
+    # When the site URL is a YouTube channel/handle page, use yt-dlp to pull the
+    # full video list instead of Playwright. This avoids YouTube's bot detection
+    # and is far faster for channels with many videos.
+    if _is_youtube_channel_url(base_url):
+        log.info(f"  Detected YouTube channel — using yt-dlp (skipping Playwright)")
+        await push(f"PAGE|{site_id}|1|1|{base_url}")
+        try:
+            yt_videos = await asyncio.to_thread(
+                _scrape_youtube_channel,
+                base_url,
+                None,   # None = fetch ALL videos, no limit
+            )
+            all_videos.extend(yt_videos)
+            log.info(f"  yt-dlp returned {len(yt_videos)} video(s)")
+        except Exception as e:
+            log.error(f"  yt-dlp channel scrape error: {e}")
+            await push(f"PAGE_ERROR|{site_id}|1|{e}")
+        await push(f"PAGE_DONE|{site_id}|1|{len(all_videos)}")
+        skip_playwright = True
 
-                        if len(html) < 5000 and HAS_CURL_CFFI:
-                            log.info(f"  Playwright got {len(html)} chars — trying curl_cffi fallback")
-                            try:
-                                curl_html = await asyncio.wait_for(
-                                    _fetch_with_curl(url, site_id=site_id),
-                                    timeout=15
-                                )
-                                if curl_html:
-                                    html = curl_html
-                            except asyncio.TimeoutError:
-                                log.warning(f"  curl_cffi timed out for {url} — using Playwright result")
+    # ── Playwright crawl (non-YouTube-channel sites) ──────────────────────────
+    if not skip_playwright:
+        try:
+            async with async_playwright() as p:
+                browser, context = await _make_context(p, site_id)
+                try:
+                    consecutive_empty = 0
+                    for page_num in range(1, max_pages + 1):
+                        url = page_url(base_url, page_num)
+                        await push(f"PAGE|{site_id}|{page_num}|{max_pages}|{url}")
+                        log.info(f"  Page {page_num}/{max_pages}: {url}")
+                        try:
+                            html = ""
+                            fetch_error = None
+                            for attempt in range(2):
+                                try:
+                                    html = await _fetch_page(context, url, first_page=(page_num == 1))
+                                    break
+                                except Exception as ex:
+                                    fetch_error = ex
+                                    if attempt == 0:
+                                        await asyncio.sleep(1.0)
+                            if fetch_error and not html:
+                                raise fetch_error
 
-                        videos = scrape_videos(html, url)
-                        log.info(f"  Page {page_num}: {len(videos)} video(s)")
-                        await push(f"PAGE_DONE|{site_id}|{page_num}|{len(videos)}")
-                        if not videos:
-                            log.info(f"  Empty page {page_num}, stopping early")
+                            if len(html) < 5000 and HAS_CURL_CFFI:
+                                log.info(f"  Playwright got {len(html)} chars — trying curl_cffi fallback")
+                                try:
+                                    curl_html = await asyncio.wait_for(
+                                        _fetch_with_curl(url, site_id=site_id),
+                                        timeout=15
+                                    )
+                                    if curl_html:
+                                        html = curl_html
+                                except asyncio.TimeoutError:
+                                    log.warning(f"  curl_cffi timed out for {url} — using Playwright result")
+
+                            videos = scrape_videos(html, url)
+                            log.info(f"  Page {page_num}: {len(videos)} video(s)")
+                            await push(f"PAGE_DONE|{site_id}|{page_num}|{len(videos)}")
+                            if not videos:
+                                consecutive_empty += 1
+                                log.info(f"  Empty page {page_num} ({consecutive_empty} in a row)")
+                                if consecutive_empty >= MAX_CONSECUTIVE_EMPTY:
+                                    log.info("  Stopping after consecutive empty pages")
+                                    break
+                                continue
+                            consecutive_empty = 0
+                            all_videos.extend(videos)
+                        except Exception as e:
+                            log.error(f"  Error on page {page_num}: {e}")
+                            await push(f"PAGE_ERROR|{site_id}|{page_num}|{e}")
                             break
-                        all_videos.extend(videos)
-                    except Exception as e:
-                        log.error(f"  Error on page {page_num}: {e}")
-                        await push(f"PAGE_ERROR|{site_id}|{page_num}|{e}")
-                        break
 
-                await _save_cookies(context, site_id)
-            finally:
-                await browser.close()
-    except NotImplementedError as e:
-        log.warning(f"Async Playwright not supported in this environment; using sync fallback: {e}")
-        all_videos = await asyncio.to_thread(_scan_site_sync, site)
-    except Exception as e:
-        err = f"ERROR: {repr(e)}"
-        log.error(f"Scan failed for {base_url}: {err}")
-        with write_lock:
-            with get_db() as db:
-                db.execute(
-                    "INSERT INTO scan_log (site_id, scanned_at, found, added, message) "
-                    "VALUES (?,?,?,?,?)",
-                    (site_id, now_iso(), 0, 0, err),
-                )
-                db.commit()
-        await push(f"SCAN_ERROR|{site_id}|{err}")
-        return
+                    await _save_cookies(context, site_id)
+                finally:
+                    await browser.close()
+        except NotImplementedError as e:
+            log.warning(f"Async Playwright not supported in this environment; using sync fallback: {e}")
+            all_videos = await asyncio.to_thread(_scan_site_sync, site)
+        except Exception as e:
+            err = f"ERROR: {repr(e)}"
+            log.error(f"Scan failed for {base_url}: {err}")
+            with write_lock:
+                with get_db() as db:
+                    db.execute(
+                        "INSERT INTO scan_log (site_id, scanned_at, found, added, message) "
+                        "VALUES (?,?,?,?,?)",
+                        (site_id, now_iso(), 0, 0, err),
+                    )
+                    db.commit()
+            await push(f"SCAN_ERROR|{site_id}|{err}")
+            return
 
-    # Deduplicate
+    # ── Deduplicate ───────────────────────────────────────────────────────────
     seen = set()
     unique = []
     for v in all_videos:
@@ -1047,13 +1391,15 @@ async def scan_site(site: dict, push_func=None):
 
     unique = _apply_site_rules(site, unique)
 
-    log.info(f"  {len(unique)} unique video(s) across {max_pages} page(s)")
+    log.info(f"  {len(unique)} unique video(s) after dedup/rules")
 
+    # ── Enrich YouTube metadata ───────────────────────────────────────────────
     try:
         await _enrich_youtube_videos(unique)
     except Exception as e:
         log.warning(f"  YouTube metadata enrichment failed: {e}")
 
+    # ── DB upsert ─────────────────────────────────────────────────────────────
     def _upsert_videos_for_site(
         db_conn,
         target_site_id: str,
@@ -1067,8 +1413,8 @@ async def scan_site(site: dict, push_func=None):
             vid_id = short_id(f"{target_site_id}:{v['url']}")
             title = v["title"] or f"Scene {vid_id}"
 
-            # Some sources rotate URL tokens for the same scene. If title+release match
-            # an existing row for this site, refresh that row instead of creating a new one.
+            # Some sources rotate URL tokens for the same scene. If title+release
+            # match an existing row for this site, refresh that row instead.
             released_at = v.get("released_at")
             if title and released_at:
                 existing = db_conn.execute(
@@ -1188,7 +1534,8 @@ async def scan_site(site: dict, push_func=None):
                 added = 0 if baseline_import else inserted_count
 
                 db.execute("UPDATE sites SET last_scan=? WHERE id=?", (now_iso(), site_id))
-                msg = f"OK — {len(unique)} found across {max_pages} page(s), {added} new"
+                effective_pages = 1 if skip_playwright else max_pages
+                msg = f"OK — {len(unique)} found across {effective_pages} page(s), {added} new"
                 db.execute(
                     "INSERT INTO scan_log (site_id, scanned_at, found, added, message) "
                     "VALUES (?,?,?,?,?)",
@@ -1215,5 +1562,21 @@ async def scan_site(site: dict, push_func=None):
 async def scan_all_sites(push_func=None):
     with get_db() as db:
         sites = [dict(r) for r in db.execute("SELECT * FROM sites")]
-    for site in sites:
-        await scan_site(site, push_func)
+    if not sites:
+        return
+
+    try:
+        concurrency = int(os.environ.get("SCAN_CONCURRENCY", "3"))
+    except ValueError:
+        concurrency = 3
+    concurrency = max(1, min(concurrency, len(sites)))
+    sem = asyncio.Semaphore(concurrency)
+
+    async def _run(site):
+        async with sem:
+            try:
+                await scan_site(site, push_func)
+            except Exception as e:
+                log.error(f"  scan_site crashed for {site.get('url')}: {e}")
+
+    await asyncio.gather(*(_run(site) for site in sites))
