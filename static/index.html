@@ -449,7 +449,91 @@
         display: inline;
       }
     }
+
+    /* ── Stat card icons ── */
+    .stat-header { display: flex; align-items: center; gap: .45rem; margin-bottom: .3rem; }
+    .stat-header .stat-label { margin-bottom: 0; }
+    .stat-icon { font-size: .9rem; flex-shrink: 0; }
+
+    /* ── Filter floating labels ── */
+    .filter-labeled { position: relative; }
+    .filter-labeled input { width: 100%; }
+    .filter-float-label {
+      position: absolute; top: -7px; left: 7px;
+      font-size: .58rem; line-height: 1;
+      color: var(--muted); background: #fff;
+      padding: 0 3px; pointer-events: none; z-index: 1; white-space: nowrap;
+    }
+
+    /* ── Dark mode ── */
+    [data-theme="dark"] {
+      --surface: #0f172a; --surface-soft: #1e293b; --card-bg: #1e293b;
+      --ink: #e2e8f0; --muted: #94a3b8; --border: #334155;
+      --glow: 0 18px 40px rgba(0,0,0,.35);
+    }
+    [data-theme="dark"] body {
+      background:
+        radial-gradient(1200px 500px at 0% -10%, rgba(15,118,110,.08), transparent 60%),
+        radial-gradient(900px 440px at 100% 0%, rgba(245,158,11,.06), transparent 60%),
+        var(--surface);
+    }
+    [data-theme="dark"] .topbar {
+      background: rgba(15,23,42,.95);
+      border-bottom-color: #334155;
+    }
+    [data-theme="dark"] .stat-card,
+    [data-theme="dark"] .health-panel,
+    [data-theme="dark"] .skeleton-card {
+      background: rgba(30,41,59,.95);
+      border-color: #334155;
+    }
+    [data-theme="dark"] .video-card { background: #1e293b; border-color: #334155; }
+    [data-theme="dark"] .filter-bar input,
+    [data-theme="dark"] .filter-bar select {
+      background: #1e293b; color: #e2e8f0; border-color: #334155;
+    }
+    [data-theme="dark"] .filter-bar input::placeholder { color: #64748b; }
+    [data-theme="dark"] .skeleton-thumb,
+    [data-theme="dark"] .skeleton-line {
+      background: linear-gradient(110deg, #1e293b 8%, #334155 18%, #1e293b 33%);
+      background-size: 200% 100%;
+    }
+    [data-theme="dark"] .modal-content { background: #1e293b; color: #e2e8f0; }
+    [data-theme="dark"] .modal-content .form-control,
+    [data-theme="dark"] .modal-content .form-select {
+      background-color: #0f172a; color: #e2e8f0; border-color: #334155;
+    }
+    [data-theme="dark"] .modal-content .form-control::placeholder { color: #64748b; }
+    [data-theme="dark"] .modal-content .form-text { color: #94a3b8; }
+    [data-theme="dark"] .dropdown-menu { background: #1e293b; border-color: #334155; }
+    [data-theme="dark"] .dropdown-item { color: #e2e8f0; }
+    [data-theme="dark"] .dropdown-item:hover,
+    [data-theme="dark"] .dropdown-item:focus { background: #334155; color: #fff; }
+    [data-theme="dark"] .dropdown-divider { border-color: #334155; }
+    [data-theme="dark"] .btn-close { filter: invert(1) grayscale(1); }
+    [data-theme="dark"] .btn-outline-secondary {
+      color: #94a3b8; border-color: #475569;
+    }
+    [data-theme="dark"] .btn-outline-secondary:hover,
+    [data-theme="dark"] .btn-outline-secondary:focus {
+      background: #334155; color: #e2e8f0; border-color: #475569;
+    }
+    [data-theme="dark"] .btn-outline-danger { color: #f87171; border-color: #991b1b; }
+    [data-theme="dark"] .page-btn { background: #1e293b; border-color: #334155; color: #e2e8f0; }
+    [data-theme="dark"] .filter-float-label { background: #1e293b; color: #94a3b8; }
+    [data-theme="dark"] .health-badge { background: #0f172a; border-color: #334155; color: #e2e8f0; }
+    [data-theme="dark"] #scan-log { background: #050d18; }
+    [data-theme="dark"] .input-group .btn-outline-secondary {
+      border-color: #475569; color: #94a3b8;
+    }
+    [data-theme="dark"] .status-quickbar .btn-outline-secondary {
+      color: #94a3b8; border-color: #475569;
+    }
   </style>
+  <script>
+    const _savedTheme = localStorage.getItem('vw_theme');
+    if (_savedTheme === 'dark') document.documentElement.setAttribute('data-theme', 'dark');
+  </script>
 </head>
 <body>
 
@@ -504,8 +588,8 @@
     </div>
     <div class="filter-bar">
       <input type="search" id="search-inp" placeholder="Search titles, cast, site, url…" />
-      <input type="date" id="released-after" title="Released after" aria-label="Released after date" />
-      <input type="number" id="duration-min" min="0" placeholder="Min duration" title="Min duration (seconds)" aria-label="Minimum duration in seconds" />
+      <div class="filter-labeled"><span class="filter-float-label">Released after</span><input type="date" id="released-after" aria-label="Released after date" /></div>
+      <div class="filter-labeled"><span class="filter-float-label">Min duration (sec)</span><input type="number" id="duration-min" min="0" placeholder="0" aria-label="Minimum duration in seconds" /></div>
       <select id="site-filter" aria-label="Filter by site group">
         <option value="">All sites</option>
       </select>
@@ -553,6 +637,9 @@
           </li>
         </ul>
       </div>
+      <button class="btn btn-sm btn-outline-secondary" id="btn-darkmode" title="Toggle dark mode" aria-label="Toggle dark mode">
+        <i class="bi bi-moon-stars-fill" id="darkmode-icon"></i>
+      </button>
       <button class="btn btn-sm btn-brand" id="btn-scan" aria-label="Start manual scan now">
         <i class="bi bi-arrow-repeat me-1"></i><span class="label-full">Scan now</span><span class="label-short">Scan</span>
       </button>
@@ -568,10 +655,10 @@
     </div>
 
     <div class="row g-3 mb-4">
-      <div class="col-6 col-md-3"><div class="stat-card"><div class="stat-label">Total videos</div><div class="stat-value" id="s-total">—</div></div></div>
-      <div class="col-6 col-md-3"><div class="stat-card"><div class="stat-label">New</div><div class="stat-value" style="color:var(--brand)" id="s-new">—</div></div></div>
-      <div class="col-6 col-md-3"><div class="stat-card"><div class="stat-label">Sites</div><div class="stat-value" id="s-sites">—</div></div></div>
-      <div class="col-6 col-md-3"><div class="stat-card"><div class="stat-label">Scans run</div><div class="stat-value" id="s-scans">—</div></div></div>
+      <div class="col-6 col-md-3"><div class="stat-card"><div class="stat-header"><i class="bi bi-collection-fill stat-icon" style="color:var(--muted)"></i><div class="stat-label">Total videos</div></div><div class="stat-value" id="s-total">—</div></div></div>
+      <div class="col-6 col-md-3"><div class="stat-card"><div class="stat-header"><i class="bi bi-lightning-fill stat-icon" style="color:var(--brand)"></i><div class="stat-label">New</div></div><div class="stat-value" style="color:var(--brand)" id="s-new">—</div></div></div>
+      <div class="col-6 col-md-3"><div class="stat-card"><div class="stat-header"><i class="bi bi-globe stat-icon" style="color:var(--muted)"></i><div class="stat-label">Sites</div></div><div class="stat-value" id="s-sites">—</div></div></div>
+      <div class="col-6 col-md-3"><div class="stat-card"><div class="stat-header"><i class="bi bi-arrow-repeat stat-icon" style="color:var(--muted)"></i><div class="stat-label">Scans run</div></div><div class="stat-value" id="s-scans">—</div></div></div>
     </div>
 
     <div class="health-panel">
@@ -781,13 +868,22 @@
       </div>
       <div class="modal-body">
         <label class="form-label" style="font-size:.85rem;">Current password</label>
-        <input type="password" id="pwd-current" class="form-control" autocomplete="current-password" />
+        <div class="input-group">
+          <input type="password" id="pwd-current" class="form-control" autocomplete="current-password" />
+          <button type="button" class="btn btn-outline-secondary" onclick="toggleFieldPwd('pwd-current',this)" tabindex="-1" aria-label="Toggle visibility"><i class="bi bi-eye"></i></button>
+        </div>
 
         <label class="form-label mt-3" style="font-size:.85rem;">New password</label>
-        <input type="password" id="pwd-new" class="form-control" autocomplete="new-password" />
+        <div class="input-group">
+          <input type="password" id="pwd-new" class="form-control" autocomplete="new-password" />
+          <button type="button" class="btn btn-outline-secondary" onclick="toggleFieldPwd('pwd-new',this)" tabindex="-1" aria-label="Toggle visibility"><i class="bi bi-eye"></i></button>
+        </div>
 
         <label class="form-label mt-3" style="font-size:.85rem;">Confirm new password</label>
-        <input type="password" id="pwd-confirm" class="form-control" autocomplete="new-password" />
+        <div class="input-group">
+          <input type="password" id="pwd-confirm" class="form-control" autocomplete="new-password" />
+          <button type="button" class="btn btn-outline-secondary" onclick="toggleFieldPwd('pwd-confirm',this)" tabindex="-1" aria-label="Toggle visibility"><i class="bi bi-eye"></i></button>
+        </div>
 
         <div id="pwd-error" class="text-danger mt-2" style="font-size:.82rem;display:none;"></div>
       </div>
@@ -1325,6 +1421,21 @@ function showToast(message, type = 'info') {
     note.style.animation = 'toast-out .2s ease-in forwards';
     note.addEventListener('animationend', () => note.remove());
   }, 4200);
+}
+
+function toggleFieldPwd(inputId, btn) {
+  const inp = document.getElementById(inputId);
+  const icon = btn.querySelector('i');
+  const hidden = inp.type === 'password';
+  inp.type = hidden ? 'text' : 'password';
+  icon.className = hidden ? 'bi bi-eye-slash' : 'bi bi-eye';
+}
+
+function applyTheme(dark) {
+  document.documentElement.setAttribute('data-theme', dark ? 'dark' : 'light');
+  const icon = document.getElementById('darkmode-icon');
+  if (icon) icon.className = dark ? 'bi bi-sun-fill' : 'bi bi-moon-stars-fill';
+  localStorage.setItem('vw_theme', dark ? 'dark' : 'light');
 }
 
 function isVideoMarkedNew(video) {
@@ -2066,6 +2177,12 @@ async function scan() {
 }
 
 document.getElementById('btn-scan').onclick = scan;
+
+document.getElementById('btn-darkmode').addEventListener('click', () => {
+  applyTheme(document.documentElement.getAttribute('data-theme') !== 'dark');
+});
+// Sync icon with already-applied theme (set in <head>)
+applyTheme(document.documentElement.getAttribute('data-theme') === 'dark');
 
 async function freshScanAll() {
   if (scanning) return;
