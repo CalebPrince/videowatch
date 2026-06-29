@@ -1,7 +1,9 @@
+# VideoWatch Server - Deployed on Oracle Cloud
 """
 VideoWatch Backend — FastAPI + Playwright
 Modular entry point. Bootstraps the application, schedules the background auto‑scanner task.
 """
+
 
 import os
 import sys
