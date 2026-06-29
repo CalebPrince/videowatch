@@ -1,0 +1,14 @@
+version: '3.9'
+services:
+  videowatch:
+    build: .
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./cookies:/app/cookies
+      - ./thumbcache:/app/thumbcache
+      - ./videowatch.db:/app/videowatch.db
+    environment:
+      - HOST=0.0.0.0
+      - PORT=8000
+    restart: unless-stopped

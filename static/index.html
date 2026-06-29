@@ -1,0 +1,2295 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>VideoWatch</title>
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet" />
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.css" rel="stylesheet" />
+  <style>
+    :root {
+      --brand: #0f766e;
+      --brand-strong: #115e59;
+      --accent: #f59e0b;
+      --surface: #f3f6f5;
+      --surface-soft: #e8efed;
+      --card-bg: #ffffff;
+      --ink: #0f172a;
+      --muted: #5f6b79;
+      --border: #d7e2df;
+      --sidebar-bg: #0d1b2a;
+      --sidebar-alt: #10253b;
+      --sidebar-text: #dce9f7;
+      --glow: 0 18px 40px rgba(15, 23, 42, .12);
+    }
+    * { box-sizing: border-box; }
+    body {
+      background:
+        radial-gradient(1200px 500px at 0% -10%, rgba(15, 118, 110, .12), transparent 60%),
+        radial-gradient(900px 440px at 100% 0%, rgba(245, 158, 11, .12), transparent 60%),
+        var(--surface);
+      font-family: 'IBM Plex Sans', 'Trebuchet MS', 'Segoe UI', sans-serif;
+      color: var(--ink);
+      margin: 0;
+    }
+
+    /* ── Sidebar ── */
+    #sidebar {
+      width: 292px; height: 100vh; overflow: hidden;
+      background: linear-gradient(170deg, var(--sidebar-bg), var(--sidebar-alt));
+      color: var(--sidebar-text);
+      position: fixed; top: 0; left: 0; display: flex; flex-direction: column; z-index: 120;
+      box-shadow: 0 0 0 1px rgba(255,255,255,.04) inset;
+    }
+    .brand { padding: 1.6rem 1.35rem 1rem; border-bottom: 1px solid rgba(255,255,255,.08); }
+    .brand-row { display: flex; align-items: center; justify-content: space-between; gap: .6rem; }
+    .brand h5 { font-weight: 700; font-size: 1.15rem; margin: 0; color: #fff; letter-spacing: .2px; }
+    .brand small { color: rgba(220,233,247,.6); font-size: .74rem; }
+    .mobile-sidebar-close {
+      display: none;
+      border: 1px solid rgba(255,255,255,.22);
+      background: rgba(255,255,255,.08);
+      color: #fff;
+      border-radius: 9px;
+      width: 34px;
+      height: 34px;
+      align-items: center;
+      justify-content: center;
+      flex-shrink: 0;
+    }
+    .mobile-sidebar-close:hover { background: rgba(255,255,255,.16); }
+    #site-list { flex: 1; min-height: 0; display: flex; flex-direction: column; padding: .5rem 0; }
+    #site-items { flex: 1; min-height: 0; overflow-y: auto; }
+    .list-label { padding: .45rem 1.25rem; font-size: .68rem; text-transform: uppercase; letter-spacing: 1px; color: rgba(220,233,247,.42); }
+    .site-item {
+      display: flex; align-items: center; gap: .55rem;
+      padding: .55rem 1.25rem; cursor: pointer; font-size: .85rem; transition: background .15s, transform .15s;
+    }
+    .site-item:hover { background: rgba(255,255,255,.08); transform: translateX(2px); }
+    .site-item.active { background: rgba(15,118,110,.3); color: #bbf7d0; }
+    .site-group-label {
+      padding: .65rem 1.25rem .25rem;
+      font-size: .72rem;
+      color: rgba(220,233,247,.7);
+      text-transform: uppercase;
+      letter-spacing: .8px;
+    }
+    .site-favicon {
+      width: 24px; height: 24px; border-radius: 7px; background: rgba(255,255,255,.14);
+      display: flex; align-items: center; justify-content: center;
+      font-size: 11px; font-weight: 700; flex-shrink: 0;
+    }
+    .site-favicon.has-error { background: rgba(239,68,68,.2); color: #ef4444; }
+    .site-name { flex: 1; min-width: 0; }
+    .site-name div:first-child { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .site-name.has-error div:first-child { color: #fca5a5; }
+    .site-meta { font-size: .65rem; color: rgba(220,233,247,.45); }
+    .badge-new-count {
+      background: linear-gradient(135deg, var(--accent), #fb7185); color: #1f2937;
+      border-radius: 99px; font-size: .68rem; padding: 2px 7px; font-weight: 700;
+      flex-shrink: 0; animation: none !important;
+    }
+    .site-actions { display: flex; gap: 2px; opacity: 0; transition: opacity .15s; flex-shrink: 0; }
+    .site-item:hover .site-actions { opacity: 1; }
+    .btn-icon {
+      background: none; border: none; padding: 2px 4px; font-size: 13px;
+      cursor: pointer; border-radius: 4px; color: rgba(255,255,255,.3);
+      transition: color .15s, background .15s;
+    }
+    .btn-icon:hover { color: #fff; background: rgba(255,255,255,.12); }
+    .btn-icon.danger:hover { color: #ff6b6b; background: rgba(255,107,107,.1); }
+    .sidebar-footer { padding: .9rem 1.25rem; border-top: 1px solid rgba(255,255,255,.08); }
+    .status-row { display: flex; align-items: center; gap: .45rem; font-size: .74rem; color: rgba(220,233,247,.6); margin-top: .55rem; }
+    .dot { width: 8px; height: 8px; border-radius: 50%; background: #10b981; flex-shrink: 0; animation: none !important; }
+    .dot.scanning { background: #f59e0b; animation: dot-blink 1s infinite !important; }
+    @keyframes dot-blink { 0%,100%{opacity:1} 50%{opacity:.3} }
+
+    /* ── Progress bar ── */
+    #progress-bar-wrap {
+      height: 3px; background: rgba(255,255,255,.08); display: none; margin: 0 1.25rem .5rem;
+    }
+    #progress-bar { height: 3px; background: linear-gradient(90deg, var(--brand), var(--accent)); width: 0; transition: width .4s; }
+    .scan-label { font-size: .7rem; color: rgba(220,233,247,.7); padding: 0 1.25rem .4rem; display: none; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+    /* ── Main ── */
+    #main { margin-left: 292px; min-height: 100vh; }
+    .topbar {
+      background: rgba(255,255,255,.82);
+      backdrop-filter: blur(10px);
+      border-bottom: 1px solid var(--border);
+      padding: .8rem 1.1rem .8rem 1.2rem; display: flex; align-items: center; gap: .75rem;
+      position: sticky; top: 0; z-index: 50; flex-wrap: wrap;
+    }
+    .topbar-head {
+      display: flex;
+      align-items: center;
+      gap: .75rem;
+      min-width: 220px;
+      flex: 1 1 260px;
+    }
+    .topbar-meta {
+      min-width: 0;
+    }
+    .topbar h6 { margin: 0; font-weight: 700; font-size: 1rem; white-space: nowrap; letter-spacing: .2px; }
+    .topbar .sub { font-size: .75rem; color: var(--muted); }
+    .mobile-menu-btn {
+      display: none;
+      border: 1px solid var(--border);
+      background: #fff;
+      color: var(--ink);
+      border-radius: 10px;
+      width: 36px;
+      height: 36px;
+      align-items: center;
+      justify-content: center;
+      box-shadow: var(--glow);
+    }
+    #sidebar-overlay {
+      position: fixed;
+      inset: 0;
+      background: rgba(2, 6, 23, .45);
+      opacity: 0;
+      pointer-events: none;
+      transition: opacity .2s ease;
+      z-index: 110;
+    }
+    body.sidebar-open #sidebar-overlay {
+      opacity: 1;
+      pointer-events: auto;
+    }
+
+    /* ── Toast notifications ── */
+    #toast-container {
+      position: fixed; bottom: 18px; right: 18px;
+      z-index: 1100; display: flex; flex-direction: column; gap: .65rem;
+      pointer-events: none;
+    }
+    .toast-notice {
+      min-width: 240px; max-width: 360px; padding: .95rem 1rem;
+      border-radius: 14px; box-shadow: 0 20px 45px rgba(15, 23, 42, .18);
+      color: #fff; display: flex; align-items: center; gap: .75rem;
+      font-size: .92rem; opacity: 0; transform: translateY(10px);
+      pointer-events: auto; animation: toast-in .24s ease-out forwards;
+    }
+    .toast-notice.info { background: #1f2937; }
+    .toast-notice.success { background: #047857; }
+    .toast-notice.warning { background: #92400e; }
+    .toast-notice.danger { background: #991b1b; }
+    .toast-notice i { font-size: 1rem; }
+    @keyframes toast-in { to { opacity: 1; transform: translateY(0); } }
+    @keyframes toast-out { to { opacity: 0; transform: translateY(10px); } }
+
+    /* ── Search + filter bar ── */
+    .filter-bar {
+      display: grid;
+      grid-template-columns: minmax(240px, 1.4fr) minmax(170px, .9fr) minmax(160px, .8fr) minmax(170px, .9fr) minmax(170px, .9fr);
+      gap: .5rem;
+      flex: 2 1 760px;
+      min-width: 320px;
+      align-items: center;
+    }
+    .filter-bar input, .filter-bar select {
+      height: 32px; border: 1px solid var(--border); border-radius: 7px;
+      padding: 0 .75rem; font-size: .82rem; background: #fff; color: var(--ink);
+      outline: none; transition: border-color .15s;
+      width: 100%;
+    }
+    .filter-bar input:focus, .filter-bar select:focus { border-color: var(--brand); }
+    .filter-bar input:focus-visible,
+    .filter-bar select:focus-visible,
+    .btn:focus-visible,
+    .btn-icon:focus-visible,
+    .page-btn:focus-visible {
+      outline: 2px solid rgba(15, 118, 110, .45);
+      outline-offset: 2px;
+    }
+    .topbar-actions {
+      display: flex;
+      align-items: center;
+      gap: .5rem;
+      flex: 0 1 auto;
+      margin-left: auto;
+      flex-wrap: wrap;
+      justify-content: flex-end;
+    }
+    .topbar-actions .btn {
+      white-space: nowrap;
+    }
+    .label-short {
+      display: none;
+    }
+
+    /* ── Stats ── */
+    .stat-card {
+      background: rgba(255,255,255,.9);
+      border: 1px solid var(--border);
+      border-radius: 14px;
+      padding: 1rem 1.1rem;
+      box-shadow: var(--glow);
+      animation: rise-in .28s ease both;
+    }
+    .stat-label { font-size: .72rem; color: var(--muted); margin-bottom: .2rem; }
+    .stat-value { font-size: 1.65rem; font-weight: 700; line-height: 1; }
+    .health-panel {
+      background: rgba(255,255,255,.88);
+      border: 1px solid var(--border);
+      border-radius: 14px;
+      padding: .9rem 1rem;
+      box-shadow: var(--glow);
+      margin-bottom: 1rem;
+    }
+    .health-row { display:flex; gap:.8rem; flex-wrap:wrap; font-size:.8rem; color:var(--muted); }
+    .health-badge {
+      background: #f1f5f9;
+      border: 1px solid #dbe4ea;
+      color: #334155;
+      border-radius: 999px;
+      padding: 2px 8px;
+      font-size: .72rem;
+      font-weight: 600;
+    }
+    .status-quickbar {
+      display: flex;
+      gap: .45rem;
+      flex-wrap: wrap;
+      margin-bottom: 1rem;
+    }
+    .status-quickbar .btn {
+      border-radius: 999px;
+    }
+
+    /* ── Video grid ── */
+    .video-card {
+      background: var(--card-bg); border: 1px solid var(--border);
+      border-radius: 14px; overflow: hidden; transition: box-shadow .2s, transform .2s;
+      box-shadow: var(--glow);
+    }
+    .video-card:hover { box-shadow: 0 14px 28px rgba(15, 23, 42, .18); transform: translateY(-3px); }
+    .video-card.is-new { border-color: var(--brand); box-shadow: 0 0 0 2px rgba(15,118,110,.25), var(--glow); }
+    .thumb-wrap { position: relative; background: #0d0d1a; aspect-ratio: 16/9; overflow: hidden; }
+    .thumb-wrap img { width:100%; height:100%; object-fit:cover; display:block; }
+    .thumb-placeholder { width:100%; height:100%; display:flex; align-items:center; justify-content:center; color:rgba(255,255,255,.18); font-size:2.2rem; }
+    .badge-new-pill {
+      position: absolute; top:8px; left:8px;
+      background: linear-gradient(135deg, var(--accent), #fb7185); color:#1f2937; font-size:.63rem; font-weight:700;
+      padding:3px 8px; border-radius:4px; letter-spacing:.5px; text-transform:uppercase;
+      animation: none !important;
+    }
+    .platform-pill {
+      position: absolute; bottom:8px; right:8px;
+      background: rgba(0,0,0,.65); color:#fff; font-size:.63rem;
+      padding:2px 7px; border-radius:4px; text-transform:uppercase; letter-spacing:.4px;
+      animation: none !important;
+    }
+    .play-overlay {
+      position: absolute;
+      inset: 0;
+      background: rgba(0,0,0,.38);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      opacity: 0;
+      transition: opacity .2s;
+      cursor: pointer;
+      z-index: 2;
+    }
+    .video-card:hover .play-overlay { opacity:1; }
+    .play-overlay i { font-size:2.4rem; color:#fff; }
+    .v-body { padding: .8rem 1rem; }
+    .v-title { font-size:.86rem; font-weight:600; line-height:1.4; margin-bottom:.25rem; display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; overflow:hidden; }
+    .v-date { font-size:.7rem; color:var(--brand-strong); font-weight:700; margin-bottom:.15rem; }
+    .v-cast {
+      font-size:.72rem; color:#444; margin-bottom:.2rem;
+      white-space:nowrap; overflow:hidden; text-overflow:ellipsis;
+      max-width:100%;
+    }
+    .v-cast i { color:var(--muted); }
+    .v-meta { font-size:.73rem; color:var(--muted); display:flex; align-items:center; gap:.4rem; flex-wrap:wrap; }
+    .v-meta a { color:var(--brand-strong); text-decoration:none; }
+    .v-meta a:hover { text-decoration:underline; }
+    .v-meta .btn-icon {
+      color: #475569;
+      padding: 2px 5px;
+    }
+    .v-meta .btn-icon:hover {
+      color: #0f172a;
+      background: rgba(15, 23, 42, .08);
+    }
+    .v-meta .btn-icon.is-active {
+      color: #b45309;
+      background: rgba(245, 158, 11, .16);
+    }
+    .v-duration { font-size:.7rem; color:var(--muted); white-space:nowrap; }
+
+    /* ── Pagination ── */
+    .pagination-bar { display:flex; align-items:center; justify-content:center; gap:.4rem; padding:1.5rem 0 .5rem; flex-wrap:wrap; }
+    .page-btn {
+      min-width:34px; height:34px; border-radius:7px; border:1px solid var(--border);
+      background:var(--card-bg); font-size:.82rem; font-weight:600; cursor:pointer;
+      display:flex; align-items:center; justify-content:center; transition:all .15s; color:var(--ink);
+    }
+    .page-btn:hover:not(:disabled) { border-color:var(--brand); color:var(--brand); }
+    .page-btn.active { background:var(--brand); border-color:var(--brand); color:#fff; box-shadow: 0 6px 18px rgba(15,118,110,.35); }
+    .page-btn:disabled { opacity:.35; cursor:default; }
+    .page-info { font-size:.78rem; color:var(--muted); padding:0 .5rem; }
+
+    /* ── Log ── */
+    #scan-log { font-size:.76rem; max-height:180px; overflow-y:auto; background:#0d0d1a; color:#7ecb9f; border-radius:8px; padding:.7rem 1rem; font-family:monospace; }
+    #scan-log p { margin:0; line-height:1.75; }
+    .log-err { color:#ff6b6b!important; }
+    .log-warn { color:#f59e0b!important; }
+    .log-found { color:#a89cf7!important; }
+
+    /* ── Empty ── */
+    .empty-state { text-align:center; padding:4rem 2rem; color:var(--muted); }
+    .empty-state i { font-size:3rem; opacity:.25; display:block; margin-bottom:1rem; }
+    .skeleton-card {
+      border-radius: 14px;
+      border: 1px solid var(--border);
+      background: rgba(255,255,255,.82);
+      overflow: hidden;
+      box-shadow: var(--glow);
+    }
+    .skeleton-thumb {
+      aspect-ratio: 16/9;
+      background: linear-gradient(110deg, #edf2f1 8%, #e1ece9 18%, #edf2f1 33%);
+      background-size: 200% 100%;
+      animation: skeleton-shimmer 1.2s linear infinite;
+    }
+    .skeleton-body {
+      padding: .75rem .9rem;
+    }
+    .skeleton-line {
+      height: 10px;
+      border-radius: 6px;
+      margin-bottom: .45rem;
+      background: linear-gradient(110deg, #edf2f1 8%, #e1ece9 18%, #edf2f1 33%);
+      background-size: 200% 100%;
+      animation: skeleton-shimmer 1.2s linear infinite;
+    }
+    .skeleton-line.short { width: 55%; }
+    .skeleton-line.mid { width: 72%; }
+    @keyframes skeleton-shimmer {
+      to { background-position-x: -200%; }
+    }
+
+    /* ── Modals ── */
+    .modal-content { border-radius:12px; border:none; }
+    .pages-control { display:flex; align-items:center; gap:.5rem; }
+    .pages-control button {
+      width:30px; height:30px; border-radius:6px; border:1px solid var(--border);
+      background:var(--card-bg); font-size:1rem; cursor:pointer;
+      display:flex; align-items:center; justify-content:center; font-weight:700;
+    }
+    .pages-control button:hover { border-color:var(--brand); color:var(--brand); }
+    .pages-val { font-size:1.1rem; font-weight:700; min-width:28px; text-align:center; }
+
+    .btn-brand {
+      background: linear-gradient(135deg, var(--brand), #14b8a6);
+      border: none;
+      color: #fff;
+      border-radius: 10px;
+      box-shadow: 0 10px 20px rgba(15,118,110,.24);
+    }
+
+    @keyframes rise-in {
+      from { opacity: 0; transform: translateY(8px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+
+    @media (max-width: 991.98px) {
+      #sidebar {
+        transform: translateX(-100%);
+        transition: transform .22s ease;
+      }
+      body.sidebar-open #sidebar {
+        transform: translateX(0);
+      }
+      #main { margin-left: 0; }
+      .mobile-menu-btn { display: inline-flex; }
+      .mobile-sidebar-close { display: inline-flex; }
+      .topbar { padding: .8rem .9rem; }
+      .topbar-head {
+        flex: 1 1 auto;
+      }
+      .filter-bar {
+        min-width: 100%;
+        flex: 1 1 100%;
+        grid-template-columns: 1fr 1fr;
+      }
+      .filter-bar input[type="search"] {
+        grid-column: 1 / -1;
+      }
+      .topbar-actions {
+        width: 100%;
+        justify-content: flex-start;
+      }
+    }
+
+    @media (max-width: 576px) {
+      .filter-bar {
+        grid-template-columns: 1fr;
+      }
+      .topbar-actions {
+        display: grid;
+        grid-template-columns: 1fr;
+        width: 100%;
+      }
+      .topbar-actions .btn {
+        width: 100%;
+      }
+      .topbar-actions .dropdown,
+      .topbar-actions .dropdown .btn {
+        width: 100%;
+      }
+      .topbar-actions .label-full {
+        display: none;
+      }
+      .topbar-actions .label-short {
+        display: inline;
+      }
+    }
+  </style>
+</head>
+<body>
+
+<!-- ── Sidebar ── -->
+<div id="sidebar">
+  <div class="brand">
+    <div class="brand-row">
+      <h5><i class="bi bi-play-circle-fill me-2" style="color:#a89cf7"></i>VideoWatch</h5>
+      <button class="mobile-sidebar-close" id="mobile-sidebar-close" type="button" aria-label="Close sidebar">
+        <i class="bi bi-x-lg"></i>
+      </button>
+    </div>
+    <small>Monitors websites for new videos</small>
+  </div>
+  <div id="site-list">
+    <div class="list-label">Monitored sites</div>
+    <div id="site-items"></div>
+  </div>
+  <div class="sidebar-footer">
+    <!-- Live scan progress -->
+    <div class="scan-label" id="scan-label"></div>
+    <div id="progress-bar-wrap"><div id="progress-bar"></div></div>
+
+    <button class="btn btn-sm w-100 btn-brand"
+      data-bs-toggle="modal" data-bs-target="#addModal">
+      <i class="bi bi-plus-lg me-1"></i> Add website
+    </button>
+    <div class="status-row">
+      <span class="dot" id="dot"></span>
+      <span id="status-txt">Idle</span>
+      <span class="ms-auto" id="next-scan-txt" style="font-size:.7rem;"></span>
+    </div>
+    <div class="status-row" style="margin-top:.35rem;">
+      <i class="bi bi-database" style="font-size:.75rem;"></i>
+      <span id="db-path-txt" title="Active DB file" style="font-size:.68rem;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:220px;display:inline-block;">DB: ...</span>
+    </div>
+  </div>
+</div>
+<div id="sidebar-overlay" aria-hidden="true"></div>
+
+<!-- ── Main ── -->
+<div id="main">
+  <div class="topbar">
+    <div class="topbar-head">
+      <button class="mobile-menu-btn" id="mobile-menu-btn" type="button" aria-label="Toggle sidebar">
+        <i class="bi bi-list"></i>
+      </button>
+      <div class="topbar-meta">
+        <h6 id="topbar-title">All videos</h6>
+        <div class="sub">Last scan: <span id="last-scan">—</span></div>
+      </div>
+    </div>
+    <div class="filter-bar">
+      <input type="search" id="search-inp" placeholder="Search titles, cast, site, url…" />
+      <input type="date" id="released-after" title="Released after" aria-label="Released after date" />
+      <input type="number" id="duration-min" min="0" placeholder="Min duration" title="Min duration (seconds)" aria-label="Minimum duration in seconds" />
+      <select id="site-filter" aria-label="Filter by site group">
+        <option value="">All sites</option>
+      </select>
+      <select id="platform-filter" aria-label="Filter by platform">
+        <option value="">All types</option>
+      </select>
+    </div>
+    <div class="topbar-actions">
+      <button class="btn btn-sm btn-outline-secondary" id="btn-seen" aria-label="Mark visible videos as seen">
+        <i class="bi bi-check2-all me-1"></i><span class="label-full">Mark seen</span><span class="label-short">Seen</span>
+      </button>
+      <button class="btn btn-sm btn-outline-danger" id="btn-fresh-scan" title="Delete all stored videos and run a full fresh scan" aria-label="Delete all videos and run fresh scan">
+        <i class="bi bi-arrow-clockwise me-1"></i><span class="label-full">Fresh scan all</span><span class="label-short">Fresh scan</span>
+      </button>
+      <div class="dropdown">
+        <button class="btn btn-sm btn-outline-secondary dropdown-toggle" type="button" data-bs-toggle="dropdown" aria-expanded="false">
+          <i class="bi bi-three-dots-vertical me-1"></i><span class="label-full">More</span><span class="label-short">More</span>
+        </button>
+        <ul class="dropdown-menu dropdown-menu-end">
+          <li>
+            <button class="dropdown-item" id="btn-auto-scan-toggle" type="button" title="Pause or resume automatic scheduled scanning">
+              <i class="bi bi-pause-circle me-1"></i> Pause auto-scan
+            </button>
+          </li>
+          <li>
+            <button class="dropdown-item" id="btn-notifications-open" type="button" title="Notification settings">
+              <i class="bi bi-bell me-1"></i> Notifications
+            </button>
+          </li>
+          <li>
+            <a class="dropdown-item" href="/settings" title="Open full settings page">
+              <i class="bi bi-sliders me-1"></i> Full settings
+            </a>
+          </li>
+          <li><hr class="dropdown-divider"></li>
+          <li>
+            <button class="dropdown-item" id="btn-change-password-open" type="button" title="Change account password">
+              <i class="bi bi-shield-lock me-1"></i> Change password
+            </button>
+          </li>
+          <li>
+            <button class="dropdown-item text-danger" id="btn-logout" type="button" title="Sign out">
+              <i class="bi bi-box-arrow-right me-1"></i> Logout
+            </button>
+          </li>
+        </ul>
+      </div>
+      <button class="btn btn-sm btn-brand" id="btn-scan" aria-label="Start manual scan now">
+        <i class="bi bi-arrow-repeat me-1"></i><span class="label-full">Scan now</span><span class="label-short">Scan</span>
+      </button>
+    </div>
+  </div>
+
+  <div class="p-3 p-md-4">
+    <div class="status-quickbar" id="status-quickbar" aria-label="Quick video status views">
+      <button type="button" class="btn btn-sm btn-outline-secondary" data-status="">All videos</button>
+      <button type="button" class="btn btn-sm btn-outline-secondary" data-status="favorites">Favorites</button>
+      <button type="button" class="btn btn-sm btn-outline-secondary" data-status="archived">Archived</button>
+      <button type="button" class="btn btn-sm btn-outline-secondary" data-status="ignored">Ignored</button>
+    </div>
+
+    <div class="row g-3 mb-4">
+      <div class="col-6 col-md-3"><div class="stat-card"><div class="stat-label">Total videos</div><div class="stat-value" id="s-total">—</div></div></div>
+      <div class="col-6 col-md-3"><div class="stat-card"><div class="stat-label">New</div><div class="stat-value" style="color:var(--brand)" id="s-new">—</div></div></div>
+      <div class="col-6 col-md-3"><div class="stat-card"><div class="stat-label">Sites</div><div class="stat-value" id="s-sites">—</div></div></div>
+      <div class="col-6 col-md-3"><div class="stat-card"><div class="stat-label">Scans run</div><div class="stat-value" id="s-scans">—</div></div></div>
+    </div>
+
+    <div class="health-panel">
+      <div class="d-flex justify-content-between align-items-center mb-2">
+        <strong style="font-size:.86rem;">Scan health</strong>
+        <span class="health-badge" id="health-success-rate">--</span>
+      </div>
+      <div class="health-row mb-2">
+        <span id="health-avg-found">Avg found: --</span>
+        <span id="health-avg-added">Avg new: --</span>
+        <span id="health-window">Window: --</span>
+      </div>
+      <div id="health-anomalies" style="font-size:.78rem;color:#b45309;">No anomalies detected.</div>
+    </div>
+
+    <div class="mb-4">
+      <button class="btn btn-sm btn-link p-0 text-decoration-none" style="font-size:.78rem;color:var(--muted);"
+        data-bs-toggle="collapse" data-bs-target="#log-box">
+        <i class="bi bi-terminal me-1"></i>Show scan log
+      </button>
+      <div class="collapse mt-2" id="log-box">
+        <div id="scan-log"><p>— Ready —</p></div>
+      </div>
+    </div>
+
+    <div class="row g-3" id="video-grid"></div>
+    <div class="pagination-bar" id="pagination"></div>
+  </div>
+</div>
+<div id="toast-container" aria-live="polite" aria-atomic="true"></div>
+
+<!-- ── Add Modal ── -->
+<div class="modal fade" id="addModal" tabindex="-1">
+  <div class="modal-dialog modal-dialog-centered">
+    <div class="modal-content p-1">
+      <div class="modal-header border-0 pb-0">
+        <h5 class="modal-title" style="font-size:1rem;font-weight:700;">Add website</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body">
+        <label class="form-label" style="font-size:.85rem;">Website URL</label>
+        <input type="url" id="inp-url" class="form-control" placeholder="https://example.com/videos" />
+
+        <label class="form-label mt-3" style="font-size:.85rem;">Display name <span style="color:var(--muted)">(optional)</span></label>
+        <input type="text" id="inp-name" class="form-control" placeholder="e.g. Brazzers" />
+
+        <label class="form-label mt-3" style="font-size:.85rem;">Group / category <span style="color:var(--muted)">(optional)</span></label>
+        <input type="text" id="inp-group" class="form-control" placeholder="e.g. Streaming sites" />
+
+        <label class="form-label mt-3" style="font-size:.85rem;">Pages per scan</label>
+        <div class="pages-control">
+          <button type="button" id="add-pages-minus">−</button>
+          <span class="pages-val" id="add-pages-val">1</span>
+          <button type="button" id="add-pages-plus">+</button>
+          <span style="font-size:.8rem;color:var(--muted)">page(s) · max 20</span>
+        </div>
+
+        <label class="form-label mt-3" style="font-size:.85rem;">Auto-scan every</label>
+        <select id="inp-interval" class="form-select form-select-sm">
+          <option value="300">5 minutes</option>
+          <option value="600">10 minutes</option>
+          <option value="1800">30 minutes</option>
+          <option value="3600">1 hour</option>
+          <option value="21600">6 hours</option>
+          <option value="86400">24 hours</option>
+        </select>
+
+        <div id="add-error" class="text-danger mt-2" style="font-size:.82rem;display:none;"></div>
+      </div>
+      <div class="modal-footer border-0 pt-0">
+        <button class="btn btn-sm btn-secondary" data-bs-dismiss="modal">Cancel</button>
+        <button class="btn btn-sm btn-brand" id="btn-add">Add site</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ── Settings Modal ── -->
+<div class="modal fade" id="settingsModal" tabindex="-1">
+  <div class="modal-dialog modal-dialog-centered">
+    <div class="modal-content p-1">
+      <div class="modal-header border-0 pb-0">
+        <h5 class="modal-title" style="font-size:1rem;font-weight:700;"><i class="bi bi-gear me-1"></i>Site settings</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body">
+        <label class="form-label" style="font-size:.85rem;">Display name</label>
+        <input type="text" id="set-name" class="form-control" />
+
+        <label class="form-label mt-3" style="font-size:.85rem;">Group / category</label>
+        <input type="text" id="set-group" class="form-control" />
+
+        <label class="form-label mt-3" style="font-size:.85rem;">Pages per scan</label>
+        <div class="pages-control">
+          <button type="button" id="set-pages-minus">−</button>
+          <span class="pages-val" id="set-pages-val">1</span>
+          <button type="button" id="set-pages-plus">+</button>
+          <span style="font-size:.8rem;color:var(--muted)">page(s) · max 20</span>
+        </div>
+
+        <label class="form-label mt-3" style="font-size:.85rem;">Auto-scan every</label>
+        <select id="set-interval" class="form-select form-select-sm">
+          <option value="300">5 minutes</option>
+          <option value="600">10 minutes</option>
+          <option value="1800">30 minutes</option>
+          <option value="3600">1 hour</option>
+          <option value="21600">6 hours</option>
+          <option value="86400">24 hours</option>
+        </select>
+        <div class="form-text">Server scans automatically even when this browser tab is closed.</div>
+
+        <label class="form-label mt-3" style="font-size:.85rem;">Scan profile</label>
+        <select id="set-profile" class="form-select form-select-sm">
+          <option value="fast">Fast</option>
+          <option value="balanced">Balanced</option>
+          <option value="deep">Deep</option>
+        </select>
+
+        <label class="form-label mt-3" style="font-size:.85rem;">Include keywords</label>
+        <input type="text" id="set-rule-include" class="form-control" placeholder="comma separated" />
+
+        <label class="form-label mt-3" style="font-size:.85rem;">Exclude keywords</label>
+        <input type="text" id="set-rule-exclude" class="form-control" placeholder="comma separated" />
+
+        <label class="form-label mt-3" style="font-size:.85rem;">Minimum duration (seconds)</label>
+        <input type="number" id="set-rule-min-duration" min="0" class="form-control" placeholder="0" />
+
+        <div id="set-error" class="text-danger mt-2" style="font-size:.82rem;display:none;"></div>
+      </div>
+      <div class="modal-footer border-0 pt-0 justify-content-between">
+        <button class="btn btn-sm btn-outline-danger" id="btn-clear-rescan">
+          <i class="bi bi-arrow-clockwise me-1"></i>Clear &amp; Rescan
+        </button>
+        <div class="d-flex gap-2">
+          <button class="btn btn-sm btn-secondary" data-bs-dismiss="modal">Cancel</button>
+          <button class="btn btn-sm btn-brand" id="btn-settings-save">Save</button>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ── Notifications Modal ── -->
+<div class="modal fade" id="notificationsModal" tabindex="-1">
+  <div class="modal-dialog modal-dialog-centered">
+    <div class="modal-content p-1">
+      <div class="modal-header border-0 pb-0">
+        <h5 class="modal-title" style="font-size:1rem;font-weight:700;"><i class="bi bi-bell me-1"></i>Notification settings</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body">
+        <div class="form-check form-switch">
+          <input class="form-check-input" type="checkbox" id="notify-enabled">
+          <label class="form-check-label" for="notify-enabled">Enable webhook notifications for new videos</label>
+        </div>
+        <label class="form-label mt-3" style="font-size:.85rem;">Webhook URL</label>
+        <input type="url" id="notify-webhook" class="form-control" placeholder="https://..." />
+        <label class="form-label mt-3" style="font-size:.85rem;">Digest interval (minutes, 0=instant)</label>
+        <input type="number" id="notify-digest" min="0" class="form-control" value="0" />
+        <div id="notify-error" class="text-danger mt-2" style="font-size:.82rem;display:none;"></div>
+      </div>
+      <div class="modal-footer border-0 pt-0">
+        <button class="btn btn-sm btn-secondary" data-bs-dismiss="modal">Cancel</button>
+        <button class="btn btn-sm btn-brand" id="btn-notify-save">Save</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ── Inline Player Modal ── -->
+<div class="modal fade" id="playerModal" tabindex="-1">
+  <div class="modal-dialog modal-xl modal-dialog-centered">
+    <div class="modal-content p-1">
+      <div class="modal-header border-0 pb-0">
+        <h5 class="modal-title" id="player-title" style="font-size:1rem;font-weight:700;">Play video</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body">
+        <div id="player-embed-wrap" class="ratio ratio-16x9 d-none">
+          <iframe id="player-iframe" title="Video player" allow="autoplay; encrypted-media; picture-in-picture" allowfullscreen referrerpolicy="no-referrer"></iframe>
+        </div>
+        <div id="player-video-wrap" class="ratio ratio-16x9 d-none">
+          <video id="player-video" controls playsinline preload="metadata"></video>
+        </div>
+        <div id="player-fallback" class="text-center p-4 d-none" style="color:var(--muted);">
+          <i class="bi bi-exclamation-circle" style="font-size:1.4rem;"></i>
+          <p class="mb-0 mt-2" id="player-fallback-text">Inline playback is not available for this source.</p>
+        </div>
+      </div>
+      <div class="modal-footer border-0 pt-0">
+        <button class="btn btn-sm btn-outline-secondary" data-bs-dismiss="modal">Close</button>
+        <button class="btn btn-sm btn-brand" id="btn-player-open-external">
+          <i class="bi bi-box-arrow-up-right me-1"></i>Open in new tab
+        </button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ── Change Password Modal ── -->
+<div class="modal fade" id="passwordModal" tabindex="-1">
+  <div class="modal-dialog modal-dialog-centered">
+    <div class="modal-content p-1">
+      <div class="modal-header border-0 pb-0">
+        <h5 class="modal-title" style="font-size:1rem;font-weight:700;"><i class="bi bi-shield-lock me-1"></i>Change password</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body">
+        <label class="form-label" style="font-size:.85rem;">Current password</label>
+        <input type="password" id="pwd-current" class="form-control" autocomplete="current-password" />
+
+        <label class="form-label mt-3" style="font-size:.85rem;">New password</label>
+        <input type="password" id="pwd-new" class="form-control" autocomplete="new-password" />
+
+        <label class="form-label mt-3" style="font-size:.85rem;">Confirm new password</label>
+        <input type="password" id="pwd-confirm" class="form-control" autocomplete="new-password" />
+
+        <div id="pwd-error" class="text-danger mt-2" style="font-size:.82rem;display:none;"></div>
+      </div>
+      <div class="modal-footer border-0 pt-0">
+        <button class="btn btn-sm btn-secondary" data-bs-dismiss="modal">Cancel</button>
+        <button class="btn btn-sm btn-brand" id="btn-password-save">Update password</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+<script>
+const API = (() => {
+  const configured = window.localStorage.getItem('videowatch_api_base');
+  if (configured) {
+    try {
+      const url = new URL(configured, window.location.origin);
+      if (url.origin === window.location.origin) {
+        const path = (url.pathname || '').replace(/\/+$/, '');
+        if (path === '/api' || path.endsWith('/api')) {
+          return `${url.origin}${path}`;
+        }
+      }
+      window.localStorage.removeItem('videowatch_api_base');
+    } catch (_) {
+      window.localStorage.removeItem('videowatch_api_base');
+    }
+  }
+  return `${window.location.origin}/api`;
+})();
+const THUMB    = url => url ? `${API}/thumb?url=${encodeURIComponent(url)}` : null;
+const PLATFORM_LABELS = {
+  youtube: 'YouTube',
+  vimeo: 'Vimeo',
+  twitch: 'Twitch',
+  dailymotion: 'Dailymotion',
+  direct: 'Direct link',
+};
+const PLATFORM_ICONS = {
+  youtube: 'bi-youtube',
+  vimeo: 'bi-vimeo',
+  twitch: 'bi-twitch',
+  dailymotion: 'bi-play-btn',
+  direct: 'bi-play-circle',
+};
+
+// Surface JS errors into the scan log so issues are visible in the UI
+window.addEventListener('error', (ev) => {
+  try {
+    const el = document.getElementById('scan-log');
+    if (el) {
+      const p = document.createElement('p');
+      p.className = 'log-err';
+      p.textContent = `[JS ERROR] ${ev.message} — ${ev.filename}:${ev.lineno}`;
+      el.appendChild(p);
+      el.scrollTop = el.scrollHeight;
+    }
+  } catch(e) { console.error(e); }
+});
+
+window.addEventListener('unhandledrejection', (ev) => {
+  const message = ev.reason && ev.reason.message ? ev.reason.message : 'Unhandled promise rejection';
+  showToast(message, 'danger');
+});
+
+let activeSite    = null;
+let activeGroup   = null;
+let scanning      = false;
+let currentPage   = 1;
+const PER_PAGE    = 24;
+let searchTerm    = '';
+let platformFilt  = '';
+let statusFilt    = '';
+let releasedAfter = '';
+let durationMin   = '';
+let searchTimer   = null;
+let sseSource     = null;
+let wasDisconnected = false;
+let autoScanEnabled = true;
+
+function updateStatusQuickbar() {
+  const quickbar = document.getElementById('status-quickbar');
+  if (!quickbar) return;
+  quickbar.querySelectorAll('button[data-status]').forEach(btn => {
+    const selected = (btn.getAttribute('data-status') || '') === statusFilt;
+    btn.classList.toggle('btn-brand', selected);
+    btn.classList.toggle('btn-outline-secondary', !selected);
+  });
+}
+
+function setStatusFilter(nextStatus) {
+  statusFilt = nextStatus || '';
+  const select = document.getElementById('status-filter');
+  if (select) select.value = statusFilt;
+  updateStatusQuickbar();
+  currentPage = 1;
+  renderVideos();
+}
+
+function setSidebarOpen(open) {
+  const shouldOpen = !!open;
+  document.body.classList.toggle('sidebar-open', shouldOpen);
+}
+
+function initMobileSidebar() {
+  const toggleBtn = document.getElementById('mobile-menu-btn');
+  const closeBtn = document.getElementById('mobile-sidebar-close');
+  const overlay = document.getElementById('sidebar-overlay');
+
+  if (toggleBtn) {
+    toggleBtn.addEventListener('click', () => {
+      const isOpen = document.body.classList.contains('sidebar-open');
+      setSidebarOpen(!isOpen);
+    });
+  }
+  if (closeBtn) {
+    closeBtn.addEventListener('click', () => setSidebarOpen(false));
+  }
+  if (overlay) {
+    overlay.addEventListener('click', () => setSidebarOpen(false));
+  }
+
+  window.addEventListener('resize', () => {
+    if (window.innerWidth >= 992) {
+      setSidebarOpen(false);
+    }
+  });
+}
+
+function connectSSE() {
+  if (sseSource) return;
+  sseSource = new EventSource(`${API}/scan/stream`);
+
+  sseSource.onopen = () => {
+    if (wasDisconnected) {
+      window.location.reload();
+    }
+  };
+
+  sseSource.onmessage = e => {
+    const msg = e.data;
+    if (msg === 'connected' || msg.startsWith(':')) return;
+
+    const parts = msg.split('|');
+    const type  = parts[0];
+
+    if (type === 'SCAN_START' || type === 'AUTO_SCAN') {
+      const name = parts[2] || parts[1];
+      setScanningUI(true, `Scanning ${name}…`);
+      addLog(`Auto-scan started: ${name}`);
+      showToast(`Scan started: ${name}`, 'info');
+    } else if (type === 'PAGE') {
+      const [,, pgNum, pgTotal] = parts;
+      const pct = Math.round((pgNum / pgTotal) * 100);
+      setProgress(pct, `Page ${pgNum}/${pgTotal}`);
+    } else if (type === 'PAGE_DONE') {
+      addLog(`Page ${parts[2]}: ${parts[3]} video(s) found`, 'found');
+    } else if (type === 'PAGE_ERROR') {
+      addLog(`Page ${parts[2]} error: ${parts[3]}`, 'err');
+      showToast(`Page ${parts[2]} error`, 'danger');
+    } else if (type === 'SCAN_DONE') {
+      const [, siteId, found, added] = parts;
+      addLog(`Done — ${found} found, ${added} new`, 'found');
+      showToast(`Scan complete: ${added} new`, added > 0 ? 'success' : 'info');
+      setScanningUI(false);
+      setProgress(0);
+      renderAll();
+      refreshLog();
+    } else if (type === 'SCAN_ERROR') {
+      addLog(`Scan error: ${parts[2]}`, 'err');
+      showToast(`Scan failed: ${parts[2]}`, 'danger');
+      setScanningUI(false);
+      setProgress(0);
+    } else if (type === 'SCHEDULER_ERROR') {
+      addLog(`Scheduler error: ${parts[2]}`, 'err');
+      showToast('Scheduler error while scanning', 'danger');
+    }
+  };
+
+  sseSource.onerror = () => {
+    wasDisconnected = true;
+    sseSource.close();
+    sseSource = null;
+    setTimeout(connectSSE, 3000);
+  };
+}
+
+function setScanningUI(active, label = '') {
+  scanning = active;
+  const btn  = document.getElementById('btn-scan');
+  const freshBtn = document.getElementById('btn-fresh-scan');
+  const freshSideBtn = document.getElementById('btn-fresh-scan-side');
+  const dot  = document.getElementById('dot');
+  const stxt = document.getElementById('status-txt');
+  const lbl  = document.getElementById('scan-label');
+  const bar  = document.getElementById('progress-bar-wrap');
+
+  if (active) {
+    btn.disabled = true;
+    if (freshBtn) freshBtn.disabled = true;
+    if (freshSideBtn) freshSideBtn.disabled = true;
+    btn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span><span class="label-full">Scanning…</span><span class="label-short">Scanning</span>';
+    dot.className  = 'dot scanning';
+    stxt.textContent = 'Scanning…';
+    lbl.textContent  = label;
+    lbl.style.display = 'block';
+    bar.style.display = 'block';
+  } else {
+    btn.disabled = false;
+    if (freshBtn) freshBtn.disabled = false;
+    if (freshSideBtn) freshSideBtn.disabled = false;
+    btn.innerHTML = '<i class="bi bi-arrow-repeat me-1"></i><span class="label-full">Scan now</span><span class="label-short">Scan</span>';
+    dot.className  = 'dot';
+    stxt.textContent = 'Idle';
+    lbl.style.display = 'none';
+    bar.style.display = 'none';
+  }
+}
+
+function setProgress(pct, label = '') {
+  document.getElementById('progress-bar').style.width = pct + '%';
+  if (label) document.getElementById('scan-label').textContent = label;
+}
+
+// ── Utilities ───────────────────────────────────────────────────────────────
+function timeAgo(iso) {
+  if (!iso) return '—';
+  const d = Math.floor((Date.now() - new Date(iso)) / 1000);
+  if (d < 0) return 'just now';
+  if (d < 60)    return 'just now';
+  if (d < 3600) {
+    const mins = Math.floor(d / 60);
+    return `${mins} minute${mins === 1 ? '' : 's'} ago`;
+  }
+  if (d < 86400) {
+    const hours = Math.floor(d / 3600);
+    return `${hours} hour${hours === 1 ? '' : 's'} ago`;
+  }
+  const days = Math.floor(d / 86400);
+  if (days < 30) {
+    return `${days} day${days === 1 ? '' : 's'} ago`;
+  }
+  if (days < 365) {
+    const months = Math.floor(days / 30);
+    return `${months} month${months === 1 ? '' : 's'} ago`;
+  }
+  const years = Math.floor(days / 365);
+  return `${years} year${years === 1 ? '' : 's'} ago`;
+}
+
+function fmtDuration(secs) {
+  if (!secs) return null;
+  const h = Math.floor(secs / 3600);
+  const m = Math.floor((secs % 3600) / 60);
+  const s = secs % 60;
+  if (h > 0) return `${h}:${String(m).padStart(2,'0')}:${String(s).padStart(2,'0')}`;
+  return `${m}:${String(s).padStart(2,'0')}`;
+}
+
+function fmtDate(iso) {
+  if (!iso) return null;
+  try {
+    return new Date(iso).toLocaleDateString(undefined,
+      { year:'numeric', month:'short', day:'numeric' });
+  } catch (err) {
+    return null;
+  }
+}
+
+function fmtInterval(secs) {
+  if (secs < 3600) return `${secs/60|0}m`;
+  if (secs < 86400) return `${secs/3600|0}h`;
+  return `${secs/86400|0}d`;
+}
+
+function hostname(url) {
+  if (!url) return '';
+  try {
+    return new URL(url).hostname.replace('www.', '');
+  } catch (err) {
+    return url;
+  }
+}
+
+function normalizeVideoUrl(rawUrl) {
+  if (!rawUrl) return null;
+  let videoUrl = rawUrl.trim();
+  if (!videoUrl) return null;
+  if (videoUrl.startsWith('//')) {
+    videoUrl = 'https:' + videoUrl;
+  } else if (!/^https?:\/\//i.test(videoUrl)) {
+    videoUrl = 'https://' + videoUrl;
+  }
+  try {
+    return new URL(videoUrl, window.location.href).href;
+  } catch (err) {
+    return null;
+  }
+}
+
+function normalizeNavigablePageUrl(rawUrl) {
+  const url = normalizeVideoUrl(rawUrl);
+  if (!url) return null;
+  try {
+    const u = new URL(url);
+    const path = u.pathname || '/';
+    const hasFileExt = /\.[a-z0-9]{2,6}$/i.test(path);
+    if (path !== '/' && !path.endsWith('/') && !u.search && !u.hash && !hasFileExt) {
+      u.pathname = `${path}/`;
+    }
+    return u.href;
+  } catch (_) {
+    return url;
+  }
+}
+
+function openVideoInNewTab(video) {
+  // Prefer canonical page URL for external navigation (e.g., YouTube watch page).
+  const rawUrl = video.url || video.embed_url;
+  const videoUrl = normalizeNavigablePageUrl(rawUrl);
+  if (!videoUrl) {
+    showToast('Unable to open this video (invalid URL).', 'danger');
+    return;
+  }
+  const opened = window.open(videoUrl, '_blank', 'noopener,noreferrer');
+  if (!opened) {
+    showToast('Popup blocked by browser. Please allow popups for this site.', 'warning');
+  }
+}
+
+function isDirectPlayable(url) {
+  if (!url) return false;
+  return /\.(mp4|webm|ogg|mov)(\?|$)/i.test(url);
+}
+
+function isHlsUrl(url) {
+  if (!url) return false;
+  return /\.m3u8(\?|$)/i.test(url);
+}
+
+let hlsScriptPromise = null;
+function ensureHlsScript() {
+  if (window.Hls) return Promise.resolve(true);
+  if (hlsScriptPromise) return hlsScriptPromise;
+  hlsScriptPromise = new Promise((resolve) => {
+    const script = document.createElement('script');
+    script.src = 'https://cdn.jsdelivr.net/npm/hls.js@latest';
+    script.async = true;
+    script.onload = () => resolve(!!window.Hls);
+    script.onerror = () => resolve(false);
+    document.head.appendChild(script);
+  });
+  return hlsScriptPromise;
+}
+
+function resetInlinePlayer() {
+  const embedWrap = document.getElementById('player-embed-wrap');
+  const videoWrap = document.getElementById('player-video-wrap');
+  const fallback = document.getElementById('player-fallback');
+  const iframe = document.getElementById('player-iframe');
+  const video = document.getElementById('player-video');
+  const fallbackText = document.getElementById('player-fallback-text');
+  if (!embedWrap || !videoWrap || !fallback || !iframe || !video) return;
+
+  embedWrap.classList.add('d-none');
+  videoWrap.classList.add('d-none');
+  fallback.classList.add('d-none');
+  iframe.src = 'about:blank';
+  video.pause();
+  video.removeAttribute('src');
+  video.load();
+  if (video._hlsInstance) {
+    try { video._hlsInstance.destroy(); } catch (_) {}
+    video._hlsInstance = null;
+  }
+  if (fallbackText) {
+    fallbackText.textContent = 'Inline playback is not available for this source.';
+  }
+}
+
+function setPlayerFallback(message) {
+  const fallback = document.getElementById('player-fallback');
+  const text = document.getElementById('player-fallback-text');
+  if (text) text.textContent = message || 'Inline playback is not available for this source.';
+  if (fallback) fallback.classList.remove('d-none');
+}
+
+async function tryPlayInVideoTag(url) {
+  const videoWrap = document.getElementById('player-video-wrap');
+  const media = document.getElementById('player-video');
+  if (!videoWrap || !media || !url) return false;
+
+  if (isDirectPlayable(url)) {
+    videoWrap.classList.remove('d-none');
+    media.src = url;
+    media.load();
+    media.play().catch(() => {});
+    return true;
+  }
+
+  if (isHlsUrl(url)) {
+    videoWrap.classList.remove('d-none');
+    if (media.canPlayType('application/vnd.apple.mpegurl')) {
+      media.src = url;
+      media.load();
+      media.play().catch(() => {});
+      return true;
+    }
+
+    const ok = await ensureHlsScript();
+    if (ok && window.Hls && window.Hls.isSupported()) {
+      const hls = new window.Hls();
+      media._hlsInstance = hls;
+      hls.loadSource(url);
+      hls.attachMedia(media);
+      media.play().catch(() => {});
+      return true;
+    }
+    return false;
+  }
+
+  return false;
+}
+
+async function openVideoInline(video) {
+  const modalEl = document.getElementById('playerModal');
+  const titleEl = document.getElementById('player-title');
+  const btnExternal = document.getElementById('btn-player-open-external');
+  const embedWrap = document.getElementById('player-embed-wrap');
+  const iframe = document.getElementById('player-iframe');
+  if (!modalEl || !btnExternal || !embedWrap || !iframe) {
+    openVideoInNewTab(video);
+    return;
+  }
+
+  resetInlinePlayer();
+  if (titleEl) titleEl.textContent = video.title || 'Play video';
+  btnExternal.onclick = () => openVideoInNewTab(video);
+
+  const embedUrl = normalizeVideoUrl(video.embed_url || '');
+  const directUrl = normalizeVideoUrl(video.url || '');
+  const platform = (video.platform || '').toLowerCase();
+
+  // YouTube often blocks some embedded playback contexts (Error 153).
+  // Open directly on YouTube in a new tab instead of failing inline.
+  if (platform === 'youtube') {
+    showToast('Opening YouTube in a new tab for reliable playback.', 'info');
+    openVideoInNewTab(video);
+    return;
+  }
+
+  new bootstrap.Modal(modalEl).show();
+
+  if (embedUrl && ['vimeo', 'twitch', 'dailymotion'].includes(platform)) {
+    embedWrap.classList.remove('d-none');
+    iframe.src = embedUrl;
+    return;
+  }
+
+  if (directUrl && await tryPlayInVideoTag(directUrl)) {
+    return;
+  }
+
+  try {
+    const resolvableUrl = normalizeNavigablePageUrl(video.url || video.embed_url || '');
+    const resolved = await api(`/video-resolve?url=${encodeURIComponent(resolvableUrl || '')}`);
+    const resolvedUrl = normalizeVideoUrl(resolved && resolved.resolved_url ? resolved.resolved_url : '');
+    if (resolvedUrl && await tryPlayInVideoTag(resolvedUrl)) {
+      return;
+    }
+    setPlayerFallback((resolved && resolved.reason)
+      ? `Inline playback unavailable: ${resolved.reason}.`
+      : 'Inline playback is not available for this source.');
+  } catch (_) {
+    setPlayerFallback('Inline playback unavailable for this source. Use Open in new tab.');
+  }
+}
+
+function addLog(msg, type = '') {
+  const el = document.getElementById('scan-log');
+  const p  = document.createElement('p');
+  if (type === 'found') p.className = 'log-found';
+  else if (type === 'err') p.className = 'log-err';
+  else if (type === 'warn') p.className = 'log-warn';
+  p.textContent = `[${new Date().toLocaleTimeString()}] ${msg}`;
+  el.appendChild(p);
+  el.scrollTop = el.scrollHeight;
+}
+
+async function patchVideoState(videoId, patch) {
+  await api(`/videos/${encodeURIComponent(videoId)}/state`, {
+    method: 'PATCH',
+    body: JSON.stringify(patch),
+  });
+}
+
+function summarizeDownloadError(message) {
+  const raw = (message || 'Download failed').trim();
+  const primary = raw.split(/\.\s+(?=final=|http=|content-type=|html-candidates=|browser=|browser-error=)/, 1)[0].trim();
+  return primary || 'Download failed';
+}
+
+async function handleVideoDownload(video) {
+  if (!video || !video.id) return;
+  if (video.local_file) {
+    window.open(`/api/video/${encodeURIComponent(video.id)}`, '_blank', 'noopener');
+    return;
+  }
+
+  try {
+    showToast('Resolving downloadable file…', 'info');
+    const res = await api(`/videos/${encodeURIComponent(video.id)}/download`, { method: 'POST' });
+    showToast(res.cached ? 'Opened existing downloaded file' : 'Video downloaded to server', 'success');
+    await renderVideos();
+    if (res.local_url) {
+      window.open(res.local_url, '_blank', 'noopener');
+    }
+  } catch (e) {
+    const fullMessage = e.message || 'Download failed';
+    addLog(`Download failed for ${video.title || video.id}: ${fullMessage}`, 'err');
+    showToast(summarizeDownloadError(fullMessage), 'danger');
+  }
+}
+
+function showToast(message, type = 'info') {
+  const container = document.getElementById('toast-container');
+  if (!container) return;
+  const icons = { info:'bi-info-circle', success:'bi-check-circle', warning:'bi-exclamation-triangle', danger:'bi-x-circle' };
+  const note = document.createElement('div');
+  note.className = `toast-notice ${type}`;
+  note.innerHTML = `<i class="bi ${icons[type] || icons.info}"></i><div>${message}</div>`;
+  container.appendChild(note);
+  setTimeout(() => {
+    note.style.animation = 'toast-out .2s ease-in forwards';
+    note.addEventListener('animationend', () => note.remove());
+  }, 4200);
+}
+
+function isVideoMarkedNew(video) {
+  if (!video) return false;
+  if (video.is_new === true) return true;
+  return Number(video.is_new) === 1;
+}
+
+// ── API ──────────────────────────────────────────────────────────────────────
+async function api(path, opts = {}) {
+  const method = (opts.method || 'GET').toUpperCase();
+  const url = method === 'GET'
+    ? `${API}${path}${path.includes('?') ? '&' : '?'}_=${Date.now()}`
+    : `${API}${path}`;
+
+  const r = await fetch(url, {
+    credentials: 'same-origin',
+    cache: 'no-store',
+    headers: {'Content-Type':'application/json'},
+    ...opts,
+  });
+  if (r.status === 401) {
+    window.location.href = '/';
+    throw new Error('Authentication required');
+  }
+  if (!r.ok) {
+    const err = await r.json().catch(() => ({ detail: r.statusText }));
+    throw new Error(err.detail || r.statusText);
+  }
+  return r.json();
+}
+
+// ── Sidebar ──────────────────────────────────────────────────────────────────
+async function renderSidebar() {
+  const sites = await api('/sites');
+  const el    = document.getElementById('site-items');
+  if (!sites.length) {
+    el.innerHTML = `<div class="px-3 py-2" style="font-size:.8rem;color:rgba(255,255,255,.22);">No sites yet</div>`;
+    document.getElementById('next-scan-txt').textContent = autoScanEnabled ? '' : 'auto paused';
+    return;
+  }
+
+  const totalNew = sites.reduce((sum, site) => sum + (site.new_count || 0), 0);
+  el.innerHTML = '';
+
+  const allItem = document.createElement('div');
+  allItem.className = `site-item${activeSite === null ? ' active' : ''}`;
+  allItem.title = 'Show videos from all monitored sites';
+  allItem.onclick = () => filterSite(null);
+  allItem.innerHTML = `
+      <div class="site-favicon">A</div>
+      <div class="site-name">
+        <div>All sites</div>
+        <div class="site-meta">${sites.length} site${sites.length !== 1 ? 's' : ''} · ${totalNew} new</div>
+      </div>`;
+  if (totalNew) {
+    const badge = document.createElement('span');
+    badge.className = 'badge-new-count';
+    badge.textContent = totalNew;
+    allItem.appendChild(badge);
+  }
+  el.appendChild(allItem);
+
+  const groups = sites.reduce((map, s) => {
+    const group = s.group_name?.trim() || '';
+    if (!map[group]) map[group] = [];
+    map[group].push(s);
+    return map;
+  }, {});
+  const sortedGroups = Object.keys(groups).sort((a, b) => {
+    if (!a) return 1;
+    if (!b) return -1;
+    return a.localeCompare(b, undefined, { sensitivity: 'base' });
+  });
+
+  sortedGroups.forEach(groupName => {
+    if (groupName) {
+      const header = document.createElement('div');
+      header.className = 'site-group-label';
+      header.textContent = groupName;
+      el.appendChild(header);
+    }
+
+    groups[groupName].forEach(s => {
+      const isErr  = !!s.has_error;
+      const siteHost = hostname(s.url);
+      const letter = siteHost && siteHost[0] ? siteHost[0].toUpperCase() : '?';
+      const maxP   = s.max_pages || 1;
+      const intv   = fmtInterval(s.scan_interval || 300);
+      const next   = s.next_scan_in > 0 ? `next in ${fmtInterval(s.next_scan_in)}` : 'due now';
+      const hasNeverScanned = !s.last_scan && !s.has_scan_history;
+      const statusText = (s.total_count === 0 && hasNeverScanned)
+        ? 'not scanned yet'
+        : `${s.total_count} video${s.total_count!==1?'s':''} · ${maxP}p · every ${intv} · ${next}`;
+
+      const item = document.createElement('div');
+      item.className = `site-item${activeSite === s.id ? ' active' : ''}`;
+      item.title     = isErr ? 'Last scan failed — check log' : '';
+      item.onclick   = () => filterSite(s.id);
+
+      const fav = document.createElement('div');
+      fav.className = `site-favicon${isErr ? ' has-error' : ''}`;
+      fav.innerHTML  = isErr ? '<i class="bi bi-exclamation-triangle-fill"></i>' : letter;
+
+      const nameDiv = document.createElement('div');
+      nameDiv.className = `site-name${isErr ? ' has-error' : ''}`;
+      nameDiv.innerHTML = `
+        <div>${s.name || hostname(s.url)}</div>
+        <div class="site-meta">${s.group_name ? `${s.group_name} · ` : ''}${statusText}</div>`;
+
+      const actions = document.createElement('div');
+      actions.className = 'site-actions';
+      actions.innerHTML = `
+        <button class="btn-icon" title="Settings"><i class="bi bi-gear"></i></button>
+        <button class="btn-icon danger" title="Remove"><i class="bi bi-trash"></i></button>`;
+      actions.children[0].onclick = e => { e.stopPropagation(); openSettings(s); };
+      actions.children[1].onclick = e => removeSite(e, s.id);
+
+      if (s.new_count) {
+        const badge = document.createElement('span');
+        badge.className   = 'badge-new-count';
+        badge.textContent = s.new_count;
+        item.appendChild(fav);
+        item.appendChild(nameDiv);
+        item.appendChild(badge);
+      } else {
+        item.appendChild(fav);
+        item.appendChild(nameDiv);
+      }
+      item.appendChild(actions);
+      el.appendChild(item);
+    });
+  });
+
+  // Show countdown to soonest upcoming scan
+  const due = sites.filter(s => s.next_scan_in > 0);
+  if (due.length) {
+    const soonest = Math.min(...due.map(s => s.next_scan_in));
+    document.getElementById('next-scan-txt').textContent = autoScanEnabled ? `next in ${fmtInterval(soonest)}` : 'auto paused';
+  } else {
+    document.getElementById('next-scan-txt').textContent = autoScanEnabled ? 'scan due' : 'auto paused';
+  }
+}
+
+async function renderAutomationState() {
+  const state = await api('/scan/automation');
+  autoScanEnabled = !!state.enabled;
+  const btn = document.getElementById('btn-auto-scan-toggle');
+  if (btn) {
+    if (autoScanEnabled) {
+      btn.innerHTML = '<i class="bi bi-pause-circle me-1"></i> Pause auto-scan';
+      btn.classList.remove('btn-outline-warning');
+      btn.classList.add('btn-outline-light');
+    } else {
+      btn.innerHTML = '<i class="bi bi-play-circle me-1"></i> Resume auto-scan';
+      btn.classList.remove('btn-outline-light');
+      btn.classList.add('btn-outline-warning');
+    }
+  }
+}
+
+async function renderDbPath() {
+  try {
+    const health = await api('/health');
+    const el = document.getElementById('db-path-txt');
+    if (!el) return;
+    const path = health.db_path || '';
+    const leaf = path.split(/[/\\]/).pop() || path;
+    el.textContent = `DB: ${leaf}`;
+    el.title = path || 'Active DB file';
+  } catch (_) {
+    const el = document.getElementById('db-path-txt');
+    if (el) el.textContent = 'DB: unavailable';
+  }
+}
+
+// ── Video grid ───────────────────────────────────────────────────────────────
+async function renderVideos() {
+  const params = new URLSearchParams();
+  if (activeSite) params.set('site_id', activeSite);
+  if (activeGroup) params.set('group_name', activeGroup === '__UNGROUPED__' ? '' : activeGroup);
+  if (searchTerm) params.set('search', searchTerm);
+  if (releasedAfter) params.set('released_after', releasedAfter);
+  if (durationMin) params.set('duration_min', durationMin);
+  if (platformFilt) params.set('platform', platformFilt);
+  if (statusFilt === 'favorites') params.set('favorites_only', 'true');
+  if (statusFilt === 'archived') params.set('archived_only', 'true');
+  if (statusFilt === 'ignored') params.set('ignored_only', 'true');
+  params.set('page', String(currentPage));
+  params.set('per_page', String(PER_PAGE));
+
+  const grid  = document.getElementById('video-grid');
+  grid.innerHTML = Array.from({ length: 6 }).map(() => `
+    <div class="col-12 col-sm-6 col-lg-4">
+      <div class="skeleton-card" aria-hidden="true">
+        <div class="skeleton-thumb"></div>
+        <div class="skeleton-body">
+          <div class="skeleton-line"></div>
+          <div class="skeleton-line mid"></div>
+          <div class="skeleton-line short"></div>
+        </div>
+      </div>
+    </div>
+  `).join('');
+
+  const data = await api(`/videos?${params.toString()}`);
+  const videos = data.videos || [];
+  const total_pages = data.total_pages || 1;
+  const total = data.total || 0;
+
+  const firstVideoUrl = videos[0] ? videos[0].url : '';
+  document.getElementById('topbar-title').textContent =
+    activeSite ? (hostname(firstVideoUrl) || 'Site videos')
+    : activeGroup ? `Group: ${activeGroup === '__UNGROUPED__' ? 'Ungrouped' : activeGroup}`
+    : 'All videos';
+
+  const icons = { youtube:'bi-youtube', vimeo:'bi-vimeo', twitch:'bi-twitch',
+                  direct:'bi-play-circle', dailymotion:'bi-play-btn' };
+
+  if (!videos.length) {
+    grid.innerHTML = `
+      <div class="col-12">
+        <div class="empty-state">
+          <i class="bi bi-play-btn"></i>
+          <p class="mb-1 fw-semibold">No videos found</p>
+          <p style="font-size:.875rem;">${searchTerm || platformFilt
+            ? 'Try a different search or filter.'
+            : 'Click <strong>Scan now</strong> to fetch videos.'}</p>
+        </div>
+      </div>`;
+    document.getElementById('pagination').innerHTML = '';
+    return;
+  }
+
+  grid.innerHTML = '';
+  videos.forEach(v => {
+    const col = document.createElement('div');
+    col.className = 'col-12 col-sm-6 col-lg-4';
+
+    // Thumb
+    const thumbWrap = document.createElement('div');
+    thumbWrap.className = 'thumb-wrap';
+
+    const thumbUrl = THUMB(v.thumb);
+    if (thumbUrl) {
+      const img   = document.createElement('img');
+      img.src     = thumbUrl;
+      img.loading = 'lazy';
+      img.alt     = '';
+      img.addEventListener('error', () => {
+        thumbWrap.innerHTML = '<div class="thumb-placeholder"><i class="bi bi-play-circle"></i></div>';
+      });
+      thumbWrap.appendChild(img);
+    } else {
+      thumbWrap.innerHTML = '<div class="thumb-placeholder"><i class="bi bi-play-circle"></i></div>';
+    }
+
+    const isNew = isVideoMarkedNew(v);
+    if (isNew) {
+      const b = document.createElement('span');
+      b.className = 'badge-new-pill'; b.textContent = 'New';
+      thumbWrap.appendChild(b);
+    }
+    if (v.platform && v.platform !== 'direct') {
+      const pill = document.createElement('span');
+      pill.className = 'platform-pill';
+      pill.textContent = PLATFORM_LABELS[v.platform] || v.platform;
+      thumbWrap.appendChild(pill);
+    }
+
+    const overlay = document.createElement('div');
+    overlay.className = 'play-overlay';
+    overlay.innerHTML = '<i class="bi bi-play-circle-fill"></i>'; // play icon
+    // Open directly in a new tab for the primary card action.
+    overlay.addEventListener('click', () => openVideoInNewTab(v));
+    thumbWrap.appendChild(overlay);
+
+    // Body
+    const body     = document.createElement('div');
+    body.className = 'v-body';
+
+    const titleEl  = document.createElement('div');
+    titleEl.className   = 'v-title';
+    titleEl.textContent = v.title || 'Untitled video';
+    body.appendChild(titleEl);
+
+    // Release date — shown whenever available
+    const dateStr = fmtDate(v.released_at);
+    if (dateStr) {
+      const dateEl = document.createElement('div');
+      dateEl.className = 'v-date';
+      const calIcon = document.createElement('i');
+      calIcon.className = 'bi bi-calendar3 me-1';
+      dateEl.appendChild(calIcon);
+      dateEl.appendChild(document.createTextNode(dateStr));
+      body.appendChild(dateEl);
+    }
+
+    // Cast — only shown when the site provides it
+    if (v.cast_names) {
+      const castEl = document.createElement('div');
+      castEl.className = 'v-cast';
+      const castIcon = document.createElement('i');
+      castIcon.className = 'bi bi-person-fill me-1';
+      castEl.appendChild(castIcon);
+      castEl.appendChild(document.createTextNode(v.cast_names));
+      body.appendChild(castEl);
+    }
+
+    // Meta row: platform icon · site · · found ago · duration (if any) · external link
+    const meta = document.createElement('div');
+    meta.className = 'v-meta';
+
+    const ico = document.createElement('i');
+    ico.className = `bi ${icons[v.platform] || 'bi-play-circle'}`;
+    ico.style.fontSize = '11px';
+    meta.appendChild(ico);
+
+    const site = document.createElement('span');
+    site.textContent = hostname(v.url);
+    meta.appendChild(site);
+
+    const dot = document.createElement('span');
+    dot.textContent = '·';
+    meta.appendChild(dot);
+
+    const when = document.createElement('span');
+    if (v.released_at) {
+      when.textContent = `released ${timeAgo(v.released_at)}`;
+    } else {
+      when.textContent = `found ${timeAgo(v.found_at)}`;
+    }
+    meta.appendChild(when);
+
+    // Duration badge — only shown when available
+    const dur = fmtDuration(v.duration);
+    if (dur) {
+      const durDot = document.createElement('span');
+      durDot.textContent = '·';
+      meta.appendChild(durDot);
+      const durEl = document.createElement('span');
+      durEl.className   = 'v-duration';
+      durEl.innerHTML   = `<i class="bi bi-clock me-1" style="font-size:10px"></i>${dur}`;
+      meta.appendChild(durEl);
+    }
+
+    const extLink = document.createElement('a');
+    extLink.href = normalizeNavigablePageUrl(v.url) || normalizeVideoUrl(v.url) || '#';
+    extLink.target = '_blank'; extLink.rel = 'noopener';
+    extLink.className = 'ms-auto';
+    extLink.innerHTML = '<i class="bi bi-box-arrow-up-right"></i>';
+    meta.appendChild(extLink);
+
+    const dlBtn = document.createElement('button');
+    dlBtn.className = `btn-icon${v.local_file ? ' is-active' : ''}`;
+    dlBtn.title = v.local_file ? 'Open downloaded file' : 'Download direct file to server';
+    dlBtn.innerHTML = `<i class="bi ${v.local_file ? 'bi-download' : 'bi-download'}"></i>`;
+    dlBtn.onclick = async (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      await handleVideoDownload(v);
+    };
+    meta.appendChild(dlBtn);
+
+    const favBtn = document.createElement('button');
+    favBtn.className = `btn-icon${Number(v.is_favorite) ? ' is-active' : ''}`;
+    favBtn.title = 'Toggle favorite';
+    favBtn.innerHTML = `<i class="bi ${Number(v.is_favorite) ? 'bi-star-fill' : 'bi-star'}"></i>`;
+    favBtn.onclick = async (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      await patchVideoState(v.id, { is_favorite: !Number(v.is_favorite) });
+      await renderVideos();
+    };
+    meta.appendChild(favBtn);
+
+    const archBtn = document.createElement('button');
+    archBtn.className = 'btn-icon';
+    archBtn.title = Number(v.is_archived) ? 'Unarchive' : 'Archive';
+    archBtn.innerHTML = `<i class="bi ${Number(v.is_archived) ? 'bi-inbox-fill' : 'bi-inbox'}"></i>`;
+    archBtn.onclick = async (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      await patchVideoState(v.id, { is_archived: !Number(v.is_archived), is_ignored: false });
+      await renderVideos();
+    };
+    meta.appendChild(archBtn);
+
+    const ignBtn = document.createElement('button');
+    ignBtn.className = 'btn-icon';
+    ignBtn.title = Number(v.is_ignored) ? 'Unignore' : 'Ignore';
+    ignBtn.innerHTML = `<i class="bi ${Number(v.is_ignored) ? 'bi-eye-slash-fill' : 'bi-eye-slash'}"></i>`;
+    ignBtn.onclick = async (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      await patchVideoState(v.id, { is_ignored: !Number(v.is_ignored), is_archived: false });
+      await renderVideos();
+    };
+    meta.appendChild(ignBtn);
+
+    body.appendChild(meta);
+
+    const card = document.createElement('div');
+    card.className = `video-card${isNew ? ' is-new' : ''}`;
+    card.appendChild(thumbWrap);
+    card.appendChild(body);
+
+    col.appendChild(card);
+    grid.appendChild(col);
+  });
+
+  renderPagination(currentPage, total_pages, total);
+}
+
+function renderPagination(page, totalPages, total) {
+  const bar = document.getElementById('pagination');
+  if (totalPages <= 1) { bar.innerHTML = ''; return; }
+
+  const start = (page - 1) * PER_PAGE + 1;
+  const end   = Math.min(page * PER_PAGE, total);
+  const nums = totalPages <= 7
+    ? Array.from({length: totalPages}, (_, i) => i + 1)
+    : [...new Set([1, totalPages, page, page-1, page+1, page-2, page+2]
+        .filter(n => n >= 1 && n <= totalPages))].sort((a, b) => a - b);
+
+  bar.innerHTML = '';
+
+  const prev = document.createElement('button');
+  prev.className = 'page-btn'; prev.disabled = page === 1;
+  prev.innerHTML = '<i class="bi bi-chevron-left"></i>';
+  prev.onclick   = () => goPage(page - 1);
+  bar.appendChild(prev);
+
+  let last = 0;
+  nums.forEach(n => {
+    if (n - last > 1) {
+      const ell = document.createElement('span');
+      ell.className = 'page-info'; ell.textContent = '…';
+      bar.appendChild(ell);
+    }
+    const btn = document.createElement('button');
+    btn.className   = `page-btn${n === page ? ' active' : ''}`;
+    btn.textContent = n;
+    btn.onclick     = () => goPage(n);
+    bar.appendChild(btn);
+    last = n;
+  });
+
+  const next = document.createElement('button');
+  next.className = 'page-btn'; next.disabled = page === totalPages;
+  next.innerHTML = '<i class="bi bi-chevron-right"></i>';
+  next.onclick   = () => goPage(page + 1);
+  bar.appendChild(next);
+
+  const info = document.createElement('span');
+  info.className   = 'page-info';
+  info.textContent = `${start}–${end} of ${total}`;
+  bar.appendChild(info);
+}
+
+function goPage(n) {
+  currentPage = n;
+  renderVideos();
+  window.scrollTo({ top: 0, behavior: 'smooth' });
+}
+
+// ── Stats ───────────────────────────────────────────────────────────────────
+async function renderStats() {
+  const s = await api('/stats');
+  document.getElementById('s-total').textContent  = s.total;
+  document.getElementById('s-new').textContent    = s.new;
+  document.getElementById('s-sites').textContent  = s.sites;
+  document.getElementById('s-scans').textContent  = s.scans;
+  document.getElementById('last-scan').textContent = timeAgo(s.last_scan);
+
+  // Populate group filter from monitored sites
+  const siteSel = document.getElementById('site-filter');
+  const curGroup = siteSel.value;
+  siteSel.innerHTML = '<option value="">All groups</option>';
+  const groups = {};
+  (s.site_list || []).forEach(site => {
+    const group = site.group_name?.trim() || '';
+    groups[group] = true;
+  });
+  Object.keys(groups).sort((a,b) => {
+    if (!a) return 1;
+    if (!b) return -1;
+    return a.localeCompare(b, undefined, { sensitivity: 'base' });
+  }).forEach(group => {
+    const o = document.createElement('option');
+    o.value = group || '__UNGROUPED__';
+    o.textContent = group || 'Ungrouped';
+    siteSel.appendChild(o);
+  });
+  siteSel.value = curGroup;
+
+  // Populate platform filter with real counts
+  const platSel = document.getElementById('platform-filter');
+  const curPlat = platSel.value;
+  platSel.innerHTML = '<option value="">All types</option>';
+  s.platforms.forEach(p => {
+    const o = document.createElement('option');
+    o.value = p.platform;
+    const label = PLATFORM_LABELS[p.platform] || p.platform;
+    o.textContent = `${label} (${p.count})`;
+    platSel.appendChild(o);
+  });
+  platSel.value = curPlat;
+}
+
+async function renderScanHealth() {
+  const h = await api('/scan/health?limit=20');
+  const success = Math.round((h.overall.success_rate || 0) * 100);
+  const avgFound = Number(h.overall.avg_found || 0).toFixed(1);
+  const avgAdded = Number(h.overall.avg_added || 0).toFixed(1);
+
+  const sr = document.getElementById('health-success-rate');
+  const af = document.getElementById('health-avg-found');
+  const aa = document.getElementById('health-avg-added');
+  const win = document.getElementById('health-window');
+  const an = document.getElementById('health-anomalies');
+  if (!sr || !af || !aa || !win || !an) return;
+
+  sr.textContent = `Success ${success}%`;
+  af.textContent = `Avg found: ${avgFound}`;
+  aa.textContent = `Avg new: ${avgAdded}`;
+  win.textContent = `Window: ${h.window}`;
+  if (h.anomalies && h.anomalies.length) {
+    an.textContent = h.anomalies.slice(0, 3).map(a => a.detail).join(' | ');
+  } else {
+    an.textContent = 'No anomalies detected.';
+  }
+}
+
+async function renderAll() {
+  // Render videos first so the main grid remains usable even if side/status calls fail.
+  await renderVideos();
+
+  const [autoState, statsState, healthState] = await Promise.allSettled([
+    renderAutomationState(),
+    renderStats(),
+    renderScanHealth(),
+  ]);
+  if (autoState.status === 'rejected') {
+    console.warn('Automation state load failed:', autoState.reason);
+  }
+  if (statsState.status === 'rejected') {
+    console.warn('Stats load failed:', statsState.reason);
+  }
+  if (healthState.status === 'rejected') {
+    console.warn('Health load failed:', healthState.reason);
+  }
+
+  try {
+    await renderSidebar();
+  } catch (e) {
+    console.warn('Sidebar render failed:', e);
+  }
+
+  try {
+    await renderDbPath();
+  } catch (e) {
+    console.warn('DB path render failed:', e);
+  }
+}
+
+// ── Scan log ─────────────────────────────────────────────────────────────────
+async function refreshLog() {
+  const rows = await api('/scan/status');
+  const el   = document.getElementById('scan-log');
+  el.innerHTML = '';
+  if (!rows.length) { el.innerHTML = '<p>— No scans yet —</p>'; return; }
+  [...rows].reverse().forEach(r => {
+    const p   = document.createElement('p');
+    const err = r.message && r.message.startsWith ? r.message.startsWith('ERROR') : false;
+    p.className   = err ? 'log-err' : r.added > 0 ? 'log-found' : '';
+    const pre     = r.site_name ? `[${r.site_name}] ` : '';
+    p.textContent = `[${new Date(r.scanned_at).toLocaleTimeString()}] ${pre}${r.message}`;
+    el.appendChild(p);
+  });
+  el.scrollTop = el.scrollHeight;
+}
+
+// ── Actions ──────────────────────────────────────────────────────────────────
+function filterSite(id) {
+  activeSite  = activeSite === id ? null : id;
+  activeGroup = null;
+  currentPage = 1;
+  setSidebarOpen(false);
+  // Keep dropdown in sync with sidebar
+  const dd = document.getElementById('site-filter');
+  if (dd) dd.value = '';
+  renderAll();
+}
+
+async function removeSite(e, id) {
+  e.stopPropagation();
+  if (!confirm('Remove this site and all its videos?')) return;
+  await api(`/sites/${id}`, { method: 'DELETE' });
+  if (activeSite === id) activeSite = null;
+  addLog('Site removed.', 'warn');
+  currentPage = 1;
+  renderAll();
+}
+
+// ── Settings modal ───────────────────────────────────────────────────────────
+let settingsSiteId = null;
+let setPagesVal    = 1;
+
+function openSettings(s) {
+  settingsSiteId = s.id;
+  setPagesVal    = s.max_pages || 1;
+  document.getElementById('set-name').value = s.name || '';
+  document.getElementById('set-group').value = s.group_name || '';
+  document.getElementById('set-pages-val').textContent = setPagesVal;
+  document.getElementById('set-interval').value = String(s.scan_interval || 300);
+  document.getElementById('set-profile').value = s.scan_profile || 'balanced';
+  document.getElementById('set-rule-include').value = s.rule_include_keywords || '';
+  document.getElementById('set-rule-exclude').value = s.rule_exclude_keywords || '';
+  document.getElementById('set-rule-min-duration').value = Number(s.rule_min_duration || 0);
+  document.getElementById('set-error').style.display = 'none';
+  new bootstrap.Modal(document.getElementById('settingsModal')).show();
+}
+
+document.getElementById('set-pages-minus').onclick = () => {
+  if (setPagesVal > 1) document.getElementById('set-pages-val').textContent = --setPagesVal;
+};
+document.getElementById('set-pages-plus').onclick = () => {
+  if (setPagesVal < 20) document.getElementById('set-pages-val').textContent = ++setPagesVal;
+};
+
+document.getElementById('btn-settings-save').onclick = async () => {
+  const errEl = document.getElementById('set-error');
+  errEl.style.display = 'none';
+  try {
+    await api(`/sites/${settingsSiteId}`, {
+      method: 'PATCH',
+      body: JSON.stringify({
+        name:          document.getElementById('set-name').value.trim(),
+        group_name:    document.getElementById('set-group').value.trim(),
+        max_pages:     setPagesVal,
+        scan_interval: parseInt(document.getElementById('set-interval').value, 10),
+        scan_profile: document.getElementById('set-profile').value,
+        rule_include_keywords: document.getElementById('set-rule-include').value.trim(),
+        rule_exclude_keywords: document.getElementById('set-rule-exclude').value.trim(),
+        rule_min_duration: parseInt(document.getElementById('set-rule-min-duration').value || '0', 10),
+      }),
+    });
+    bootstrap.Modal.getInstance(document.getElementById('settingsModal')).hide();
+    addLog('Settings saved.', 'found');
+    showToast('Settings saved', 'success');
+    renderAll();
+  } catch (e) {
+    errEl.textContent = e.message;
+    errEl.style.display = 'block';
+    showToast(e.message, 'danger');
+  }
+};
+
+document.getElementById('btn-clear-rescan').onclick = async () => {
+  if (!confirm('This will delete all stored videos for this site and trigger a fresh scan. Continue?')) return;
+  const modal = bootstrap.Modal.getInstance(document.getElementById('settingsModal'));
+  modal.hide();
+  try {
+    await api(`/videos?site_id=${settingsSiteId}`, { method: 'DELETE' });
+    addLog('Videos cleared — triggering fresh scan…', 'warn');
+    showToast('Site cleared — rescanning now', 'warning');
+    await renderAll();
+    await api(`/scan/${settingsSiteId}`, { method: 'POST' });
+    setScanningUI(true, 'Rescanning…');
+  } catch (e) {
+    addLog(`Clear error: ${e.message}`, 'err');
+    showToast(`Scan error: ${e.message}`, 'danger');
+  }
+};
+
+// ── Add site modal ───────────────────────────────────────────────────────────
+let addPagesVal = 1;
+
+document.getElementById('add-pages-minus').onclick = () => {
+  if (addPagesVal > 1) document.getElementById('add-pages-val').textContent = --addPagesVal;
+};
+document.getElementById('add-pages-plus').onclick = () => {
+  if (addPagesVal < 20) document.getElementById('add-pages-val').textContent = ++addPagesVal;
+};
+document.getElementById('addModal').addEventListener('show.bs.modal', () => {
+  addPagesVal = 1;
+  document.getElementById('add-pages-val').textContent = 1;
+});
+
+document.getElementById('btn-add').onclick = async () => {
+  const url   = document.getElementById('inp-url').value.trim();
+  const name  = document.getElementById('inp-name').value.trim();
+  const errEl = document.getElementById('add-error');
+  errEl.style.display = 'none';
+  if (!url) {
+    errEl.textContent = 'URL is required.';
+    errEl.style.display = 'block';
+    return;
+  }
+  try {
+    await api('/sites', {
+      method:'POST',
+      body: JSON.stringify({
+        url,
+        name,
+        group_name:    document.getElementById('inp-group').value.trim(),
+        max_pages:     addPagesVal,
+        scan_interval: parseInt(document.getElementById('inp-interval').value, 10),
+      }),
+    });
+    document.getElementById('inp-url').value  = '';
+    document.getElementById('inp-name').value = '';
+    document.getElementById('inp-group').value = '';
+    bootstrap.Modal.getInstance(document.getElementById('addModal')).hide();
+    addLog(`Added: ${url}`);
+    showToast('Site added', 'success');
+    renderAll();
+  } catch (e) {
+    errEl.textContent = e.message;
+    errEl.style.display = 'block';
+    showToast(e.message, 'danger');
+  }
+};
+
+// ── Manual scan ──────────────────────────────────────────────────────────────
+async function scan() {
+  if (scanning) return;
+  const sites = await api('/sites');
+  if (!sites.length) { alert('Add at least one website first.'); return; }
+  setScanningUI(true, 'Starting scan…');
+  try {
+    await api('/scan', { method: 'POST' });
+    // SSE will update the UI as results come in
+  } catch (e) {
+    addLog(`Scan error: ${e.message}`, 'err');
+    setScanningUI(false);
+  }
+}
+
+document.getElementById('btn-scan').onclick = scan;
+
+async function freshScanAll() {
+  if (scanning) return;
+  const sites = await api('/sites');
+  if (!sites.length) { alert('Add at least one website first.'); return; }
+
+  const ok = confirm('This will delete all currently stored videos and run a full fresh scan for all sites. Continue?');
+  if (!ok) return;
+
+  setScanningUI(true, 'Clearing saved videos and starting fresh scan…');
+  try {
+    const res = await api('/scan/fresh', { method: 'POST' });
+    addLog(`Fresh scan requested — deleted ${res.deleted || 0} stored video(s).`, 'warn');
+    showToast(`Fresh scan started (${res.deleted || 0} removed)`, 'warning');
+    currentPage = 1;
+    await renderAll();
+  } catch (e) {
+    addLog(`Fresh scan error: ${e.message}`, 'err');
+    showToast(`Fresh scan error: ${e.message}`, 'danger');
+    setScanningUI(false);
+  }
+}
+
+document.getElementById('btn-fresh-scan').onclick = freshScanAll;
+const freshScanSideBtn = document.getElementById('btn-fresh-scan-side');
+if (freshScanSideBtn) {
+  freshScanSideBtn.onclick = freshScanAll;
+}
+
+document.getElementById('btn-auto-scan-toggle').onclick = async () => {
+  const nextEnabled = !autoScanEnabled;
+  await api('/scan/automation/toggle', {
+    method: 'POST',
+    body: JSON.stringify({ enabled: nextEnabled }),
+  });
+  autoScanEnabled = nextEnabled;
+  showToast(nextEnabled ? 'Automatic scanning resumed' : 'Automatic scanning paused', nextEnabled ? 'success' : 'warning');
+  await renderAll();
+};
+
+document.getElementById('btn-logout').onclick = async () => {
+  await api('/auth/logout', { method: 'POST' });
+  window.location.href = '/';
+};
+
+const changePwdBtn = document.getElementById('btn-change-password-open');
+if (changePwdBtn) {
+  changePwdBtn.onclick = () => {
+    document.getElementById('pwd-current').value = '';
+    document.getElementById('pwd-new').value = '';
+    document.getElementById('pwd-confirm').value = '';
+    const err = document.getElementById('pwd-error');
+    err.style.display = 'none';
+    err.textContent = '';
+    new bootstrap.Modal(document.getElementById('passwordModal')).show();
+  };
+}
+
+const savePwdBtn = document.getElementById('btn-password-save');
+if (savePwdBtn) {
+  savePwdBtn.onclick = async () => {
+  const err = document.getElementById('pwd-error');
+  err.style.display = 'none';
+  err.textContent = '';
+
+  const current = document.getElementById('pwd-current').value;
+  const next = document.getElementById('pwd-new').value;
+  const confirmNext = document.getElementById('pwd-confirm').value;
+
+  if (!current || !next || !confirmNext) {
+    err.textContent = 'Please fill in all password fields.';
+    err.style.display = 'block';
+    return;
+  }
+
+  try {
+    await api('/auth/change-password', {
+      method: 'POST',
+      body: JSON.stringify({
+        current_password: current,
+        new_password: next,
+        confirm_password: confirmNext,
+      }),
+    });
+    bootstrap.Modal.getInstance(document.getElementById('passwordModal')).hide();
+    showToast('Password updated successfully', 'success');
+  } catch (e) {
+    err.textContent = e.message;
+    err.style.display = 'block';
+  }
+  };
+}
+
+const notifyBtn = document.getElementById('btn-notifications-open');
+if (notifyBtn) {
+  notifyBtn.onclick = async () => {
+    try {
+      const n = await api('/notifications');
+      document.getElementById('notify-enabled').checked = !!n.enabled;
+      document.getElementById('notify-webhook').value = n.webhook_url || '';
+      document.getElementById('notify-digest').value = Number(n.digest_minutes || 0);
+      const err = document.getElementById('notify-error');
+      err.style.display = 'none';
+      err.textContent = '';
+      new bootstrap.Modal(document.getElementById('notificationsModal')).show();
+    } catch (e) {
+      showToast(`Failed to load notification settings: ${e.message}`, 'danger');
+    }
+  };
+}
+
+const notifySaveBtn = document.getElementById('btn-notify-save');
+if (notifySaveBtn) {
+  notifySaveBtn.onclick = async () => {
+    const err = document.getElementById('notify-error');
+    err.style.display = 'none';
+    try {
+      await api('/notifications', {
+        method: 'POST',
+        body: JSON.stringify({
+          enabled: document.getElementById('notify-enabled').checked,
+          webhook_url: document.getElementById('notify-webhook').value.trim(),
+          digest_minutes: parseInt(document.getElementById('notify-digest').value || '0', 10),
+        }),
+      });
+      bootstrap.Modal.getInstance(document.getElementById('notificationsModal')).hide();
+      showToast('Notification settings saved', 'success');
+    } catch (e) {
+      err.textContent = e.message;
+      err.style.display = 'block';
+    }
+  };
+}
+
+document.getElementById('btn-seen').onclick = async () => {
+  await api('/videos/mark-seen', {
+    method: 'POST',
+    body: JSON.stringify({ site_id: activeSite || null }),
+  });
+  renderAll();
+};
+
+// ── Search + filter ──────────────────────────────────────────────────────────
+document.getElementById('search-inp').addEventListener('input', e => {
+  clearTimeout(searchTimer);
+  searchTimer = setTimeout(() => {
+    searchTerm  = e.target.value.trim();
+    currentPage = 1;
+    renderVideos();
+  }, 350);
+});
+
+document.getElementById('released-after').addEventListener('change', e => {
+  releasedAfter = e.target.value || '';
+  currentPage   = 1;
+  renderVideos();
+});
+
+document.getElementById('duration-min').addEventListener('input', e => {
+  durationMin = e.target.value.trim();
+  currentPage = 1;
+  renderVideos();
+});
+
+document.getElementById('site-filter').addEventListener('change', e => {
+  activeGroup = e.target.value || null;
+  activeSite  = null;
+  currentPage = 1;
+  renderAll();
+});
+
+document.getElementById('platform-filter').addEventListener('change', e => {
+  platformFilt = e.target.value;
+  currentPage  = 1;
+  renderVideos();
+});
+
+const statusFilterSelect = document.getElementById('status-filter');
+if (statusFilterSelect) {
+  statusFilterSelect.addEventListener('change', e => {
+    setStatusFilter(e.target.value);
+  });
+}
+
+document.querySelectorAll('#status-quickbar button[data-status]').forEach(btn => {
+  btn.addEventListener('click', () => setStatusFilter(btn.getAttribute('data-status') || ''));
+});
+updateStatusQuickbar();
+
+// ── Periodic UI refresh (every 30 s) ─────────────────────────────────────────
+setInterval(() => {
+  if (!scanning) {
+    renderAll().catch(e => {
+      console.warn('Periodic refresh failed:', e);
+    });
+  }
+}, 30000);
+setInterval(refreshLog, 60000);
+
+// ── Init ─────────────────────────────────────────────────────────────────────
+(async function init() {
+  initMobileSidebar();
+  const playerModal = document.getElementById('playerModal');
+  if (playerModal) {
+    playerModal.addEventListener('hidden.bs.modal', resetInlinePlayer);
+  }
+  connectSSE();
+  // Normalise any saved site URLs (adds trailing slashes etc)
+  await api('/sites/fix-urls', { method: 'POST' }).catch(() => {});
+  for (let i = 0; i < 3; i++) {
+    try {
+      await renderAll();
+      break;
+    } catch (e) {
+      if (i === 2) {
+        showToast(`Startup load error: ${e.message}`, 'danger');
+      } else {
+        await new Promise(resolve => setTimeout(resolve, 800));
+      }
+    }
+  }
+  await refreshLog();
+})();
+</script>
+
+</body>
+</html>

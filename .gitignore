@@ -1,0 +1,17 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+
+# Virtualenv
+venv/
+.env
+
+# Database + caches
+videowatch.db
+cookies/
+thumbcache/
+
+# Editor
+.vscode/
+*.swp

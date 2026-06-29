@@ -1,0 +1,576 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>VideoWatch Settings</title>
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet" />
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.css" rel="stylesheet" />
+  <style>
+    :root {
+      --ink: #0f172a;
+      --muted: #64748b;
+      --brand: #0f766e;
+      --brand-strong: #115e59;
+      --border: #d7e2df;
+      --surface: #eef4f2;
+      --card: #ffffff;
+      --warn: #b45309;
+      --glow: 0 18px 40px rgba(15, 23, 42, .1);
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      color: var(--ink);
+      background:
+        radial-gradient(900px 380px at -5% 0%, rgba(15,118,110,.14), transparent 60%),
+        radial-gradient(900px 420px at 100% -10%, rgba(245,158,11,.12), transparent 60%),
+        var(--surface);
+      font-family: 'IBM Plex Sans', 'Trebuchet MS', 'Segoe UI', sans-serif;
+    }
+    .layout {
+      display: grid;
+      grid-template-columns: 260px minmax(0, 1fr);
+      min-height: 100vh;
+    }
+    .navpane {
+      background: linear-gradient(170deg, #0d1b2a, #10253b);
+      color: #dce9f7;
+      padding: 1.2rem .8rem;
+      position: sticky;
+      top: 0;
+      height: 100vh;
+      overflow: auto;
+      border-right: 1px solid rgba(255,255,255,.08);
+    }
+    .brand {
+      font-weight: 700;
+      color: #fff;
+      margin-bottom: .8rem;
+      padding: 0 .5rem;
+      display: flex;
+      align-items: center;
+      gap: .5rem;
+    }
+    .navbtn {
+      width: 100%;
+      text-align: left;
+      border: 0;
+      background: transparent;
+      color: rgba(220,233,247,.78);
+      border-radius: 10px;
+      padding: .5rem .7rem;
+      font-size: .87rem;
+      margin-bottom: .3rem;
+    }
+    .navbtn.active, .navbtn:hover { background: rgba(255,255,255,.09); color: #fff; }
+    .main { padding: 1.3rem 1.2rem 2rem; }
+    .top {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: .8rem;
+      margin-bottom: 1rem;
+    }
+    .subtitle { color: var(--muted); font-size: .85rem; }
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(12, minmax(0, 1fr));
+      gap: .9rem;
+    }
+    .cardx {
+      grid-column: span 12;
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 14px;
+      box-shadow: var(--glow);
+      padding: .95rem 1rem;
+    }
+    .cardx h6 { margin: 0 0 .75rem; font-weight: 700; }
+    .meta { color: var(--muted); font-size: .78rem; }
+    .health { display: flex; flex-wrap: wrap; gap: .6rem; }
+    .pill {
+      border: 1px solid var(--border);
+      border-radius: 999px;
+      padding: .2rem .55rem;
+      font-size: .75rem;
+      background: #f8fbfa;
+    }
+    .anomaly { color: var(--warn); font-size: .78rem; margin-top: .45rem; }
+    .site-row {
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: .65rem;
+      margin-bottom: .55rem;
+      background: #fcfefd;
+    }
+    .site-title { font-size: .86rem; font-weight: 700; }
+    .site-url { color: var(--muted); font-size: .72rem; word-break: break-all; margin-bottom: .5rem; }
+    .site-controls {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      gap: .45rem;
+    }
+    .site-controls input, .site-controls select {
+      height: 33px;
+      border: 1px solid var(--border);
+      border-radius: 7px;
+      padding: 0 .55rem;
+      font-size: .8rem;
+      width: 100%;
+    }
+    .dupe {
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: .6rem;
+      margin-bottom: .55rem;
+      font-size: .8rem;
+      background: #fcfefd;
+    }
+    .dupe-actions { display: flex; gap: .45rem; margin-top: .45rem; flex-wrap: wrap; }
+    .hidden { display: none !important; }
+    .ok { color: #047857; font-size: .78rem; }
+    .err { color: #b91c1c; font-size: .78rem; }
+    @media (max-width: 980px) {
+      .layout { grid-template-columns: 1fr; }
+      .navpane { position: static; height: auto; }
+      .site-controls { grid-template-columns: 1fr; }
+    }
+  </style>
+</head>
+<body>
+  <div class="layout">
+    <aside class="navpane">
+      <div class="brand"><i class="bi bi-sliders"></i> VideoWatch Settings</div>
+      <button class="navbtn active" data-target="general"><i class="bi bi-gear me-1"></i>General</button>
+      <button class="navbtn" data-target="sites"><i class="bi bi-diagram-3 me-1"></i>Sites and Rules</button>
+      <button class="navbtn" data-target="health"><i class="bi bi-activity me-1"></i>Scan Health</button>
+      <button class="navbtn" data-target="notifications"><i class="bi bi-bell me-1"></i>Notifications</button>
+      <button class="navbtn" data-target="users"><i class="bi bi-people me-1"></i>Users and Roles</button>
+      <button class="navbtn" data-target="duplicates"><i class="bi bi-files me-1"></i>Duplicates</button>
+      <button class="navbtn" data-target="maintenance"><i class="bi bi-tools me-1"></i>Maintenance</button>
+      <a href="/" class="btn btn-sm btn-outline-light mt-3 w-100"><i class="bi bi-arrow-left me-1"></i>Back dashboard</a>
+    </aside>
+
+    <main class="main">
+      <div class="top">
+        <div>
+          <h4 style="margin:0;font-weight:700;">Settings</h4>
+          <div class="subtitle">Manage scanning, rules, notifications, duplicates, and maintenance.</div>
+        </div>
+        <span class="pill" id="auth-role">Role: --</span>
+      </div>
+
+      <section id="general" class="cardx pane">
+        <h6>General</h6>
+        <div class="d-flex gap-2 flex-wrap align-items-center">
+          <button class="btn btn-sm btn-outline-secondary" id="btn-toggle-autoscan">Toggle auto-scan</button>
+          <span class="pill" id="autoscan-state">Auto-scan: --</span>
+        </div>
+        <div class="meta mt-2">Auto-scan can also be controlled from the dashboard quick actions.</div>
+      </section>
+
+      <section id="sites" class="cardx pane hidden">
+        <h6>Sites and Rules</h6>
+        <div id="sites-rules-list"></div>
+      </section>
+
+      <section id="health" class="cardx pane hidden">
+        <h6>Scan Health</h6>
+        <div class="health">
+          <span class="pill" id="h-success">Success: --</span>
+          <span class="pill" id="h-found">Avg found: --</span>
+          <span class="pill" id="h-added">Avg new: --</span>
+          <span class="pill" id="h-window">Window: --</span>
+        </div>
+        <div class="anomaly" id="h-anomalies">No anomalies detected.</div>
+      </section>
+
+      <section id="notifications" class="cardx pane hidden">
+        <h6>Notifications</h6>
+        <div class="form-check form-switch mb-2">
+          <input class="form-check-input" type="checkbox" id="notify-enabled">
+          <label class="form-check-label" for="notify-enabled">Enable webhook notifications</label>
+        </div>
+        <label class="form-label" style="font-size:.82rem;">Webhook URL</label>
+        <input type="url" id="notify-webhook" class="form-control form-control-sm" placeholder="https://..." />
+        <label class="form-label mt-2" style="font-size:.82rem;">Digest minutes (0 = instant)</label>
+        <input type="number" id="notify-digest" class="form-control form-control-sm" min="0" value="0" />
+        <div class="d-flex gap-2 mt-3">
+          <button class="btn btn-sm btn-brand" id="notify-save" style="background:linear-gradient(135deg,var(--brand),#14b8a6);border:none;color:#fff;">Save</button>
+          <button class="btn btn-sm btn-outline-secondary" id="notify-test">Send test</button>
+        </div>
+        <div id="notify-msg" class="meta mt-2"></div>
+      </section>
+
+      <section id="users" class="cardx pane hidden">
+        <h6>Users and Roles</h6>
+        <div class="site-row">
+          <div class="site-title">Add user</div>
+          <div class="site-controls" style="grid-template-columns: repeat(3, minmax(0, 1fr));">
+            <input id="new-user-name" placeholder="username" />
+            <input id="new-user-pass" type="password" placeholder="password (min 8 chars)" />
+            <select id="new-user-role">
+              <option value="viewer">viewer</option>
+              <option value="admin">admin</option>
+            </select>
+          </div>
+          <div class="dupe-actions">
+            <button class="btn btn-sm btn-outline-secondary" id="btn-user-add">Add user</button>
+            <span class="meta" id="user-add-msg"></span>
+          </div>
+        </div>
+        <div id="users-list"></div>
+      </section>
+
+      <section id="duplicates" class="cardx pane hidden">
+        <h6>Duplicate Candidates</h6>
+        <div id="dupe-list"></div>
+      </section>
+
+      <section id="maintenance" class="cardx pane hidden">
+        <h6>Maintenance</h6>
+        <div class="d-flex gap-2 flex-wrap">
+          <button class="btn btn-sm btn-outline-secondary" id="btn-mark-seen-all">Mark all seen</button>
+          <button class="btn btn-sm btn-outline-danger" id="btn-fresh-scan-all">Fresh scan all</button>
+        </div>
+        <div id="maint-msg" class="meta mt-2"></div>
+      </section>
+    </main>
+  </div>
+
+  <script>
+    const API = `${window.location.origin}/api`;
+
+    async function api(path, opts = {}) {
+      const method = (opts.method || 'GET').toUpperCase();
+      const url = method === 'GET' ? `${API}${path}${path.includes('?') ? '&' : '?'}_=${Date.now()}` : `${API}${path}`;
+      const r = await fetch(url, {
+        credentials: 'same-origin',
+        cache: 'no-store',
+        headers: { 'Content-Type': 'application/json' },
+        ...opts,
+      });
+      if (r.status === 401) {
+        window.location.href = '/';
+        throw new Error('Authentication required');
+      }
+      if (!r.ok) {
+        const err = await r.json().catch(() => ({ detail: r.statusText }));
+        throw new Error(err.detail || r.statusText);
+      }
+      return r.json();
+    }
+
+    function setPane(name) {
+      document.querySelectorAll('.navbtn').forEach(btn => btn.classList.toggle('active', btn.dataset.target === name));
+      document.querySelectorAll('.pane').forEach(p => p.classList.add('hidden'));
+      const el = document.getElementById(name);
+      if (el) el.classList.remove('hidden');
+    }
+
+    async function loadGeneral() {
+      const role = await api('/auth/role');
+      document.getElementById('auth-role').textContent = `Role: ${role.role || 'viewer'}`;
+
+      const auto = await api('/scan/automation');
+      document.getElementById('autoscan-state').textContent = `Auto-scan: ${auto.enabled ? 'enabled' : 'paused'}`;
+    }
+
+    async function loadHealth() {
+      const h = await api('/scan/health?limit=20');
+      const success = Math.round((h.overall.success_rate || 0) * 100);
+      document.getElementById('h-success').textContent = `Success: ${success}%`;
+      document.getElementById('h-found').textContent = `Avg found: ${Number(h.overall.avg_found || 0).toFixed(1)}`;
+      document.getElementById('h-added').textContent = `Avg new: ${Number(h.overall.avg_added || 0).toFixed(1)}`;
+      document.getElementById('h-window').textContent = `Window: ${h.window}`;
+      document.getElementById('h-anomalies').textContent = h.anomalies?.length ? h.anomalies.slice(0, 5).map(a => a.detail).join(' | ') : 'No anomalies detected.';
+    }
+
+    async function loadNotifications() {
+      const n = await api('/notifications');
+      document.getElementById('notify-enabled').checked = !!n.enabled;
+      document.getElementById('notify-webhook').value = n.webhook_url || '';
+      document.getElementById('notify-digest').value = Number(n.digest_minutes || 0);
+      document.getElementById('notify-msg').textContent = '';
+    }
+
+    async function loadUsers() {
+      const root = document.getElementById('users-list');
+      if (!root) return;
+      root.innerHTML = '';
+      const users = await api('/users');
+      if (!users.length) {
+        root.innerHTML = '<div class="meta">No users found.</div>';
+        return;
+      }
+
+      users.forEach(u => {
+        const row = document.createElement('div');
+        row.className = 'site-row';
+        row.innerHTML = `
+          <div class="site-title">${u.username}</div>
+          <div class="meta">Created: ${new Date(u.created_at).toLocaleString()} | Updated: ${new Date(u.updated_at).toLocaleString()}</div>
+          <div class="site-controls" style="grid-template-columns: repeat(2, minmax(0, 1fr)); margin-top:.45rem;">
+            <select data-k="role">
+              <option value="viewer" ${u.role === 'viewer' ? 'selected' : ''}>viewer</option>
+              <option value="admin" ${u.role === 'admin' ? 'selected' : ''}>admin</option>
+            </select>
+            <select data-k="active">
+              <option value="1" ${u.active ? 'selected' : ''}>active</option>
+              <option value="0" ${!u.active ? 'selected' : ''}>disabled</option>
+            </select>
+          </div>
+          <div class="dupe-actions">
+            <button class="btn btn-sm btn-outline-secondary">Save user</button>
+            <span class="meta"></span>
+          </div>
+        `;
+
+        const msg = row.querySelector('.dupe-actions .meta');
+        row.querySelector('button').onclick = async () => {
+          msg.textContent = '';
+          try {
+            await api(`/users/${encodeURIComponent(u.username)}`, {
+              method: 'PATCH',
+              body: JSON.stringify({
+                role: row.querySelector('[data-k="role"]').value,
+                active: row.querySelector('[data-k="active"]').value === '1',
+              }),
+            });
+            msg.textContent = 'Saved';
+            msg.className = 'ok';
+            await loadUsers();
+          } catch (e) {
+            msg.textContent = e.message;
+            msg.className = 'err';
+          }
+        };
+
+        root.appendChild(row);
+      });
+    }
+
+    async function loadSitesRules() {
+      const list = document.getElementById('sites-rules-list');
+      list.innerHTML = '';
+      const sites = await api('/sites');
+      if (!sites.length) {
+        list.innerHTML = '<div class="meta">No sites yet.</div>';
+        return;
+      }
+
+      sites.forEach(s => {
+        const row = document.createElement('div');
+        row.className = 'site-row';
+        row.innerHTML = `
+          <div class="site-title">${s.name || s.url}</div>
+          <div class="site-url">${s.url}</div>
+          <div class="site-controls">
+            <input data-k="inc" placeholder="include keywords" value="${(s.rule_include_keywords || '').replace(/"/g,'&quot;')}">
+            <input data-k="exc" placeholder="exclude keywords" value="${(s.rule_exclude_keywords || '').replace(/"/g,'&quot;')}">
+            <input data-k="dur" type="number" min="0" placeholder="min duration" value="${Number(s.rule_min_duration || 0)}">
+            <select data-k="prof">
+              <option value="fast" ${s.scan_profile === 'fast' ? 'selected' : ''}>fast</option>
+              <option value="balanced" ${(!s.scan_profile || s.scan_profile === 'balanced') ? 'selected' : ''}>balanced</option>
+              <option value="deep" ${s.scan_profile === 'deep' ? 'selected' : ''}>deep</option>
+            </select>
+          </div>
+          <div class="dupe-actions">
+            <button class="btn btn-sm btn-outline-secondary">Save rules</button>
+            <span class="meta"></span>
+          </div>
+        `;
+
+        const saveBtn = row.querySelector('button');
+        const msgEl = row.querySelector('.meta');
+        saveBtn.onclick = async () => {
+          msgEl.textContent = '';
+          try {
+            await api(`/sites/${s.id}`, {
+              method: 'PATCH',
+              body: JSON.stringify({
+                rule_include_keywords: row.querySelector('[data-k="inc"]').value.trim(),
+                rule_exclude_keywords: row.querySelector('[data-k="exc"]').value.trim(),
+                rule_min_duration: parseInt(row.querySelector('[data-k="dur"]').value || '0', 10),
+                scan_profile: row.querySelector('[data-k="prof"]').value,
+              }),
+            });
+            msgEl.textContent = 'Saved';
+            msgEl.className = 'ok';
+          } catch (e) {
+            msgEl.textContent = e.message;
+            msgEl.className = 'err';
+          }
+        };
+
+        list.appendChild(row);
+      });
+    }
+
+    async function loadDuplicates() {
+      const root = document.getElementById('dupe-list');
+      root.innerHTML = '';
+      const groups = await api('/videos/duplicates?limit=40');
+      if (!groups.length) {
+        root.innerHTML = '<div class="meta">No duplicate candidates found.</div>';
+        return;
+      }
+
+      groups.forEach(g => {
+        const keepDefault = g.videos[0]?.id;
+        const block = document.createElement('div');
+        block.className = 'dupe';
+        block.innerHTML = `
+          <div><strong>${g.title_key}</strong> ${g.released_at ? `(${g.released_at})` : ''}</div>
+          <div class="meta">${g.count} rows</div>
+          <div class="dupe-actions">
+            <select class="form-select form-select-sm keep" style="max-width:220px;">
+              ${g.videos.map(v => `<option value="${v.id}" ${v.id === keepDefault ? 'selected' : ''}>keep ${v.id.slice(0,8)} - ${new Date(v.found_at).toLocaleString()}</option>`).join('')}
+            </select>
+            <select class="form-select form-select-sm rem" style="max-width:220px;">
+              ${g.videos.filter(v => v.id !== keepDefault).map(v => `<option value="${v.id}">remove ${v.id.slice(0,8)} - ${new Date(v.found_at).toLocaleString()}</option>`).join('')}
+            </select>
+            <button class="btn btn-sm btn-outline-secondary">Merge</button>
+            <span class="meta"></span>
+          </div>
+        `;
+        const mergeBtn = block.querySelector('button');
+        const msg = block.querySelector('.meta:last-child');
+        mergeBtn.onclick = async () => {
+          try {
+            const keep_id = block.querySelector('.keep').value;
+            const remove_id = block.querySelector('.rem').value;
+            if (!keep_id || !remove_id || keep_id === remove_id) {
+              msg.textContent = 'Choose different keep/remove rows.';
+              msg.className = 'err';
+              return;
+            }
+            await api('/videos/duplicates/merge', {
+              method: 'POST',
+              body: JSON.stringify({ keep_id, remove_id }),
+            });
+            msg.textContent = 'Merged';
+            msg.className = 'ok';
+            await loadDuplicates();
+          } catch (e) {
+            msg.textContent = e.message;
+            msg.className = 'err';
+          }
+        };
+        root.appendChild(block);
+      });
+    }
+
+    document.getElementById('btn-toggle-autoscan').onclick = async () => {
+      const st = await api('/scan/automation');
+      const next = !st.enabled;
+      await api('/scan/automation/toggle', { method: 'POST', body: JSON.stringify({ enabled: next }) });
+      await loadGeneral();
+    };
+
+    document.getElementById('notify-save').onclick = async () => {
+      const msg = document.getElementById('notify-msg');
+      msg.className = 'meta';
+      try {
+        await api('/notifications', {
+          method: 'POST',
+          body: JSON.stringify({
+            enabled: document.getElementById('notify-enabled').checked,
+            webhook_url: document.getElementById('notify-webhook').value.trim(),
+            digest_minutes: parseInt(document.getElementById('notify-digest').value || '0', 10),
+          }),
+        });
+        msg.textContent = 'Saved.';
+        msg.className = 'ok';
+      } catch (e) {
+        msg.textContent = e.message;
+        msg.className = 'err';
+      }
+    };
+
+    document.getElementById('notify-test').onclick = async () => {
+      const msg = document.getElementById('notify-msg');
+      msg.className = 'meta';
+      try {
+        await api('/notifications/test', { method: 'POST' });
+        msg.textContent = 'Test notification sent.';
+        msg.className = 'ok';
+      } catch (e) {
+        msg.textContent = e.message;
+        msg.className = 'err';
+      }
+    };
+
+    const addUserBtn = document.getElementById('btn-user-add');
+    if (addUserBtn) {
+      addUserBtn.onclick = async () => {
+        const msg = document.getElementById('user-add-msg');
+        msg.className = 'meta';
+        msg.textContent = '';
+        try {
+          await api('/users', {
+            method: 'POST',
+            body: JSON.stringify({
+              username: document.getElementById('new-user-name').value.trim(),
+              password: document.getElementById('new-user-pass').value,
+              role: document.getElementById('new-user-role').value,
+            }),
+          });
+          document.getElementById('new-user-name').value = '';
+          document.getElementById('new-user-pass').value = '';
+          document.getElementById('new-user-role').value = 'viewer';
+          msg.textContent = 'User created.';
+          msg.className = 'ok';
+          await loadUsers();
+        } catch (e) {
+          msg.textContent = e.message;
+          msg.className = 'err';
+        }
+      };
+    }
+
+    document.getElementById('btn-mark-seen-all').onclick = async () => {
+      const msg = document.getElementById('maint-msg');
+      try {
+        await api('/videos/mark-seen', { method: 'POST', body: JSON.stringify({ site_id: null }) });
+        msg.textContent = 'Marked all videos as seen.';
+      } catch (e) {
+        msg.textContent = e.message;
+      }
+    };
+
+    document.getElementById('btn-fresh-scan-all').onclick = async () => {
+      const msg = document.getElementById('maint-msg');
+      if (!confirm('Delete all stored videos and start full fresh scan?')) return;
+      try {
+        const r = await api('/scan/fresh', { method: 'POST' });
+        msg.textContent = `Fresh scan started. Removed ${r.deleted || 0} rows.`;
+      } catch (e) {
+        msg.textContent = e.message;
+      }
+    };
+
+    document.querySelectorAll('.navbtn').forEach(btn => {
+      btn.addEventListener('click', () => setPane(btn.dataset.target));
+    });
+
+    (async function init() {
+      const auth = await api('/auth/status');
+      if (!auth.authenticated) {
+        window.location.href = '/';
+        return;
+      }
+      await Promise.all([loadGeneral(), loadHealth(), loadNotifications(), loadSitesRules(), loadDuplicates()]);
+      if ((auth.role || '').toLowerCase() === 'admin') {
+        await loadUsers();
+      } else {
+        const usersBtn = document.querySelector('.navbtn[data-target="users"]');
+        if (usersBtn) usersBtn.classList.add('hidden');
+        const usersPane = document.getElementById('users');
+        if (usersPane) usersPane.innerHTML = '<h6>Users and Roles</h6><div class="meta">Admin role required.</div>';
+      }
+    })();
+  </script>
+</body>
+</html>
