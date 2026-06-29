@@ -1,17 +1,22 @@
-# Python
+# Python build and cache files
 __pycache__/
 *.py[cod]
 *.pyo
 
-# Virtualenv
+# Virtual Environments (Matches your actual .venv folder)
+.venv/
 venv/
+ENV/
 .env
 
-# Database + caches
+# Database + local media caches
 videowatch.db
 cookies/
 thumbcache/
 
-# Editor
+# Code Editor settings
 .vscode/
 *.swp
+
+# JavaScript dependencies
+node_modules/
