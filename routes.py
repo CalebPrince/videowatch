@@ -1771,8 +1771,7 @@ async def preview_site(url: str = Query(...)):
     error_detail: str = ""
 
     async def _run_preview():
-        from scraper import _fetch_page, _make_context, _is_youtube_channel_url, _scrape_youtube_channel, scrape_videos
-        from playwright.async_api import async_playwright
+        from scraper import _is_youtube_channel_url, _scrape_youtube_channel, scrape_videos
         from bs4 import BeautifulSoup as _BS
 
         if _is_youtube_channel_url(url):
@@ -1783,20 +1782,46 @@ async def preview_site(url: str = Query(...)):
                 log.warning(f"Preview YT scrape failed: {e}")
                 return [], str(e)
 
+        # Fast path: try httpx first (no browser, ~5 s)
         html = ""
         fetch_err = ""
         try:
-            async with async_playwright() as p:
-                browser, context = await _make_context(p, site_id)
-                try:
-                    html = await _fetch_page(context, url, first_page=True)
-                finally:
-                    await context.close()
-                    await browser.close()
+            async with httpx.AsyncClient(timeout=12, follow_redirects=True) as client:
+                r = await client.get(url, headers=_browser_headers(url))
+                if r.status_code == 200:
+                    html = r.text
         except Exception as e:
-            log.warning(f"Preview fetch failed for {url}: {e}")
-            fetch_err = str(e)
-            return [], fetch_err
+            log.warning(f"Preview httpx fetch failed for {url}: {e}")
+
+        # If httpx got enough content try scraping it immediately
+        if len(html) >= 5000:
+            strict = scrape_videos(html, url)
+            if strict:
+                return strict[:12], ""
+
+        # Slow path: Playwright for JS-rendered sites (capped at 25 s)
+        if not html or len(html) < 5000:
+            try:
+                from scraper import _fetch_page, _make_context
+                from playwright.async_api import async_playwright
+                async with async_playwright() as p:
+                    browser, context = await _make_context(p, site_id)
+                    try:
+                        page_obj = await context.new_page()
+                        try:
+                            await page_obj.goto(url, timeout=20000, wait_until="domcontentloaded")
+                            await page_obj.wait_for_timeout(2500)
+                            html = await page_obj.content()
+                        finally:
+                            await page_obj.close()
+                    finally:
+                        await context.close()
+                        await browser.close()
+            except Exception as e:
+                log.warning(f"Preview Playwright fetch failed for {url}: {e}")
+                fetch_err = str(e)
+                if not html:
+                    return [], fetch_err
 
         # Try strict platform-aware scrape first
         strict_vids = scrape_videos(html, url)
@@ -1885,10 +1910,10 @@ async def preview_site(url: str = Query(...)):
         return broad[:12], hint
 
     try:
-        result = await asyncio.wait_for(_run_preview(), timeout=60)
+        result = await asyncio.wait_for(_run_preview(), timeout=45)
         found_videos, error_detail = result
     except asyncio.TimeoutError:
-        error_detail = "Preview timed out (60 s). The site may be slow or blocking automated access."
+        error_detail = "Preview timed out. The site may be slow or blocking automated access. Try adding it manually and running a scan."
         log.warning(f"Preview scan timed out for {url}")
     except Exception as e:
         error_detail = str(e)
