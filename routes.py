@@ -1817,7 +1817,8 @@ async def discover_sites(q: str = Query(...)):
     if not query:
         raise HTTPException(400, "Search query is required")
 
-    search_url = f"https://lite.duckduckgo.com/lite/?q={httpx.utils.quote(query + ' site videos')}"
+    from urllib.parse import quote as url_quote
+    search_url = f"https://lite.duckduckgo.com/lite/?q={url_quote(query + ' video site')}"
     headers = {
         "User-Agent": (
             "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
@@ -1825,36 +1826,43 @@ async def discover_sites(q: str = Query(...)):
             "Chrome/126.0.0.0 Safari/537.36"
         ),
         "Accept-Language": "en-US,en;q=0.9",
+        "Accept": "text/html,application/xhtml+xml",
     }
 
     results: list[dict] = []
     try:
-        async with httpx.AsyncClient(timeout=12, follow_redirects=True) as client:
+        async with httpx.AsyncClient(timeout=15, follow_redirects=True) as client:
             r = await client.get(search_url, headers=headers)
             if r.status_code == 200:
                 from bs4 import BeautifulSoup
                 soup = BeautifulSoup(r.text, "html.parser")
                 seen_hosts: set[str] = set()
-                for a in soup.select("a.result-link"):
+                skip = {
+                    "google.com", "facebook.com", "twitter.com", "wikipedia.org",
+                    "reddit.com", "instagram.com", "linkedin.com", "duckduckgo.com",
+                    "bing.com", "amazon.com", "youtube.com", "tiktok.com",
+                }
+                # DuckDuckGo Lite links are plain <a> tags inside table cells
+                for a in soup.find_all("a", href=True):
                     href = (a.get("href") or "").strip()
-                    if not href or not href.startswith("http"):
+                    if not href.startswith("http"):
                         continue
                     p = urlparse(href)
                     host = p.netloc.lower()
                     if not host or host in seen_hosts:
                         continue
-                    # Skip search engines, social media, wikis
-                    skip = {"google.com", "facebook.com", "twitter.com", "wikipedia.org",
-                            "reddit.com", "instagram.com", "linkedin.com", "duckduckgo.com",
-                            "bing.com", "amazon.com", "youtube.com"}
                     if any(host == s or host.endswith("." + s) for s in skip):
                         continue
                     seen_hosts.add(host)
                     site_url = f"{p.scheme}://{p.netloc}/"
                     title = a.get_text(strip=True) or host
+                    if len(title) < 3 or len(title) > 120:
+                        continue
                     results.append({"url": site_url, "title": title, "host": host})
                     if len(results) >= 8:
                         break
+            else:
+                log.warning(f"DuckDuckGo returned status {r.status_code}")
     except Exception as e:
         log.warning(f"Site discovery search failed: {e}")
 
