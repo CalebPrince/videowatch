@@ -1044,8 +1044,8 @@ def add_site(body: SiteIn, request: Request):
                 (
                     site_id,
                     url,
-                    body.name.strip(),
-                    body.group_name.strip(),
+                    (body.name or "").strip(),
+                    (body.group_name or "").strip(),
                     now_iso(),
                     max_pages,
                     scan_interval,
@@ -1064,8 +1064,8 @@ def add_site(body: SiteIn, request: Request):
                     "ON CONFLICT(key) DO UPDATE SET value='1'",
                 )
             db.commit()
-    return {"id": site_id, "url": url, "name": body.name,
-            "group_name": body.group_name, "max_pages": max_pages, "scan_interval": scan_interval,
+    return {"id": site_id, "url": url, "name": body.name or "",
+            "group_name": body.group_name or "", "max_pages": max_pages, "scan_interval": scan_interval,
             "rule_include_keywords": (body.rule_include_keywords or "").strip(),
             "rule_exclude_keywords": (body.rule_exclude_keywords or "").strip(),
             "rule_min_duration": rule_min_duration,
