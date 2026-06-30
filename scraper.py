@@ -883,7 +883,10 @@ async def _scrape_vk_with_playwright(channel_url: str, push=None) -> list[dict]:
         owner_id   = item.get("owner_id", 0)
         vid_id_num = item.get("id", 0)
         title      = (item.get("title") or "").strip()
-        if not title:
+        if not title or vid_id_num == 0:
+            continue
+        # Skip VK navigation/section elements masquerading as videos
+        if title.lower() in {"all video", "all videos", "все видео", "видео"}:
             continue
 
         # Thumbnail: VK returns image[] array sorted by width, pick largest
