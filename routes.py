@@ -1209,7 +1209,7 @@ def bulk_video_action(body: BulkVideoActionIn):
                 db.execute(f"UPDATE videos SET is_new=0 WHERE id IN ({placeholders})", body.video_ids)
             elif body.action == "mark_watched":
                 db.execute(
-                    f"UPDATE videos SET is_watched=1, last_watched_at=? WHERE id IN ({placeholders})",
+                    f"UPDATE videos SET is_watched=1, is_new=0, last_watched_at=? WHERE id IN ({placeholders})",
                     [now_iso()] + body.video_ids,
                 )
             elif body.action == "mark_unwatched":
@@ -1453,6 +1453,7 @@ def update_video_state(video_id: str, body: VideoStatePatch):
         updates["is_watched"] = 1 if body.is_watched else 0
         if body.is_watched:
             updates["last_watched_at"] = now_iso()
+            updates["is_new"] = 0
     if not updates:
         return {"ok": True}
 

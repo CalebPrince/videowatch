@@ -266,6 +266,8 @@
     }
     .video-card:hover { box-shadow: 0 14px 28px rgba(15, 23, 42, .18); transform: translateY(-3px); }
     .video-card.is-new { border-color: var(--brand); box-shadow: 0 0 0 2px rgba(15,118,110,.25), var(--glow); }
+    .video-card.is-watched { opacity: .65; }
+    .video-card.is-watched .thumb-wrap::after { content:''; position:absolute;inset:0;background:rgba(0,0,0,.28);pointer-events:none;z-index:1; }
     .thumb-wrap { position: relative; background: #0d0d1a; aspect-ratio: 16/9; overflow: hidden; }
     .thumb-wrap img { width:100%; height:100%; object-fit:cover; display:block; }
     .thumb-placeholder { width:100%; height:100%; display:flex; align-items:center; justify-content:center; color:rgba(255,255,255,.18); font-size:2.2rem; }
@@ -1898,7 +1900,7 @@ async function renderVideos() {
       thumbWrap.innerHTML = '<div class="thumb-placeholder"><i class="bi bi-play-circle"></i></div>';
     }
 
-    const isNew = isVideoMarkedNew(v);
+    const isNew = isVideoMarkedNew(v) && !Number(v.is_watched);
     if (isNew) {
       const b = document.createElement('span');
       b.className = 'badge-new-pill'; b.textContent = 'New';
@@ -2043,25 +2045,22 @@ async function renderVideos() {
 
     body.appendChild(meta);
 
-    // Watched indicator
-    if (Number(v.is_watched)) {
-      const watchedPill = document.createElement('span');
-      watchedPill.style.cssText = 'position:absolute;top:.35rem;right:.35rem;background:rgba(0,0,0,.55);color:#a3e635;border-radius:999px;font-size:.65rem;padding:.1rem .4rem;pointer-events:none;z-index:3;';
-      watchedPill.innerHTML = '<i class="bi bi-eye-fill me-1"></i>Watched';
-      thumbWrap.style.position = 'relative';
-      thumbWrap.appendChild(watchedPill);
-    }
+    // Title row: checkbox + title
+    const titleRow = document.createElement('div');
+    titleRow.style.cssText = 'display:flex;align-items:flex-start;gap:.4rem;';
 
-    // Bulk select checkbox
     const chk = document.createElement('input');
     chk.type = 'checkbox';
     chk.dataset.vid = v.id;
-    chk.style.cssText = 'position:absolute;top:.35rem;left:.35rem;z-index:4;width:1.1rem;height:1.1rem;cursor:pointer;accent-color:var(--brand);';
+    chk.style.cssText = 'flex-shrink:0;margin-top:.15rem;width:1rem;height:1rem;cursor:pointer;accent-color:var(--brand);';
     chk.addEventListener('change', () => updateBulkSelection());
-    thumbWrap.appendChild(chk);
+
+    titleRow.appendChild(chk);
+    titleRow.appendChild(titleEl);
+    body.insertBefore(titleRow, body.firstChild);
 
     const card = document.createElement('div');
-    card.className = `video-card${isNew ? ' is-new' : ''}`;
+    card.className = `video-card${isNew ? ' is-new' : ''}${Number(v.is_watched) ? ' is-watched' : ''}`;
     card.appendChild(thumbWrap);
     card.appendChild(body);
 
