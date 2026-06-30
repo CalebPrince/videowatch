@@ -643,32 +643,7 @@
         <h6 id="topbar-title">All videos</h6>
         <div class="sub">Last scan: <span id="last-scan">—</span></div>
       </div>
-    </div>
-    <div class="filter-bar">
-      <input type="search" id="search-inp" placeholder="Search titles, cast, site, url…" />
-      <div class="filter-labeled"><span class="filter-float-label">Released after</span><input type="date" id="released-after" aria-label="Released after date" /></div>
-      <div class="filter-labeled"><span class="filter-float-label">Min duration (sec)</span><input type="number" id="duration-min" min="0" placeholder="0" aria-label="Minimum duration in seconds" /></div>
-      <select id="site-filter" aria-label="Filter by site group">
-        <option value="">All sites</option>
-      </select>
-      <select id="platform-filter" aria-label="Filter by platform">
-        <option value="">All types</option>
-      </select>
-    </div>
-    <div class="topbar-actions">
-      <button class="btn btn-sm btn-outline-secondary" id="btn-seen" aria-label="Mark visible videos as seen">
-        <i class="bi bi-check2-all me-1"></i><span class="label-full">Mark seen</span><span class="label-short">Seen</span>
-      </button>
-      <button class="btn btn-sm btn-outline-danger" id="btn-fresh-scan" title="Delete all stored videos and run a full fresh scan" aria-label="Delete all videos and run fresh scan">
-        <i class="bi bi-arrow-clockwise me-1"></i><span class="label-full">Fresh scan all</span><span class="label-short">Fresh scan</span>
-      </button>
-      <button class="btn btn-sm btn-outline-secondary" id="btn-darkmode" title="Toggle dark mode" aria-label="Toggle dark mode">
-        <i class="bi bi-moon-stars-fill" id="darkmode-icon"></i>
-      </button>
-      <button class="btn btn-sm btn-brand" id="btn-scan" aria-label="Start manual scan now">
-        <i class="bi bi-arrow-repeat me-1"></i><span class="label-full">Scan now</span><span class="label-short">Scan</span>
-      </button>
-      <div class="dropdown">
+      <div class="dropdown ms-auto">
         <button class="btn btn-sm btn-profile dropdown-toggle" type="button" data-bs-toggle="dropdown" aria-expanded="false" aria-label="Account menu" title="Account">
           <i class="bi bi-person-circle"></i>
         </button>
@@ -701,6 +676,31 @@
           </li>
         </ul>
       </div>
+    </div>
+    <div class="filter-bar">
+      <input type="search" id="search-inp" placeholder="Search titles, cast, site, url…" />
+      <div class="filter-labeled"><span class="filter-float-label">Released after</span><input type="date" id="released-after" aria-label="Released after date" /></div>
+      <div class="filter-labeled"><span class="filter-float-label">Min duration (sec)</span><input type="number" id="duration-min" min="0" placeholder="0" aria-label="Minimum duration in seconds" /></div>
+      <select id="site-filter" aria-label="Filter by site group">
+        <option value="">All sites</option>
+      </select>
+      <select id="platform-filter" aria-label="Filter by platform">
+        <option value="">All types</option>
+      </select>
+    </div>
+    <div class="topbar-actions">
+      <button class="btn btn-sm btn-outline-secondary" id="btn-seen" aria-label="Mark visible videos as seen">
+        <i class="bi bi-check2-all me-1"></i><span class="label-full">Mark seen</span><span class="label-short">Seen</span>
+      </button>
+      <button class="btn btn-sm btn-outline-danger" id="btn-fresh-scan" title="Delete all stored videos and run a full fresh scan" aria-label="Delete all videos and run fresh scan">
+        <i class="bi bi-arrow-clockwise me-1"></i><span class="label-full">Fresh scan all</span><span class="label-short">Fresh scan</span>
+      </button>
+      <button class="btn btn-sm btn-outline-secondary" id="btn-darkmode" title="Toggle dark mode" aria-label="Toggle dark mode">
+        <i class="bi bi-moon-stars-fill" id="darkmode-icon"></i>
+      </button>
+      <button class="btn btn-sm btn-brand" id="btn-scan" aria-label="Start manual scan now">
+        <i class="bi bi-arrow-repeat me-1"></i><span class="label-full">Scan now</span><span class="label-short">Scan</span>
+      </button>
     </div>
   </div>
 
