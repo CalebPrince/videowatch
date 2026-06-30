@@ -33,7 +33,14 @@ if sys.platform.startswith("win"):
         pass
 
 # Initialize logging
-logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
+_LOG_FILE = Path(__file__).parent / "videowatch.log"
+_log_handler = logging.FileHandler(_LOG_FILE, encoding="utf-8")
+_log_handler.setFormatter(logging.Formatter("%(asctime)s %(levelname)s %(name)s: %(message)s"))
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s %(levelname)s %(name)s: %(message)s",
+    handlers=[logging.StreamHandler(), _log_handler],
+)
 log = logging.getLogger(__name__)
 
 # Initialize database
@@ -138,6 +145,19 @@ try:
     app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
 except Exception as e:
     log.warning(f"Could not mount static folder: {e}")
+
+@app.get("/api/logs")
+def get_logs(lines: int = 200):
+    """Return the last N lines of the server log file as plain text."""
+    try:
+        text = _LOG_FILE.read_text(encoding="utf-8", errors="replace")
+        tail = "\n".join(text.splitlines()[-lines:])
+        from fastapi.responses import PlainTextResponse
+        return PlainTextResponse(tail)
+    except Exception as e:
+        from fastapi.responses import PlainTextResponse
+        return PlainTextResponse(f"Log file not found: {e}", status_code=404)
+
 
 @app.get("/")
 def root(request: Request):
