@@ -1033,10 +1033,10 @@ def add_site(body: SiteIn, request: Request):
     site_id = short_id(url)
     with write_lock:
         with get_db() as db:
-            if db.execute("SELECT id FROM sites WHERE url=?", (url,)).fetchone():
+            owner = current_user(request) or (expected_auth_user().strip() or "admin")
+            if db.execute("SELECT id FROM sites WHERE url=? AND owner=?", (url, owner)).fetchone():
                 raise HTTPException(409, "Site already monitored")
             notify_enabled = 1 if body.notify_enabled else 0
-            owner = current_user(request) or (expected_auth_user().strip() or "admin")
             db.execute(
                 "INSERT INTO sites (id, url, name, group_name, added_at, max_pages, scan_interval, "
                 "rule_include_keywords, rule_exclude_keywords, rule_min_duration, scan_profile, notify_enabled, owner) "
