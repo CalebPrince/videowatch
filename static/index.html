@@ -393,6 +393,36 @@
       border-radius: 10px;
       box-shadow: 0 10px 20px rgba(15,118,110,.24);
     }
+    .btn-profile {
+      background: rgba(15,118,110,.1);
+      border: 1px solid rgba(15,118,110,.3);
+      color: var(--brand);
+      border-radius: 50%;
+      width: 34px;
+      height: 34px;
+      padding: 0;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 1.1rem;
+      transition: background .15s, border-color .15s;
+    }
+    .btn-profile:hover, .btn-profile:focus {
+      background: rgba(15,118,110,.18);
+      border-color: var(--brand);
+      color: var(--brand-strong);
+    }
+    .btn-profile::after { display: none; }
+    [data-theme="dark"] .btn-profile {
+      background: rgba(15,118,110,.18);
+      border-color: rgba(15,118,110,.4);
+      color: #5eead4;
+    }
+    [data-theme="dark"] .btn-profile:hover, [data-theme="dark"] .btn-profile:focus {
+      background: rgba(15,118,110,.28);
+      border-color: #0f766e;
+      color: #99f6e4;
+    }
 
     @keyframes rise-in {
       from { opacity: 0; transform: translateY(8px); }
@@ -440,8 +470,8 @@
       .topbar-actions .btn {
         width: 100%;
       }
-      .topbar-actions .dropdown,
-      .topbar-actions .dropdown .btn {
+      .topbar-actions .dropdown:not(:last-child),
+      .topbar-actions .dropdown:not(:last-child) .btn {
         width: 100%;
       }
       .topbar-actions .label-full {
@@ -527,10 +557,16 @@
     }
     [data-theme="dark"] .modal-content .form-control::placeholder { color: #64748b; }
     [data-theme="dark"] .modal-content .form-text { color: #94a3b8; }
+    .dropdown-item:hover,
+    .dropdown-item:focus { background: rgba(15,118,110,.1); color: var(--brand-strong); }
+    .dropdown-item.text-danger:hover,
+    .dropdown-item.text-danger:focus { background: rgba(239,68,68,.08); color: #dc2626; }
     [data-theme="dark"] .dropdown-menu { background: #1e293b; border-color: #334155; }
     [data-theme="dark"] .dropdown-item { color: #e2e8f0; }
     [data-theme="dark"] .dropdown-item:hover,
-    [data-theme="dark"] .dropdown-item:focus { background: #334155; color: #fff; }
+    [data-theme="dark"] .dropdown-item:focus { background: rgba(15,118,110,.2); color: #5eead4; }
+    [data-theme="dark"] .dropdown-item.text-danger:hover,
+    [data-theme="dark"] .dropdown-item.text-danger:focus { background: rgba(239,68,68,.12); color: #f87171; }
     [data-theme="dark"] .dropdown-divider { border-color: #334155; }
     [data-theme="dark"] .btn-close { filter: invert(1) grayscale(1); }
     [data-theme="dark"] .btn-outline-secondary {
@@ -626,9 +662,15 @@
       <button class="btn btn-sm btn-outline-danger" id="btn-fresh-scan" title="Delete all stored videos and run a full fresh scan" aria-label="Delete all videos and run fresh scan">
         <i class="bi bi-arrow-clockwise me-1"></i><span class="label-full">Fresh scan all</span><span class="label-short">Fresh scan</span>
       </button>
+      <button class="btn btn-sm btn-outline-secondary" id="btn-darkmode" title="Toggle dark mode" aria-label="Toggle dark mode">
+        <i class="bi bi-moon-stars-fill" id="darkmode-icon"></i>
+      </button>
+      <button class="btn btn-sm btn-brand" id="btn-scan" aria-label="Start manual scan now">
+        <i class="bi bi-arrow-repeat me-1"></i><span class="label-full">Scan now</span><span class="label-short">Scan</span>
+      </button>
       <div class="dropdown">
-        <button class="btn btn-sm btn-outline-secondary dropdown-toggle" type="button" data-bs-toggle="dropdown" aria-expanded="false">
-          <i class="bi bi-three-dots-vertical me-1"></i><span class="label-full">More</span><span class="label-short">More</span>
+        <button class="btn btn-sm btn-profile dropdown-toggle" type="button" data-bs-toggle="dropdown" aria-expanded="false" aria-label="Account menu" title="Account">
+          <i class="bi bi-person-circle"></i>
         </button>
         <ul class="dropdown-menu dropdown-menu-end">
           <li>
@@ -659,12 +701,6 @@
           </li>
         </ul>
       </div>
-      <button class="btn btn-sm btn-outline-secondary" id="btn-darkmode" title="Toggle dark mode" aria-label="Toggle dark mode">
-        <i class="bi bi-moon-stars-fill" id="darkmode-icon"></i>
-      </button>
-      <button class="btn btn-sm btn-brand" id="btn-scan" aria-label="Start manual scan now">
-        <i class="bi bi-arrow-repeat me-1"></i><span class="label-full">Scan now</span><span class="label-short">Scan</span>
-      </button>
     </div>
   </div>
 
