@@ -200,6 +200,7 @@ class AutomationToggleIn(BaseModel):
 class LoginIn(BaseModel):
     username: str
     password: str
+    remember_me: bool = False
 
 
 class ChangePasswordIn(BaseModel):
@@ -1046,8 +1047,11 @@ def auth_login(body: LoginIn, request: Request):
         if row.get("role") != "super_admin":
             raise HTTPException(403, "Please verify your email before logging in. Check your inbox.")
 
+    from datetime import timedelta
+    ttl = timedelta(days=30) if body.remember_me else timedelta(hours=24)
     request.session["auth_user"] = body.username
     request.session["auth_role"] = _sanitize_role(row.get("role") if row else None) or "admin"
+    request.session["session_expires_at"] = (datetime.now(timezone.utc) + ttl).isoformat()
     return {
         "ok": True,
         "authenticated": True,

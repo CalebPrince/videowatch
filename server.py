@@ -69,6 +69,16 @@ async def auth_gate(request, call_next):
     }
     public_pages = {"/", "/login", "/register", "/verify-email", "/static/login.html", "/favicon.ico"}
 
+    # Expire sessions that have passed their TTL
+    expires_at = request.session.get("session_expires_at")
+    if expires_at and request.session.get("auth_user"):
+        try:
+            from datetime import datetime, timezone
+            if datetime.now(timezone.utc) > datetime.fromisoformat(expires_at):
+                request.session.clear()
+        except Exception:
+            pass
+
     if routes.auth_enabled() and not routes.is_authenticated(request):
         if path.startswith("/api/") and path not in public_api:
             return JSONResponse({"detail": "Authentication required"}, status_code=401)
@@ -82,6 +92,7 @@ app.add_middleware(
     SessionMiddleware,
     secret_key=os.environ.get("VIDEOWATCH_SESSION_SECRET", "videowatch-dev-session-secret"),
     same_site="lax",
+    max_age=30 * 24 * 3600,  # 30 days max; actual expiry enforced via session_expires_at
 )
 
 # ── Server‑side scheduler ─────────────────────────────────────────────────────
