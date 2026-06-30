@@ -278,7 +278,7 @@ YOUTUBE_CHANNEL_RE = re.compile(
 
 # Matches VK Video channel/user pages: vkvideo.ru/@handle or vkvideo.ru/public12345
 VK_CHANNEL_RE = re.compile(
-    r'vkvideo\.ru/(@[\w.-]+|public\d+|club\d+|id\d+)(/all|/videos)?/?$',
+    r'vkvideo\.ru/(@[\w.-]+|public\d+|club\d+|id\d+)',
     re.I,
 )
 
@@ -1742,6 +1742,7 @@ async def scan_site(site: dict, push_func=None):
 
     # ── VK Video channel shortcut ─────────────────────────────────────────────
     if not skip_playwright and _is_vk_channel_url(base_url):
+        await push(f"LOG|{site_id}|VK channel detected: {base_url}")
         if HAS_YT_DLP:
             log.info(f"  Detected VK Video channel — using yt-dlp")
             await push(f"PAGE|{site_id}|1|1|{base_url}")
