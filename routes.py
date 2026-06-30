@@ -27,9 +27,6 @@ VIDEOS_DIR.mkdir(exist_ok=True)
 LEGACY_VIDEOS_DIR = Path(__file__).resolve().parent.parent / "videos"
 import ipaddress
 import time
-import smtplib
-from email.mime.multipart import MIMEMultipart
-from email.mime.text import MIMEText
 
 from db import get_db, write_lock, DB_PATH
 
@@ -56,54 +53,50 @@ def _check_rate_limit(ip: str, max_attempts: int = 5, window_seconds: int = 300)
             headers={"Retry-After": str(retry_after)},
         )
 
-# ── Email / SMTP ───────────────────────────────────────────────────────────────
-_SMTP_HOST = os.environ.get("SMTP_HOST", "smtp.gmail.com")
-_SMTP_PORT = int(os.environ.get("SMTP_PORT", "587"))
-_SMTP_USER = os.environ.get("SMTP_USER", "")
-_SMTP_PASSWORD = os.environ.get("SMTP_PASSWORD", "")
+# ── Email (Resend) ────────────────────────────────────────────────────────────
+_RESEND_API_KEY = os.environ.get("RESEND_API_KEY", "")
+_EMAIL_FROM = os.environ.get("EMAIL_FROM", "VideoWatch <onboarding@resend.dev>")
 _APP_BASE_URL = os.environ.get("APP_BASE_URL", "http://localhost:8000")
 
 def _email_configured() -> bool:
-    return bool(_SMTP_USER and _SMTP_PASSWORD)
+    return bool(_RESEND_API_KEY)
 
 def _send_verification_email(to_address: str, username: str, token: str) -> None:
     verify_url = f"{_APP_BASE_URL}/verify-email?token={token}"
-    msg = MIMEMultipart("alternative")
-    msg["Subject"] = "Verify your VideoWatch account"
-    msg["From"] = f"VideoWatch <{_SMTP_USER}>"
-    msg["To"] = to_address
-    msg["Reply-To"] = _SMTP_USER
-    msg["X-Mailer"] = "VideoWatch"
-    msg["Message-ID"] = f"<verify-{token[:16]}@videowatch>"
-
-    text = (
-        f"Hi {username},\n\n"
-        f"Click the link below to verify your email address:\n{verify_url}\n\n"
-        f"This link expires in 24 hours.\n\nIf you didn't register, ignore this email."
-    )
     html = f"""
-    <div style="font-family:sans-serif;max-width:480px;margin:auto">
-      <h2 style="color:#0f766e">Verify your VideoWatch account</h2>
-      <p>Hi <strong>{username}</strong>,</p>
-      <p>Click the button below to verify your email address and activate your account.</p>
+    <div style="font-family:sans-serif;max-width:480px;margin:auto;padding:24px">
+      <h2 style="color:#0f766e;margin-bottom:8px">Verify your VideoWatch account</h2>
+      <p style="color:#374151">Hi <strong>{username}</strong>,</p>
+      <p style="color:#374151">Click the button below to verify your email address and activate your account.</p>
       <a href="{verify_url}"
-         style="display:inline-block;padding:12px 24px;background:#0f766e;color:#fff;
-                text-decoration:none;border-radius:6px;font-weight:600;margin:16px 0">
-        Verify Email
+         style="display:inline-block;padding:12px 28px;background:#0f766e;color:#fff;
+                text-decoration:none;border-radius:8px;font-weight:700;margin:16px 0;font-size:15px">
+        Verify Email Address
       </a>
-      <p style="color:#6b7280;font-size:0.85rem">
-        Link expires in 24 hours. If you didn't register, you can safely ignore this email.
+      <p style="color:#6b7280;font-size:13px;margin-top:24px">
+        This link expires in <strong>24 hours</strong>.<br>
+        If you didn't create a VideoWatch account, you can safely ignore this email.
       </p>
+      <hr style="border:none;border-top:1px solid #e5e7eb;margin:24px 0"/>
+      <p style="color:#9ca3af;font-size:12px">VideoWatch · Your personal video monitoring hub</p>
     </div>
     """
-    msg.attach(MIMEText(text, "plain"))
-    msg.attach(MIMEText(html, "html"))
-
-    with smtplib.SMTP(_SMTP_HOST, _SMTP_PORT) as smtp:
-        smtp.ehlo()
-        smtp.starttls()
-        smtp.login(_SMTP_USER, _SMTP_PASSWORD)
-        smtp.sendmail(_SMTP_USER, to_address, msg.as_string())
+    text = (
+        f"Hi {username},\n\n"
+        f"Verify your VideoWatch account by visiting:\n{verify_url}\n\n"
+        f"This link expires in 24 hours.\n\n"
+        f"If you didn't register, ignore this email."
+    )
+    import httpx as _httpx
+    resp = _httpx.post(
+        "https://api.resend.com/emails",
+        headers={"Authorization": f"Bearer {_RESEND_API_KEY}", "Content-Type": "application/json"},
+        json={"from": _EMAIL_FROM, "to": [to_address], "subject": "Verify your VideoWatch account",
+              "html": html, "text": text},
+        timeout=10,
+    )
+    if resp.status_code >= 400:
+        raise RuntimeError(f"Resend error {resp.status_code}: {resp.text}")
 
 from scraper import (
     scan_site,
