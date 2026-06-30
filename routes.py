@@ -1842,9 +1842,17 @@ async def discover_sites(q: str = Query(...)):
                     "reddit.com", "instagram.com", "linkedin.com", "duckduckgo.com",
                     "bing.com", "amazon.com", "youtube.com", "tiktok.com",
                 }
-                # DuckDuckGo Lite links are plain <a> tags inside table cells
+                # DDG Lite wraps links as //duckduckgo.com/l/?uddg=<encoded-url>
+                from urllib.parse import unquote, parse_qs
                 for a in soup.find_all("a", href=True):
-                    href = (a.get("href") or "").strip()
+                    raw_href = (a.get("href") or "").strip()
+                    # Extract real URL from uddg param
+                    if "uddg=" in raw_href:
+                        qs_part = urlparse("https:" + raw_href).query if raw_href.startswith("//") else urlparse(raw_href).query
+                        uddg = parse_qs(qs_part).get("uddg", [None])[0]
+                        href = unquote(uddg) if uddg else ""
+                    else:
+                        href = raw_href
                     if not href.startswith("http"):
                         continue
                     p = urlparse(href)
