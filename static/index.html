@@ -2219,7 +2219,9 @@ document.getElementById('btn-preview').onclick = async () => {
     document.getElementById('preview-loading').style.display = 'none';
 
     if (!data.videos || data.videos.length === 0) {
-      document.getElementById('preview-empty').style.display = 'block';
+      const emptyEl = document.getElementById('preview-empty');
+      emptyEl.textContent = data.hint || 'No videos found. Try a listing URL (e.g. /videos, /scenes, /clips).';
+      emptyEl.style.display = 'block';
     } else {
       document.getElementById('preview-count-label').textContent =
         `Found ${data.count} video${data.count !== 1 ? 's' : ''} on first page (showing up to 12)`;

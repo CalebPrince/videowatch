@@ -1768,45 +1768,118 @@ async def preview_site(url: str = Query(...)):
     }
 
     found_videos: list[dict] = []
-
+    error_detail: str = ""
 
     async def _run_preview():
         from scraper import _fetch_page, _make_context, _is_youtube_channel_url, _scrape_youtube_channel, scrape_videos
         from playwright.async_api import async_playwright
+        from bs4 import BeautifulSoup as _BS
 
-        vids: list[dict] = []
         if _is_youtube_channel_url(url):
             try:
                 yt_vids = await asyncio.to_thread(_scrape_youtube_channel, url, 12)
-                vids.extend(yt_vids[:12])
+                return yt_vids[:12], ""
             except Exception as e:
                 log.warning(f"Preview YT scrape failed: {e}")
-        else:
+                return [], str(e)
+
+        html = ""
+        fetch_err = ""
+        try:
+            async with async_playwright() as p:
+                browser, context = await _make_context(p, site_id)
+                try:
+                    html = await _fetch_page(context, url, first_page=True)
+                finally:
+                    await context.close()
+                    await browser.close()
+        except Exception as e:
+            log.warning(f"Preview fetch failed for {url}: {e}")
+            fetch_err = str(e)
+            return [], fetch_err
+
+        # Try strict platform-aware scrape first
+        strict_vids = scrape_videos(html, url)
+        if strict_vids:
+            return strict_vids[:12], ""
+
+        # Fallback: broad link scan — pick content-looking <a> tags with nearby images
+        soup = _BS(html, "html.parser")
+        base_host = urlparse(url).netloc.lower()
+        broad: list[dict] = []
+        seen: set[str] = set()
+
+        SKIP_WORDS = re.compile(
+            r'\b(login|register|signup|sign.up|contact|about|faq|privacy|terms'
+            r'|cookie|sitemap|advertis|newsletter|search|category|categories'
+            r'|tag|tags|channel|channels|model|models|studio|studios)\b',
+            re.I
+        )
+
+        for a in soup.find_all("a", href=True):
+            href = (a.get("href") or "").strip()
+            if not href:
+                continue
             try:
-                async with async_playwright() as p:
-                    browser, context = await _make_context(p, site_id)
+                full = urljoin(url, href)
+            except Exception:
+                continue
+            p2 = urlparse(full)
+            if p2.scheme not in {"http", "https"}:
+                continue
+            if p2.netloc.lower() != base_host:
+                continue
+            path = p2.path.rstrip("/")
+            segments = [s for s in path.split("/") if s]
+            # Need at least 2 path segments and a meaningful slug
+            if len(segments) < 2:
+                continue
+            slug = segments[-1]
+            if len(slug) < 4 or re.search(r'^\d+$', slug):
+                continue
+            if SKIP_WORDS.search(full):
+                continue
+            norm = full.split("?")[0].split("#")[0]
+            if norm in seen:
+                continue
+            seen.add(norm)
+
+            # Grab title text and nearby image
+            title = a.get_text(" ", strip=True) or slug.replace("-", " ").replace("_", " ")
+            thumb = None
+            for img in a.find_all("img"):
+                src = img.get("src") or img.get("data-src") or img.get("data-lazy-src")
+                if src and not src.startswith("data:"):
                     try:
-                        html = await _fetch_page(context, url, first_page=True)
-                        page_vids = scrape_videos(html, url)
-                        vids.extend(page_vids[:12])
-                    finally:
-                        await context.close()
-                        await browser.close()
-            except Exception as e:
-                log.warning(f"Preview scan failed for {url}: {e}")
-        return vids
+                        thumb = urljoin(url, src)
+                    except Exception:
+                        pass
+                    break
+
+            broad.append({"url": full, "title": title, "thumb": thumb,
+                          "embed_url": None, "platform": "direct",
+                          "released_at": None, "cast_names": None, "duration": None})
+            if len(broad) >= 12:
+                break
+
+        hint = "" if broad else "Page fetched but no recognisable video or content links found. Try a listing page URL (e.g. /videos, /scenes, /clips)."
+        return broad[:12], hint
 
     try:
-        found_videos = await asyncio.wait_for(_run_preview(), timeout=60)
+        result = await asyncio.wait_for(_run_preview(), timeout=60)
+        found_videos, error_detail = result
     except asyncio.TimeoutError:
+        error_detail = "Preview timed out (60 s). The site may be slow or blocking automated access."
         log.warning(f"Preview scan timed out for {url}")
     except Exception as e:
+        error_detail = str(e)
         log.warning(f"Preview scan error for {url}: {e}")
 
     return {
         "url": url,
         "count": len(found_videos),
         "videos": found_videos[:12],
+        "hint": error_detail,
     }
 
 
