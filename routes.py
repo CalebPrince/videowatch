@@ -1030,12 +1030,12 @@ def add_site(body: SiteIn, request: Request):
     profile = (body.scan_profile or "balanced").strip().lower()
     if profile not in {"fast", "balanced", "deep"}:
         profile = "balanced"
-    site_id = short_id(url)
     with write_lock:
         with get_db() as db:
             owner = current_user(request) or (expected_auth_user().strip() or "admin")
             if db.execute("SELECT id FROM sites WHERE url=? AND owner=?", (url, owner)).fetchone():
                 raise HTTPException(409, "Site already monitored")
+            site_id = short_id(f"{owner}:{url}")
             notify_enabled = 1 if body.notify_enabled else 0
             db.execute(
                 "INSERT INTO sites (id, url, name, group_name, added_at, max_pages, scan_interval, "
