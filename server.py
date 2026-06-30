@@ -63,10 +63,11 @@ async def auth_gate(request, call_next):
     public_api = {
         "/api/auth/login",
         "/api/auth/register",
+        "/api/auth/verify-email",
         "/api/auth/status",
         "/api/health",
     }
-    public_pages = {"/", "/login", "/register", "/static/login.html", "/favicon.ico"}
+    public_pages = {"/", "/login", "/register", "/verify-email", "/static/login.html", "/favicon.ico"}
 
     if routes.auth_enabled() and not routes.is_authenticated(request):
         if path.startswith("/api/") and path not in public_api:
@@ -195,6 +196,14 @@ def register_page(request: Request):
     if page.exists():
         return FileResponse(str(page))
     raise HTTPException(404, "register.html not found in static/")
+
+
+@app.get("/verify-email")
+def verify_email_page():
+    page = STATIC_DIR / "verify-email.html"
+    if page.exists():
+        return FileResponse(str(page))
+    raise HTTPException(404, "verify-email.html not found in static/")
 
 
 @app.get("/settings")

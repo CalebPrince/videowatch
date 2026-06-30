@@ -290,6 +290,14 @@
         </div>
 
         <div class="field-wrap">
+          <label class="field-label" for="email">Email address</label>
+          <input id="email" class="form-control" type="email"
+            placeholder="you@example.com"
+            autocomplete="email" spellcheck="false" required />
+          <div class="field-hint">We'll send a verification link to this address.</div>
+        </div>
+
+        <div class="field-wrap">
           <label class="field-label" for="password">Password</label>
           <div class="input-group">
             <input id="password" class="form-control" type="password"
@@ -410,11 +418,17 @@
       errEl.style.display = 'none';
       const btn = document.getElementById('btn-register');
       const username = document.getElementById('username').value.trim();
+      const email    = document.getElementById('email').value.trim();
       const password = document.getElementById('password').value;
       const confirm  = document.getElementById('confirm-password').value;
 
       if (!username) {
         errEl.textContent = 'Please enter a username.';
+        errEl.style.display = 'block';
+        return;
+      }
+      if (!email) {
+        errEl.textContent = 'Please enter your email address.';
         errEl.style.display = 'block';
         return;
       }
@@ -428,12 +442,37 @@
       btn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span>Creating account…';
 
       try {
-        await api('/auth/register', {
+        const res = await api('/auth/register', {
           method: 'POST',
-          body: JSON.stringify({ username, password, confirm_password: confirm }),
+          body: JSON.stringify({ username, email, password, confirm_password: confirm }),
         });
-        // Auto-logged in — go to dashboard
-        window.location.href = '/';
+        if (res.verify_email) {
+          // Show "check your inbox" screen
+          document.querySelector('.auth-card').innerHTML = `
+            <div style="text-align:center;padding:1rem 0">
+              <div style="width:72px;height:72px;border-radius:50%;background:#d1fae5;color:#059669;
+                          display:flex;align-items:center;justify-content:center;font-size:2rem;margin:0 auto 1.25rem">
+                <i class="bi bi-envelope-check-fill"></i>
+              </div>
+              <h5 style="font-weight:800;margin-bottom:.5rem">Check your inbox!</h5>
+              <p style="color:var(--muted);font-size:.9rem;margin-bottom:1.5rem">
+                We sent a verification link to <strong>${email}</strong>.<br>
+                Click the link in the email to activate your account.
+              </p>
+              <p style="color:var(--muted);font-size:.8rem">
+                Didn't receive it? Check your spam folder, or
+                <a href="/register" style="color:var(--brand);font-weight:600">try again</a>.
+              </p>
+              <hr style="margin:1.25rem 0"/>
+              <a href="/login" style="color:var(--brand);font-size:.85rem;font-weight:600;text-decoration:none">
+                <i class="bi bi-arrow-left me-1"></i>Back to sign in
+              </a>
+            </div>
+          `;
+        } else {
+          // No email verification needed — go to dashboard
+          window.location.href = '/';
+        }
       } catch (ex) {
         errEl.textContent = ex.message;
         errEl.style.display = 'block';

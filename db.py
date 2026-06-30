@@ -185,6 +185,15 @@ def init_db():
             add_column_if_missing(db, "sites", "owner", "TEXT")
             add_column_if_missing(db, "videos", "is_watched", "INTEGER DEFAULT 0")
             add_column_if_missing(db, "videos", "last_watched_at", "TEXT")
+            add_column_if_missing(db, "users", "email", "TEXT")
+            add_column_if_missing(db, "users", "email_verified", "INTEGER DEFAULT 0")
+            db.execute("""
+                CREATE TABLE IF NOT EXISTS email_verifications (
+                    token       TEXT PRIMARY KEY,
+                    username    TEXT NOT NULL,
+                    expires_at  TEXT NOT NULL
+                )
+            """)
             db.execute(
                 "INSERT OR IGNORE INTO app_settings (key, value) VALUES (?, ?)",
                 ("autoscan_enabled", "0"),

@@ -27,6 +27,9 @@ VIDEOS_DIR.mkdir(exist_ok=True)
 LEGACY_VIDEOS_DIR = Path(__file__).resolve().parent.parent / "videos"
 import ipaddress
 import time
+import smtplib
+from email.mime.multipart import MIMEMultipart
+from email.mime.text import MIMEText
 
 from db import get_db, write_lock, DB_PATH
 
@@ -52,6 +55,53 @@ def _check_rate_limit(ip: str, max_attempts: int = 5, window_seconds: int = 300)
             detail=f"Too many attempts. Try again in {retry_after}s.",
             headers={"Retry-After": str(retry_after)},
         )
+
+# ── Email / SMTP ───────────────────────────────────────────────────────────────
+_SMTP_HOST = os.environ.get("SMTP_HOST", "smtp.gmail.com")
+_SMTP_PORT = int(os.environ.get("SMTP_PORT", "587"))
+_SMTP_USER = os.environ.get("SMTP_USER", "")
+_SMTP_PASSWORD = os.environ.get("SMTP_PASSWORD", "")
+_APP_BASE_URL = os.environ.get("APP_BASE_URL", "http://localhost:8000")
+
+def _email_configured() -> bool:
+    return bool(_SMTP_USER and _SMTP_PASSWORD)
+
+def _send_verification_email(to_address: str, username: str, token: str) -> None:
+    verify_url = f"{_APP_BASE_URL}/verify-email?token={token}"
+    msg = MIMEMultipart("alternative")
+    msg["Subject"] = "Verify your VideoWatch account"
+    msg["From"] = _SMTP_USER
+    msg["To"] = to_address
+
+    text = (
+        f"Hi {username},\n\n"
+        f"Click the link below to verify your email address:\n{verify_url}\n\n"
+        f"This link expires in 24 hours.\n\nIf you didn't register, ignore this email."
+    )
+    html = f"""
+    <div style="font-family:sans-serif;max-width:480px;margin:auto">
+      <h2 style="color:#0f766e">Verify your VideoWatch account</h2>
+      <p>Hi <strong>{username}</strong>,</p>
+      <p>Click the button below to verify your email address and activate your account.</p>
+      <a href="{verify_url}"
+         style="display:inline-block;padding:12px 24px;background:#0f766e;color:#fff;
+                text-decoration:none;border-radius:6px;font-weight:600;margin:16px 0">
+        Verify Email
+      </a>
+      <p style="color:#6b7280;font-size:0.85rem">
+        Link expires in 24 hours. If you didn't register, you can safely ignore this email.
+      </p>
+    </div>
+    """
+    msg.attach(MIMEText(text, "plain"))
+    msg.attach(MIMEText(html, "html"))
+
+    with smtplib.SMTP(_SMTP_HOST, _SMTP_PORT) as smtp:
+        smtp.ehlo()
+        smtp.starttls()
+        smtp.login(_SMTP_USER, _SMTP_PASSWORD)
+        smtp.sendmail(_SMTP_USER, to_address, msg.as_string())
+
 from scraper import (
     scan_site,
     scan_all_sites,
@@ -163,6 +213,7 @@ class UserCreateIn(BaseModel):
 
 class RegisterIn(BaseModel):
     username: str
+    email: str
     password: str
     confirm_password: str
 
@@ -981,8 +1032,14 @@ def auth_login(body: LoginIn, request: Request):
     if not validate_credentials(body.username, body.password):
         raise HTTPException(401, "Invalid username or password")
 
-    request.session["auth_user"] = body.username
     row = _get_user(body.username)
+    # Block login if email verification is configured and not yet verified
+    if _email_configured() and row and not row.get("email_verified"):
+        # super_admin bootstrapped accounts are always exempt
+        if row.get("role") != "super_admin":
+            raise HTTPException(403, "Please verify your email before logging in. Check your inbox.")
+
+    request.session["auth_user"] = body.username
     request.session["auth_role"] = _sanitize_role(row.get("role") if row else None) or "admin"
     return {
         "ok": True,
@@ -1004,10 +1061,13 @@ def auth_register(body: RegisterIn, request: Request):
     if not auth_enabled():
         raise HTTPException(400, "Registration is not available when auth is disabled")
     username = (body.username or "").strip()
+    email = (body.email or "").strip().lower()
     if not username or len(username) < 3:
         raise HTTPException(400, "Username must be at least 3 characters")
     if not re.match(r'^[a-zA-Z0-9_.-]+$', username):
         raise HTTPException(400, "Username may only contain letters, numbers, _ . -")
+    if not email or not re.match(r'^[^@\s]+@[^@\s]+\.[^@\s]+$', email):
+        raise HTTPException(400, "A valid email address is required")
     if not body.password or len(body.password) < 8:
         raise HTTPException(400, "Password must be at least 8 characters")
     if body.password != body.confirm_password:
@@ -1015,12 +1075,58 @@ def auth_register(body: RegisterIn, request: Request):
     with get_db() as db:
         if db.execute("SELECT 1 FROM users WHERE username=?", (username,)).fetchone():
             raise HTTPException(409, "Username already taken")
+        if db.execute("SELECT 1 FROM users WHERE email=?", (email,)).fetchone():
+            raise HTTPException(409, "An account with that email already exists")
     _create_user_record(username, body.password, "viewer")
-    log.info(f"New user registered: {username}")
-    # Auto-login after registration
-    request.session["auth_user"] = username
-    request.session["auth_role"] = "viewer"
-    return {"ok": True, "username": username, "role": "viewer"}
+    # Store email and set verified status
+    from datetime import timedelta
+    expires = (datetime.now(timezone.utc) + timedelta(hours=24)).isoformat()
+    token = secrets.token_urlsafe(32)
+    with write_lock:
+        with get_db() as db:
+            db.execute("UPDATE users SET email=?, email_verified=0 WHERE username=?", (email, username))
+            db.execute(
+                "INSERT OR REPLACE INTO email_verifications (token, username, expires_at) VALUES (?,?,?)",
+                (token, username, expires),
+            )
+            db.commit()
+    log.info(f"New user registered: {username} <{email}>")
+    if _email_configured():
+        try:
+            _send_verification_email(email, username, token)
+        except Exception as exc:
+            log.error(f"Failed to send verification email to {email}: {exc}")
+        return {"ok": True, "username": username, "verify_email": True}
+    else:
+        # No SMTP configured — auto-verify and auto-login
+        with write_lock:
+            with get_db() as db:
+                db.execute("UPDATE users SET email_verified=1 WHERE username=?", (username,))
+                db.commit()
+        request.session["auth_user"] = username
+        request.session["auth_role"] = "viewer"
+        return {"ok": True, "username": username, "role": "viewer", "verify_email": False}
+
+
+@router.get("/api/auth/verify-email")
+def verify_email(token: str):
+    now = datetime.now(timezone.utc).isoformat()
+    with write_lock:
+        with get_db() as db:
+            row = db.execute(
+                "SELECT username, expires_at FROM email_verifications WHERE token=?", (token,)
+            ).fetchone()
+            if not row:
+                raise HTTPException(400, "Invalid or already used verification link")
+            if row["expires_at"] < now:
+                db.execute("DELETE FROM email_verifications WHERE token=?", (token,))
+                db.commit()
+                raise HTTPException(400, "Verification link has expired. Please register again.")
+            db.execute("UPDATE users SET email_verified=1 WHERE username=?", (row["username"],))
+            db.execute("DELETE FROM email_verifications WHERE token=?", (token,))
+            db.commit()
+    log.info(f"Email verified for user: {row['username']}")
+    return {"ok": True, "username": row["username"]}
 
 
 @router.post("/api/auth/change-password")
