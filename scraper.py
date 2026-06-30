@@ -617,48 +617,70 @@ _VK_EXTRACT_JS = """
     const seen = new Set();
     const results = [];
 
-    function getTitle(startNode) {
-        // Search inside the node first, then walk up (max 5 levels)
-        let node = startNode;
-        for (let i = 0; i < 5; i++) {
-            const el = node.querySelector('[data-testid="video_page_title"],[class*="vkitTextClamp__root"]');
-            if (el) {
-                const clone = el.cloneNode(true);
-                clone.querySelectorAll('[class*="colorText"],[class*="Subhead"],[class*="colorScheme"],[class*="getColor"],[class*="colorIcon"]').forEach(e => e.remove());
-                const t = clone.textContent.replace(/\\s+/g, ' ').trim();
-                if (t) return t;
+    // Start from title elements (1 per card) rather than anchors (2 per card)
+    const titleEls = Array.from(document.querySelectorAll(
+        '[data-testid="video_page_title"],[class*="vkitTextClamp__root"]'
+    ));
+
+    titleEls.forEach(titleEl => {
+        // Walk up until we find an ancestor <a href="/video-...">
+        let a = null;
+        let node = titleEl.parentElement;
+        for (let i = 0; i < 8 && node; i++) {
+            if (node.tagName === 'A') {
+                const h = node.getAttribute('href') || '';
+                if (/\\/video-?\\d+_\\d+/.test(h)) { a = node; break; }
             }
-            if (!node.parentElement) break;
             node = node.parentElement;
         }
-        return '';
-    }
 
-    function getThumb(startNode) {
-        let node = startNode;
-        for (let i = 0; i < 5; i++) {
-            const img = node.querySelector('img[src]');
-            if (img && img.src && !img.src.startsWith('data:')) return img.src;
-            if (!node.parentElement) break;
-            node = node.parentElement;
+        // Fallback: find any video link inside the nearest card ancestor
+        if (!a) {
+            let cardNode = titleEl.parentElement;
+            for (let i = 0; i < 6 && cardNode; i++) {
+                const links = Array.from(cardNode.querySelectorAll('a[href]'))
+                    .filter(l => /\\/video-?\\d+_\\d+/.test(l.getAttribute('href') || ''));
+                if (links.length > 0) {
+                    // All links in card should point to same video
+                    a = links[0];
+                    break;
+                }
+                cardNode = cardNode.parentElement;
+            }
         }
-        return '';
-    }
 
-    Array.from(document.querySelectorAll('a[href]'))
-        .filter(a => /\\/video-?\\d+_\\d+/.test(a.getAttribute('href') || ''))
-        .forEach(a => {
-            const match = (a.getAttribute('href') || '').match(/\\/video(-?\\d+_\\d+)/);
-            if (!match) return;
-            const vid_id = match[1];
-            if (seen.has(vid_id)) return;
+        if (!a) return;
+        const match = (a.getAttribute('href') || '').match(/\\/video(-?\\d+_\\d+)/);
+        if (!match) return;
+        const vid_id = match[1];
+        if (seen.has(vid_id)) return;
 
-            const title = getTitle(a) || a.getAttribute('aria-label') || a.getAttribute('title') || '';
-            if (!title) return;
+        // Extract title text, stripping noise spans
+        const clone = titleEl.cloneNode(true);
+        clone.querySelectorAll('[class*="colorText"],[class*="Subhead"],[class*="colorScheme"],[class*="getColor"],[class*="colorIcon"]').forEach(e => e.remove());
+        const title = clone.textContent.replace(/\\s+/g, ' ').trim();
+        if (!title) return;
 
-            seen.add(vid_id);
-            results.push({ vid_id, title, thumb: getThumb(a) });
-        });
+        // Get thumbnail: look in the card ancestor for an img
+        let thumb = '';
+        let cardNode = a.parentElement;
+        for (let i = 0; i < 6 && cardNode; i++) {
+            // Only pick img that's inside a thumbnail anchor (not the title anchor)
+            const thumbA = Array.from(cardNode.querySelectorAll('a[href]'))
+                .find(l => /\\/video-?\\d+_\\d+/.test(l.getAttribute('href') || '') && l !== a && l.querySelector('img'));
+            if (thumbA) {
+                const img = thumbA.querySelector('img');
+                thumb = img.src || img.getAttribute('data-src') || '';
+                break;
+            }
+            const img = cardNode.querySelector('img[src]');
+            if (img && img.src && !img.src.startsWith('data:')) { thumb = img.src; break; }
+            cardNode = cardNode.parentElement;
+        }
+
+        seen.add(vid_id);
+        results.push({ vid_id, title, thumb });
+    });
 
     return results;
 }
