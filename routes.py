@@ -637,7 +637,7 @@ def _set_hashed_password(username: str, raw_password: str):
     _write_setting("auth_password_hash", hash_b64)
 
 
-VALID_ROLES = {"admin", "viewer"}
+VALID_ROLES = {"super_admin", "admin", "viewer"}
 
 
 def _sanitize_role(role: str | None) -> str:
@@ -680,13 +680,28 @@ def _ensure_default_admin_user():
     admin_user = expected_auth_user().strip() or "admin"
     with get_db() as db:
         row = db.execute("SELECT 1 FROM users WHERE username=?", (admin_user,)).fetchone()
-    if row:
-        return
+    if not row:
+        try:
+            _create_user_record(admin_user, expected_auth_password(), "super_admin")
+            log.info("Bootstrapped default admin user into users table")
+        except Exception as e:
+            log.warning(f"Could not bootstrap default admin user: {e}")
+    # Upgrade the env-configured admin to super_admin (one-time migration)
+    # and assign any ownerless sites to them.
     try:
-        _create_user_record(admin_user, expected_auth_password(), "admin")
-        log.info("Bootstrapped default admin user into users table")
+        with write_lock:
+            with get_db() as db:
+                db.execute(
+                    "UPDATE users SET role='super_admin', updated_at=? WHERE username=? AND role='admin'",
+                    (now_iso(), admin_user),
+                )
+                db.execute(
+                    "UPDATE sites SET owner=? WHERE owner IS NULL OR owner=''",
+                    (admin_user,),
+                )
+                db.commit()
     except Exception as e:
-        log.warning(f"Could not bootstrap default admin user: {e}")
+        log.warning(f"Could not migrate default admin / site owners: {e}")
 
 
 def is_authenticated(request: Request) -> bool:
@@ -708,8 +723,20 @@ def current_role(request: Request) -> str:
 
 
 def require_admin(request: Request):
-    if current_role(request) != "admin":
+    if current_role(request) not in {"admin", "super_admin"}:
         raise HTTPException(403, "Admin role required")
+
+
+def is_super_admin(request: Request) -> bool:
+    if not auth_enabled():
+        return True
+    return current_role(request) == "super_admin"
+
+
+def current_user(request: Request) -> str | None:
+    if not auth_enabled():
+        return None
+    return request.session.get("auth_user")
 
 
 def validate_credentials(username: str, password: str) -> bool:
@@ -802,9 +829,15 @@ def is_url_allowed(url: str, allowed_hosts: set[str]) -> bool:
 # ── API Endpoints ─────────────────────────────────────────────────────────────
 
 @router.get("/api/sites")
-def list_sites():
+def list_sites(request: Request):
     with get_db() as db:
-        sites = [dict(r) for r in db.execute("SELECT * FROM sites ORDER BY added_at DESC")]
+        if is_super_admin(request):
+            sites = [dict(r) for r in db.execute("SELECT * FROM sites ORDER BY added_at DESC")]
+        else:
+            user = current_user(request) or ""
+            sites = [dict(r) for r in db.execute(
+                "SELECT * FROM sites WHERE owner=? ORDER BY added_at DESC", (user,)
+            )]
         for s in sites:
             s["new_count"] = db.execute(
                 "SELECT COUNT(*) FROM videos WHERE site_id=? AND is_new=1",
@@ -834,7 +867,7 @@ def list_sites():
     return sites
 
 @router.post("/api/sites")
-def add_site(body: SiteIn):
+def add_site(body: SiteIn, request: Request):
     url = body.url.strip()
     if not url.startswith("http"):
         raise HTTPException(400, "URL must start with http:// or https://")
@@ -863,10 +896,11 @@ def add_site(body: SiteIn):
             if db.execute("SELECT id FROM sites WHERE url=?", (url,)).fetchone():
                 raise HTTPException(409, "Site already monitored")
             notify_enabled = 1 if body.notify_enabled else 0
+            owner = current_user(request) or (expected_auth_user().strip() or "admin")
             db.execute(
                 "INSERT INTO sites (id, url, name, group_name, added_at, max_pages, scan_interval, "
-                "rule_include_keywords, rule_exclude_keywords, rule_min_duration, scan_profile, notify_enabled) "
-                "VALUES (?,?,?,?,?,?,?,?,?,?,?,?)",
+                "rule_include_keywords, rule_exclude_keywords, rule_min_duration, scan_profile, notify_enabled, owner) "
+                "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)",
                 (
                     site_id,
                     url,
@@ -880,6 +914,7 @@ def add_site(body: SiteIn):
                     rule_min_duration,
                     profile,
                     notify_enabled,
+                    owner,
                 ))
             db.commit()
     return {"id": site_id, "url": url, "name": body.name,
@@ -1006,7 +1041,10 @@ def create_user(body: UserCreateIn, request: Request):
 @router.patch("/api/users/{username}")
 def update_user_role(username: str, body: UserRolePatchIn, request: Request):
     require_admin(request)
+    # Only super_admin can grant/revoke super_admin role
     role = _sanitize_role(body.role)
+    if role == "super_admin" and not is_super_admin(request):
+        raise HTTPException(403, "Only super admins can grant super_admin role")
     active = 1 if (True if body.active is None else body.active) else 0
 
     with write_lock:
@@ -1015,14 +1053,19 @@ def update_user_role(username: str, body: UserRolePatchIn, request: Request):
             if not user:
                 raise HTTPException(404, "User not found")
 
-            if user["role"] == "admin" and role != "admin":
-                admins = db.execute("SELECT COUNT(*) FROM users WHERE role='admin' AND active=1").fetchone()[0]
+            # Guard: ensure at least one active super_admin remains
+            if user["role"] == "super_admin" and role != "super_admin":
+                admins = db.execute(
+                    "SELECT COUNT(*) FROM users WHERE role='super_admin' AND active=1"
+                ).fetchone()[0]
                 if admins <= 1 and int(user["active"] or 0) == 1:
-                    raise HTTPException(400, "At least one active admin is required")
-            if user["role"] == "admin" and active == 0:
-                admins = db.execute("SELECT COUNT(*) FROM users WHERE role='admin' AND active=1").fetchone()[0]
+                    raise HTTPException(400, "At least one active super admin is required")
+            if user["role"] == "super_admin" and active == 0:
+                admins = db.execute(
+                    "SELECT COUNT(*) FROM users WHERE role='super_admin' AND active=1"
+                ).fetchone()[0]
                 if admins <= 1:
-                    raise HTTPException(400, "At least one active admin is required")
+                    raise HTTPException(400, "At least one active super admin is required")
 
             db.execute(
                 "UPDATE users SET role=?, active=?, updated_at=? WHERE username=?",
@@ -1036,11 +1079,14 @@ def update_user_role(username: str, body: UserRolePatchIn, request: Request):
     return {"ok": True, "username": username, "role": role, "active": bool(active)}
 
 @router.patch("/api/sites/{site_id}")
-def update_site(site_id: str, body: SitePatch):
+def update_site(site_id: str, body: SitePatch, request: Request):
     with write_lock:
         with get_db() as db:
-            if not db.execute("SELECT id FROM sites WHERE id=?", (site_id,)).fetchone():
+            row = db.execute("SELECT id, owner FROM sites WHERE id=?", (site_id,)).fetchone()
+            if not row:
                 raise HTTPException(404, "Site not found")
+            if not is_super_admin(request) and row["owner"] != current_user(request):
+                raise HTTPException(403, "Not authorised to modify this site")
             updates = {}
             if body.name is not None: updates["name"] = body.name.strip()
             if body.group_name is not None: updates["group_name"] = body.group_name.strip()
@@ -1096,9 +1142,14 @@ def fix_site_urls():
     return {"fixed": fixed}
 
 @router.delete("/api/sites/{site_id}")
-def remove_site(site_id: str):
+def remove_site(site_id: str, request: Request):
     with write_lock:
         with get_db() as db:
+            row = db.execute("SELECT owner FROM sites WHERE id=?", (site_id,)).fetchone()
+            if not row:
+                raise HTTPException(404, "Site not found")
+            if not is_super_admin(request) and row["owner"] != current_user(request):
+                raise HTTPException(403, "Not authorised to delete this site")
             db.execute("DELETE FROM sites WHERE id=?", (site_id,))
             db.execute("DELETE FROM videos WHERE site_id=?", (site_id,))
             db.commit()
@@ -1108,7 +1159,8 @@ def remove_site(site_id: str):
     return {"ok": True}
 
 @router.get("/api/videos")
-def list_videos(site_id: str | None = None,
+def list_videos(request: Request,
+                site_id: str | None = None,
                 group_name: str | None = None,
                 page: int = 1, per_page: int = 24,
                 search: str = "", platform: str = "",
@@ -1124,6 +1176,9 @@ def list_videos(site_id: str | None = None,
     with get_db() as db:
         filters = []
         params = []
+        if not is_super_admin(request):
+            filters.append("sites.owner=?")
+            params.append(current_user(request) or "")
         if group_name is not None:
             if group_name == '__UNGROUPED__':
                 filters.append("(sites.group_name IS NULL OR sites.group_name = '')")
@@ -1287,27 +1342,55 @@ def _run_scan_one_sync(site: dict):
         loop.close()
 
 @router.post("/api/scan")
-async def scan_all(background_tasks: BackgroundTasks):
-    background_tasks.add_task(_run_scan_all_sync)
+async def scan_all(background_tasks: BackgroundTasks, request: Request):
+    if is_super_admin(request):
+        background_tasks.add_task(_run_scan_all_sync)
+    else:
+        user = current_user(request) or ""
+        with get_db() as db:
+            owned = [dict(r) for r in db.execute("SELECT * FROM sites WHERE owner=?", (user,))]
+        for site in owned:
+            background_tasks.add_task(_run_scan_one_sync, site)
     return {"ok": True, "message": "Scan started"}
 
 @router.post("/api/scan/fresh")
-async def fresh_scan_all(background_tasks: BackgroundTasks):
+async def fresh_scan_all(background_tasks: BackgroundTasks, request: Request):
     with write_lock:
         with get_db() as db:
-            deleted = db.execute("SELECT COUNT(*) FROM videos").fetchone()[0]
-            db.execute("DELETE FROM videos")
-            db.execute("UPDATE sites SET last_scan=NULL")
+            if is_super_admin(request):
+                deleted = db.execute("SELECT COUNT(*) FROM videos").fetchone()[0]
+                db.execute("DELETE FROM videos")
+                db.execute("UPDATE sites SET last_scan=NULL")
+            else:
+                user = current_user(request) or ""
+                deleted = db.execute(
+                    "SELECT COUNT(*) FROM videos WHERE site_id IN (SELECT id FROM sites WHERE owner=?)",
+                    (user,),
+                ).fetchone()[0]
+                db.execute(
+                    "DELETE FROM videos WHERE site_id IN (SELECT id FROM sites WHERE owner=?)",
+                    (user,),
+                )
+                db.execute("UPDATE sites SET last_scan=NULL WHERE owner=?", (user,))
             db.commit()
-    background_tasks.add_task(_run_scan_all_sync)
+    if is_super_admin(request):
+        background_tasks.add_task(_run_scan_all_sync)
+    else:
+        user = current_user(request) or ""
+        with get_db() as db:
+            owned = [dict(r) for r in db.execute("SELECT * FROM sites WHERE owner=?", (user,))]
+        for site in owned:
+            background_tasks.add_task(_run_scan_one_sync, site)
     return {"ok": True, "message": "Fresh scan started", "deleted": deleted}
 
 @router.post("/api/scan/{site_id}")
-async def scan_one(site_id: str, background_tasks: BackgroundTasks):
+async def scan_one(site_id: str, background_tasks: BackgroundTasks, request: Request):
     with get_db() as db:
         site = db.execute("SELECT * FROM sites WHERE id=?", (site_id,)).fetchone()
     if not site:
         raise HTTPException(404, "Site not found")
+    if not is_super_admin(request) and site["owner"] != current_user(request):
+        raise HTTPException(403, "Not authorised to scan this site")
     background_tasks.add_task(_run_scan_one_sync, dict(site))
     return {"ok": True, "message": f"Scanning {site['url']}"}
 
@@ -1557,22 +1640,48 @@ async def scan_stream():
                                       "X-Accel-Buffering": "no"})
 
 @router.get("/api/stats")
-def stats():
+def stats(request: Request):
     with get_db() as db:
-        total = db.execute("SELECT COUNT(*) FROM videos").fetchone()[0]
-        new = db.execute("SELECT COUNT(*) FROM videos WHERE is_new=1").fetchone()[0]
-        favorites = db.execute("SELECT COUNT(*) FROM videos WHERE COALESCE(is_favorite,0)=1").fetchone()[0]
-        archived = db.execute("SELECT COUNT(*) FROM videos WHERE COALESCE(is_archived,0)=1").fetchone()[0]
-        ignored = db.execute("SELECT COUNT(*) FROM videos WHERE COALESCE(is_ignored,0)=1").fetchone()[0]
-        sites = db.execute("SELECT COUNT(*) FROM sites").fetchone()[0]
-        scans = db.execute("SELECT COUNT(*) FROM scan_log").fetchone()[0]
-        last = db.execute("SELECT MAX(scanned_at) FROM scan_log").fetchone()[0]
-        platforms = [dict(r) for r in db.execute(
-            "SELECT platform, COUNT(*) as count FROM videos GROUP BY platform ORDER BY count DESC"
-        ).fetchall()]
-        site_list = [dict(r) for r in db.execute(
-            "SELECT id, name, url, group_name FROM sites ORDER BY group_name, name"
-        ).fetchall()]
+        if is_super_admin(request):
+            ow, op = "", []
+        else:
+            ow, op = "AND sites.owner=?", [current_user(request) or ""]
+        vj = f"FROM videos LEFT JOIN sites ON videos.site_id=sites.id WHERE 1=1 {ow}"
+        total     = db.execute(f"SELECT COUNT(*) {vj}", op).fetchone()[0]
+        new       = db.execute(f"SELECT COUNT(*) {vj} AND is_new=1", op).fetchone()[0]
+        favorites = db.execute(f"SELECT COUNT(*) {vj} AND COALESCE(is_favorite,0)=1", op).fetchone()[0]
+        archived  = db.execute(f"SELECT COUNT(*) {vj} AND COALESCE(is_archived,0)=1", op).fetchone()[0]
+        ignored   = db.execute(f"SELECT COUNT(*) {vj} AND COALESCE(is_ignored,0)=1", op).fetchone()[0]
+        if is_super_admin(request):
+            sites = db.execute("SELECT COUNT(*) FROM sites").fetchone()[0]
+            scans = db.execute("SELECT COUNT(*) FROM scan_log").fetchone()[0]
+            last  = db.execute("SELECT MAX(scanned_at) FROM scan_log").fetchone()[0]
+            platforms = [dict(r) for r in db.execute(
+                "SELECT platform, COUNT(*) as count FROM videos GROUP BY platform ORDER BY count DESC"
+            ).fetchall()]
+            site_list = [dict(r) for r in db.execute(
+                "SELECT id, name, url, group_name FROM sites ORDER BY group_name, name"
+            ).fetchall()]
+        else:
+            user = current_user(request) or ""
+            sites = db.execute("SELECT COUNT(*) FROM sites WHERE owner=?", (user,)).fetchone()[0]
+            scans = db.execute(
+                "SELECT COUNT(*) FROM scan_log LEFT JOIN sites ON scan_log.site_id=sites.id WHERE sites.owner=?",
+                (user,),
+            ).fetchone()[0]
+            last = db.execute(
+                "SELECT MAX(scan_log.scanned_at) FROM scan_log LEFT JOIN sites ON scan_log.site_id=sites.id WHERE sites.owner=?",
+                (user,),
+            ).fetchone()[0]
+            platforms = [dict(r) for r in db.execute(
+                "SELECT videos.platform, COUNT(*) as count FROM videos LEFT JOIN sites ON videos.site_id=sites.id "
+                "WHERE sites.owner=? GROUP BY videos.platform ORDER BY count DESC",
+                (user,),
+            ).fetchall()]
+            site_list = [dict(r) for r in db.execute(
+                "SELECT id, name, url, group_name FROM sites WHERE owner=? ORDER BY group_name, name",
+                (user,),
+            ).fetchall()]
     return {"total": total, "new": new, "sites": sites,
             "scans": scans, "last_scan": last,
             "favorites": favorites, "archived": archived, "ignored": ignored,

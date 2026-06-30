@@ -250,6 +250,7 @@
             <select id="new-user-role">
               <option value="viewer">viewer</option>
               <option value="admin">admin</option>
+              <option value="super_admin">super admin</option>
             </select>
           </div>
           <div class="dupe-actions">
@@ -352,6 +353,7 @@
             <select data-k="role">
               <option value="viewer" ${u.role === 'viewer' ? 'selected' : ''}>viewer</option>
               <option value="admin" ${u.role === 'admin' ? 'selected' : ''}>admin</option>
+              <option value="super_admin" ${u.role === 'super_admin' ? 'selected' : ''}>super admin</option>
             </select>
             <select data-k="active">
               <option value="1" ${u.active ? 'selected' : ''}>active</option>
@@ -613,7 +615,7 @@
         return;
       }
       await Promise.all([loadGeneral(), loadHealth(), loadNotifications(), loadSitesRules(), loadDuplicates()]);
-      if ((auth.role || '').toLowerCase() === 'admin') {
+      if (['admin', 'super_admin'].includes((auth.role || '').toLowerCase())) {
         await loadUsers();
       } else {
         const usersBtn = document.querySelector('.navbtn[data-target="users"]');
