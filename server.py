@@ -161,17 +161,30 @@ def get_logs(lines: int = 200):
 
 @app.get("/")
 def root(request: Request):
-    # Serve login page when auth is enabled and no active session exists.
     if routes.auth_enabled() and not routes.is_authenticated(request):
+        landing = STATIC_DIR / "landing.html"
+        if landing.exists():
+            return FileResponse(str(landing))
+        # fallback to login if no landing page
         login = STATIC_DIR / "login.html"
         if login.exists():
             return FileResponse(str(login))
-        raise HTTPException(404, "login.html not found in static/")
+        raise HTTPException(404, "landing.html not found in static/")
 
     idx = STATIC_DIR / "index.html"
     if idx.exists():
         return FileResponse(str(idx))
     raise HTTPException(404, "index.html not found in static/")
+
+
+@app.get("/login")
+def login_page(request: Request):
+    if routes.auth_enabled() and routes.is_authenticated(request):
+        return RedirectResponse(url="/", status_code=302)
+    login = STATIC_DIR / "login.html"
+    if login.exists():
+        return FileResponse(str(login))
+    raise HTTPException(404, "login.html not found in static/")
 
 
 @app.get("/settings")
