@@ -70,8 +70,11 @@ def _send_verification_email(to_address: str, username: str, token: str) -> None
     verify_url = f"{_APP_BASE_URL}/verify-email?token={token}"
     msg = MIMEMultipart("alternative")
     msg["Subject"] = "Verify your VideoWatch account"
-    msg["From"] = _SMTP_USER
+    msg["From"] = f"VideoWatch <{_SMTP_USER}>"
     msg["To"] = to_address
+    msg["Reply-To"] = _SMTP_USER
+    msg["X-Mailer"] = "VideoWatch"
+    msg["Message-ID"] = f"<verify-{token[:16]}@videowatch>"
 
     text = (
         f"Hi {username},\n\n"
