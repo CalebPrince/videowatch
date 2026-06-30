@@ -1008,6 +1008,15 @@ def list_sites(request: Request):
 
 @router.post("/api/sites")
 def add_site(body: SiteIn, request: Request):
+    try:
+        return _add_site_impl(body, request)
+    except HTTPException:
+        raise
+    except Exception as exc:
+        log.exception(f"add_site error: {exc}")
+        raise HTTPException(500, str(exc))
+
+def _add_site_impl(body: SiteIn, request: Request):
     url = body.url.strip()
     if not url.startswith("http"):
         raise HTTPException(400, "URL must start with http:// or https://")
