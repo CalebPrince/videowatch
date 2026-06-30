@@ -661,11 +661,15 @@ _VK_EXTRACT_JS = """
 """
 
 
-async def _scrape_vk_with_playwright(channel_url: str) -> list[dict]:
+async def _scrape_vk_with_playwright(channel_url: str, push=None) -> list[dict]:
     """Scrape a VK Video channel page using Playwright JS evaluation."""
+    async def _push(msg):
+        if push:
+            await push(msg)
+        log.info(f"  VK: {msg}")
+
     base = channel_url.rstrip("/")
-    # Try base URL first; /all is not always a valid path on vkvideo.ru
-    urls_to_try = [base, base + "/all"] if not base.endswith("/all") else [base, base.rstrip("/all")]
+    urls_to_try = [base] if base.endswith("/all") else [base, base + "/all"]
 
     raw = []
     try:
@@ -683,47 +687,50 @@ async def _scrape_vk_with_playwright(channel_url: str) -> list[dict]:
                         except Exception:
                             continue
                     await page.wait_for_timeout(3000)
-                    page_title = await page.title()
                     final_url = page.url
-                    log.info(f"  VK Playwright: loaded '{page_title}' at {final_url}")
+                    await _push(f"Loaded page: {final_url}")
 
-                    # Scroll using both window and the deepest scrollable container
-                    # VK uses a virtual list — scroll the inner container, not window
-                    scroll_js = """
-                    async () => {
-                        const scroller = document.querySelector(
-                            '[class*="VideoList__"] [class*="Scroll"], ' +
-                            '[class*="VirtualList"], [class*="virtualList"], ' +
-                            '[class*="InfiniteScroll"], .os-viewport, ' +
-                            '[class*="CustomScrollbar"]'
-                        ) || document.scrollingElement || document.body;
-                        for (let i = 0; i < 15; i++) {
-                            scroller.scrollTop += scroller.clientHeight * 3;
-                            window.scrollBy(0, window.innerHeight * 3);
-                            await new Promise(r => setTimeout(r, 800));
-                        }
-                    }
-                    """
-                    try:
-                        await page.evaluate(scroll_js)
-                    except Exception:
-                        for _ in range(10):
-                            await page.evaluate("window.scrollBy(0, window.innerHeight * 3)")
-                            await page.wait_for_timeout(800)
-                    await page.wait_for_timeout(1500)
+                    # Count unique video links before scroll
+                    before = await page.evaluate(
+                        "() => new Set(Array.from(document.querySelectorAll('a[href]'))"
+                        ".map(a=>a.getAttribute('href')).filter(h=>h&&/\\/video-?\\d+_\\d+/.test(h))).size"
+                    )
+                    await _push(f"Video links before scroll: {before}")
 
-                    link_count = await page.evaluate("() => document.querySelectorAll('a[href]').length")
-                    vk_link_count = await page.evaluate("() => document.querySelectorAll('a[href*=\"/video\"]').length")
-                    log.info(f"  VK Playwright: {link_count} total links, {vk_link_count} /video links")
+                    # Scroll using Page Down keypresses — works better with virtual lists
+                    await page.keyboard.press("End")
+                    await page.wait_for_timeout(1000)
+                    prev_count = before
+                    for step in range(20):
+                        await page.keyboard.press("End")
+                        await page.evaluate("window.scrollTo(0, document.body.scrollHeight)")
+                        await page.wait_for_timeout(900)
+                        count = await page.evaluate(
+                            "() => new Set(Array.from(document.querySelectorAll('a[href]'))"
+                            ".map(a=>a.getAttribute('href')).filter(h=>h&&/\\/video-?\\d+_\\d+/.test(h))).size"
+                        )
+                        if count != prev_count:
+                            await _push(f"Step {step+1}: {count} unique video links")
+                            prev_count = count
+                        elif step > 4 and count == prev_count:
+                            break  # no new content loading
+
+                    await page.wait_for_timeout(1000)
+                    total_links = await page.evaluate(
+                        "() => new Set(Array.from(document.querySelectorAll('a[href]'))"
+                        ".map(a=>a.getAttribute('href')).filter(h=>h&&/\\/video-?\\d+_\\d+/.test(h))).size"
+                    )
+                    await _push(f"Total unique video links found: {total_links}")
 
                     raw = await page.evaluate(_VK_EXTRACT_JS)
-                    log.info(f"  VK Playwright: JS extraction returned {len(raw)} items")
+                    await _push(f"JS extraction: {len(raw)} items (unique titles)")
                     if raw:
                         break
             finally:
                 await context.close()
                 await browser.close()
     except Exception as e:
+        await _push(f"Playwright error: {e}")
         log.warning(f"  VK Playwright scrape failed: {e}")
         return []
 
@@ -1619,7 +1626,7 @@ async def scan_site(site: dict, push_func=None):
             log.info(f"  VK Video: using dedicated Playwright scraper")
             await push(f"PAGE|{site_id}|1|1|{base_url}")
             try:
-                vk_videos = await _scrape_vk_with_playwright(base_url)
+                vk_videos = await _scrape_vk_with_playwright(base_url, push=push)
                 all_videos.extend(vk_videos)
                 log.info(f"  VK Playwright returned {len(vk_videos)} video(s)")
             except Exception as e:
