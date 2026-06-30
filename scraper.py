@@ -1509,20 +1509,14 @@ async def scan_site(site: dict, push_func=None):
     try:
         with write_lock:
             with get_db() as db:
-                existing_before = db.execute(
-                    "SELECT COUNT(*) FROM videos WHERE site_id=?",
-                    (site_id,),
-                ).fetchone()[0]
-                baseline_import = existing_before == 0
-
                 inserted_count, inserted_ids = _upsert_videos_for_site(
                     db,
                     site_id,
                     unique,
-                    mark_new_on_insert=not baseline_import,
+                    mark_new_on_insert=True,
                 )
 
-                added = 0 if baseline_import else inserted_count
+                added = inserted_count
 
                 db.execute("UPDATE sites SET last_scan=? WHERE id=?", (now_iso(), site_id))
                 effective_pages = 1 if skip_playwright else max_pages
