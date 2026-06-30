@@ -1522,15 +1522,6 @@ async def scan_site(site: dict, push_func=None):
                     mark_new_on_insert=not baseline_import,
                 )
 
-                if inserted_ids:
-                    placeholders = ",".join(["?"] * len(inserted_ids))
-                    db.execute(
-                        f"UPDATE videos SET is_new=0 WHERE site_id=? AND id NOT IN ({placeholders})",
-                        [site_id, *inserted_ids],
-                    )
-                else:
-                    db.execute("UPDATE videos SET is_new=0 WHERE site_id=?", (site_id,))
-
                 added = 0 if baseline_import else inserted_count
 
                 db.execute("UPDATE sites SET last_scan=? WHERE id=?", (now_iso(), site_id))
