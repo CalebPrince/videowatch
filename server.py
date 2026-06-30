@@ -65,7 +65,7 @@ async def auth_gate(request, call_next):
         "/api/auth/status",
         "/api/health",
     }
-    public_pages = {"/", "/login", "/static/login.html", "/favicon.ico"}
+    public_pages = {"/", "/login", "/register", "/static/login.html", "/favicon.ico"}
 
     if routes.auth_enabled() and not routes.is_authenticated(request):
         if path.startswith("/api/") and path not in public_api:
@@ -185,6 +185,16 @@ def login_page(request: Request):
     if login.exists():
         return FileResponse(str(login))
     raise HTTPException(404, "login.html not found in static/")
+
+
+@app.get("/register")
+def register_page(request: Request):
+    if routes.auth_enabled() and routes.is_authenticated(request):
+        return RedirectResponse(url="/", status_code=302)
+    page = STATIC_DIR / "register.html"
+    if page.exists():
+        return FileResponse(str(page))
+    raise HTTPException(404, "register.html not found in static/")
 
 
 @app.get("/settings")

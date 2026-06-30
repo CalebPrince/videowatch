@@ -136,6 +136,12 @@ class UserCreateIn(BaseModel):
     role: str = "viewer"
 
 
+class RegisterIn(BaseModel):
+    username: str
+    password: str
+    confirm_password: str
+
+
 class UserRolePatchIn(BaseModel):
     role: str
     active: bool | None = None
@@ -957,6 +963,30 @@ def auth_login(body: LoginIn, request: Request):
 def auth_logout(request: Request):
     request.session.clear()
     return {"ok": True, "authenticated": False}
+
+
+@router.post("/api/auth/register")
+def auth_register(body: RegisterIn, request: Request):
+    if not auth_enabled():
+        raise HTTPException(400, "Registration is not available when auth is disabled")
+    username = (body.username or "").strip()
+    if not username or len(username) < 3:
+        raise HTTPException(400, "Username must be at least 3 characters")
+    if not re.match(r'^[a-zA-Z0-9_.-]+$', username):
+        raise HTTPException(400, "Username may only contain letters, numbers, _ . -")
+    if not body.password or len(body.password) < 8:
+        raise HTTPException(400, "Password must be at least 8 characters")
+    if body.password != body.confirm_password:
+        raise HTTPException(400, "Passwords do not match")
+    with get_db() as db:
+        if db.execute("SELECT 1 FROM users WHERE username=?", (username,)).fetchone():
+            raise HTTPException(409, "Username already taken")
+    _create_user_record(username, body.password, "viewer")
+    log.info(f"New user registered: {username}")
+    # Auto-login after registration
+    request.session["auth_user"] = username
+    request.session["auth_role"] = "viewer"
+    return {"ok": True, "username": username, "role": "viewer"}
 
 
 @router.post("/api/auth/change-password")
