@@ -750,8 +750,18 @@ def scrape_videos(html: str, base_url: str) -> list[dict]:
             continue
         # VK Video individual video links (e.g. /video-123456_789)
         if VK_VIDEO_LINK_RE.search(href):
-            title_text = (tag.get("title") or tag.get("aria-label") or
-                          tag.get("data-title") or tag.get_text(strip=True) or "").strip()[:200]
+            # Title is in a specific testid div or the vkitTextClamp class
+            title_el = (
+                tag.find(attrs={"data-testid": "video_page_title"})
+                or tag.find(class_=lambda c: c and "vkitTextClamp__root" in c)
+                or tag.find(class_=lambda c: c and "title" in c.lower())
+            )
+            title_text = ""
+            if title_el:
+                title_text = title_el.get_text(" ", strip=True)
+            if not title_text:
+                title_text = tag.get("title") or tag.get("aria-label") or tag.get("data-title") or ""
+            title_text = title_text.strip()[:200]
             img = tag.select_one("img")
             thumb = None
             if img:
