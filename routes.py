@@ -26,8 +26,32 @@ VIDEOS_DIR = Path(__file__).resolve().parent / "videos"
 VIDEOS_DIR.mkdir(exist_ok=True)
 LEGACY_VIDEOS_DIR = Path(__file__).resolve().parent.parent / "videos"
 import ipaddress
+import time
 
 from db import get_db, write_lock, DB_PATH
+
+# ── Rate limiting ─────────────────────────────────────────────────────────────
+_rate_limit_store: dict[str, list[float]] = {}
+
+def _client_ip(request: Request) -> str:
+    forwarded = request.headers.get("X-Forwarded-For")
+    if forwarded:
+        return forwarded.split(",")[0].strip()
+    return request.client.host if request.client else "unknown"
+
+def _check_rate_limit(ip: str, max_attempts: int = 5, window_seconds: int = 300) -> None:
+    now = time.monotonic()
+    hits = _rate_limit_store.get(ip, [])
+    hits = [t for t in hits if now - t < window_seconds]
+    hits.append(now)
+    _rate_limit_store[ip] = hits
+    if len(hits) > max_attempts:
+        retry_after = int(window_seconds - (now - hits[0]))
+        raise HTTPException(
+            status_code=429,
+            detail=f"Too many attempts. Try again in {retry_after}s.",
+            headers={"Retry-After": str(retry_after)},
+        )
 from scraper import (
     scan_site,
     scan_all_sites,
@@ -941,6 +965,7 @@ def add_site(body: SiteIn, request: Request):
 
 @router.post("/api/auth/login")
 def auth_login(body: LoginIn, request: Request):
+    _check_rate_limit(_client_ip(request))
     _ensure_default_admin_user()
     if not auth_enabled():
         request.session["auth_user"] = body.username or "local"
@@ -975,6 +1000,7 @@ def auth_logout(request: Request):
 
 @router.post("/api/auth/register")
 def auth_register(body: RegisterIn, request: Request):
+    _check_rate_limit(_client_ip(request), max_attempts=3, window_seconds=300)
     if not auth_enabled():
         raise HTTPException(400, "Registration is not available when auth is disabled")
     username = (body.username or "").strip()

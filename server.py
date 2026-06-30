@@ -62,6 +62,7 @@ async def auth_gate(request, call_next):
     path = request.url.path
     public_api = {
         "/api/auth/login",
+        "/api/auth/register",
         "/api/auth/status",
         "/api/health",
     }
