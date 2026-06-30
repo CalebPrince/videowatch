@@ -786,7 +786,18 @@ async def _scrape_vk_with_playwright(channel_url: str, push=None) -> list[dict]:
                         except Exception:
                             continue
                     await page.wait_for_timeout(3000)
-                    await _push(f"Loaded page: {page.url}")
+                    final_url = page.url
+                    page_title = await page.title()
+                    link_count = await page.evaluate(
+                        "() => document.querySelectorAll('a[href]').length"
+                    )
+                    vid_link_count = await page.evaluate(
+                        "() => Array.from(document.querySelectorAll('a[href]'))"
+                        ".filter(a=>/\\/video-?\\d+_\\d+/.test(a.getAttribute('href')||'')).length"
+                    )
+                    await _push(f"Loaded page: {final_url}")
+                    await _push(f"Page title: {page_title!r}")
+                    await _push(f"Links on page: {link_count} total, {vid_link_count} video links")
                     await _push(f"API items after initial load: {len(api_items)}")
 
                     # Scroll to trigger paginated API loads
