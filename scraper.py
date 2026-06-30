@@ -616,46 +616,50 @@ _VK_EXTRACT_JS = """
 () => {
     const seen = new Set();
     const results = [];
-    // Match both /video-OWNER_ID and full https://vkvideo.ru/video-OWNER_ID
-    const allLinks = Array.from(document.querySelectorAll('a[href]')).filter(a => {
-        const h = a.getAttribute('href') || '';
-        return /\\/video-?\\d+_\\d+/.test(h) || /vkvideo\\.ru\\/video-?\\d+_\\d+/.test(h);
-    });
-    allLinks.forEach(a => {
-        const href = a.getAttribute('href') || '';
-        const match = href.match(/\\/video(-?\\d+_\\d+)/);
-        if (!match) return;
-        const vid_id = match[1];
-        if (seen.has(vid_id)) return;
 
-        // Walk up to find the card container, then locate the title inside it
-        let container = a;
-        for (let i = 0; i < 6; i++) {
-            if (!container.parentElement) break;
-            container = container.parentElement;
-            const allLinks = container.querySelectorAll('a[href*="/video-' + vid_id + '"]');
-            if (allLinks.length >= 2) break;
+    function getTitle(startNode) {
+        // Search inside the node first, then walk up (max 5 levels)
+        let node = startNode;
+        for (let i = 0; i < 5; i++) {
+            const el = node.querySelector('[data-testid="video_page_title"],[class*="vkitTextClamp__root"]');
+            if (el) {
+                const clone = el.cloneNode(true);
+                clone.querySelectorAll('[class*="colorText"],[class*="Subhead"],[class*="colorScheme"],[class*="getColor"],[class*="colorIcon"]').forEach(e => e.remove());
+                const t = clone.textContent.replace(/\\s+/g, ' ').trim();
+                if (t) return t;
+            }
+            if (!node.parentElement) break;
+            node = node.parentElement;
         }
+        return '';
+    }
 
-        const titleEl = container.querySelector(
-            '[data-testid="video_page_title"], [class*="vkitTextClamp__root"]'
-        );
-        let title = '';
-        if (titleEl) {
-            // Clone so we can remove noise nodes without touching the real DOM
-            const clone = titleEl.cloneNode(true);
-            clone.querySelectorAll('[class*="colorText"],[class*="Subhead"],[class*="colorScheme"],[class*="getColor"],[class*="colorIcon"]').forEach(el => el.remove());
-            title = clone.textContent.replace(/\\s+/g, ' ').trim();
+    function getThumb(startNode) {
+        let node = startNode;
+        for (let i = 0; i < 5; i++) {
+            const img = node.querySelector('img[src]');
+            if (img && img.src && !img.src.startsWith('data:')) return img.src;
+            if (!node.parentElement) break;
+            node = node.parentElement;
         }
-        if (!title) title = a.getAttribute('aria-label') || a.getAttribute('title') || '';
-        if (!title) return;
+        return '';
+    }
 
-        const img = container.querySelector('img[src], img[data-src]');
-        const thumb = img ? (img.src || img.getAttribute('data-src') || '') : '';
+    Array.from(document.querySelectorAll('a[href]'))
+        .filter(a => /\\/video-?\\d+_\\d+/.test(a.getAttribute('href') || ''))
+        .forEach(a => {
+            const match = (a.getAttribute('href') || '').match(/\\/video(-?\\d+_\\d+)/);
+            if (!match) return;
+            const vid_id = match[1];
+            if (seen.has(vid_id)) return;
 
-        seen.add(vid_id);
-        results.push({ vid_id, title: title.trim(), thumb });
-    });
+            const title = getTitle(a) || a.getAttribute('aria-label') || a.getAttribute('title') || '';
+            if (!title) return;
+
+            seen.add(vid_id);
+            results.push({ vid_id, title, thumb: getThumb(a) });
+        });
+
     return results;
 }
 """
