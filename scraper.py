@@ -640,20 +640,12 @@ _VK_EXTRACT_JS = """
         const titleEl = container.querySelector(
             '[data-testid="video_page_title"], [class*="vkitTextClamp__root"]'
         );
-        // Get only direct text nodes + non-noise child text
         let title = '';
         if (titleEl) {
-            titleEl.childNodes.forEach(n => {
-                if (n.nodeType === 3) { title += n.textContent; }
-                else if (n.nodeType === 1) {
-                    const cls = n.className || '';
-                    if (!cls.includes('colorText') && !cls.includes('Subhead') &&
-                        !cls.includes('colorScheme') && !cls.includes('getColor')) {
-                        title += n.textContent;
-                    }
-                }
-            });
-            title = title.trim();
+            // Clone so we can remove noise nodes without touching the real DOM
+            const clone = titleEl.cloneNode(true);
+            clone.querySelectorAll('[class*="colorText"],[class*="Subhead"],[class*="colorScheme"],[class*="getColor"],[class*="colorIcon"]').forEach(el => el.remove());
+            title = clone.textContent.replace(/\\s+/g, ' ').trim();
         }
         if (!title) title = a.getAttribute('aria-label') || a.getAttribute('title') || '';
         if (!title) return;
