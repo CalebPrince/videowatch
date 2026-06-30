@@ -687,19 +687,34 @@ async def _scrape_vk_with_playwright(channel_url: str) -> list[dict]:
                     final_url = page.url
                     log.info(f"  VK Playwright: loaded '{page_title}' at {final_url}")
 
-                    # Scroll to load lazy video cards
-                    for _ in range(8):
-                        await page.evaluate("window.scrollBy(0, window.innerHeight * 3)")
-                        await page.wait_for_timeout(1000)
+                    # Scroll using both window and the deepest scrollable container
+                    # VK uses a virtual list — scroll the inner container, not window
+                    scroll_js = """
+                    async () => {
+                        const scroller = document.querySelector(
+                            '[class*="VideoList__"] [class*="Scroll"], ' +
+                            '[class*="VirtualList"], [class*="virtualList"], ' +
+                            '[class*="InfiniteScroll"], .os-viewport, ' +
+                            '[class*="CustomScrollbar"]'
+                        ) || document.scrollingElement || document.body;
+                        for (let i = 0; i < 15; i++) {
+                            scroller.scrollTop += scroller.clientHeight * 3;
+                            window.scrollBy(0, window.innerHeight * 3);
+                            await new Promise(r => setTimeout(r, 800));
+                        }
+                    }
+                    """
+                    try:
+                        await page.evaluate(scroll_js)
+                    except Exception:
+                        for _ in range(10):
+                            await page.evaluate("window.scrollBy(0, window.innerHeight * 3)")
+                            await page.wait_for_timeout(800)
+                    await page.wait_for_timeout(1500)
 
-                    # Count all video-like links before extraction
-                    link_count = await page.evaluate(
-                        "() => document.querySelectorAll('a[href]').length"
-                    )
-                    vk_link_count = await page.evaluate(
-                        "() => document.querySelectorAll('a[href*=\"/video\"]').length"
-                    )
-                    log.info(f"  VK Playwright: {link_count} total links, {vk_link_count} /video links on page")
+                    link_count = await page.evaluate("() => document.querySelectorAll('a[href]').length")
+                    vk_link_count = await page.evaluate("() => document.querySelectorAll('a[href*=\"/video\"]').length")
+                    log.info(f"  VK Playwright: {link_count} total links, {vk_link_count} /video links")
 
                     raw = await page.evaluate(_VK_EXTRACT_JS)
                     log.info(f"  VK Playwright: JS extraction returned {len(raw)} items")
@@ -714,11 +729,16 @@ async def _scrape_vk_with_playwright(channel_url: str) -> list[dict]:
 
     now = datetime.now(timezone.utc)
     videos = []
+    seen_ids: set[str] = set()
+    log.info(f"  VK Playwright raw items: {len(raw or [])} — ids: {[x.get('vid_id') for x in (raw or [])[:10]]}")
     for i, item in enumerate(raw or []):
         vid_id = item.get("vid_id", "")
         title = (item.get("title") or "").strip()
         if not vid_id or not title:
             continue
+        if vid_id in seen_ids:
+            continue
+        seen_ids.add(vid_id)
         m = re.search(r'(-?\d+)_(\d+)', vid_id)
         embed_url = None
         if m:
@@ -735,7 +755,7 @@ async def _scrape_vk_with_playwright(channel_url: str) -> list[dict]:
             "duration":    None,
         })
 
-    log.info(f"  VK Playwright: {len(videos)} video(s) from {channel_url}")
+    log.info(f"  VK Playwright: {len(videos)} unique video(s) from {channel_url}")
     return videos
 
 
