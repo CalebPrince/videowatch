@@ -784,6 +784,10 @@ def _ensure_default_admin_user():
                     "UPDATE sites SET owner=? WHERE owner IS NULL OR owner=''",
                     (admin_user,),
                 )
+                # Super admins are always considered email-verified
+                db.execute(
+                    "UPDATE users SET email_verified=1 WHERE role='super_admin'",
+                )
                 db.commit()
     except Exception as e:
         log.warning(f"Could not migrate default admin / site owners: {e}")
