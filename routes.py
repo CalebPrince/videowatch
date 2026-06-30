@@ -1848,10 +1848,12 @@ def _broad_scrape(html: str, base_url: str, seen: set, limit: int = 24) -> list[
             continue
         path = p2.path.rstrip("/")
         segments = [s for s in path.split("/") if s]
-        if len(segments) < 2:
+        # Allow single-segment VK video URLs (e.g. /video-123456_789)
+        is_vk_video = bool(re.search(r'/video-?\d+_\d+', path, re.I))
+        if len(segments) < 2 and not is_vk_video:
             continue
-        slug = segments[-1]
-        if len(slug) < 4 or re.search(r'^\d+$', slug):
+        slug = segments[-1] if segments else path
+        if not is_vk_video and (len(slug) < 4 or re.search(r'^\d+$', slug)):
             continue
         if _SKIP_WORDS.search(full):
             continue

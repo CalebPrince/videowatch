@@ -620,7 +620,7 @@ def scrape_videos(html: str, base_url: str) -> list[dict]:
     seen = set()
 
     base_info = detect_platform(base_url)
-    if base_info and base_info[0] in {"youtube", "vimeo", "twitch", "dailymotion"}:
+    if base_info and base_info[0] in {"youtube", "vimeo", "twitch", "dailymotion", "vk"}:
         base_title = extract_title(soup, fallback="")
         seen.add(normalize_url(base_url))
         found.append({
@@ -738,6 +738,8 @@ def scrape_videos(html: str, base_url: str) -> list[dict]:
                 return parsed
         return None
 
+    VK_VIDEO_LINK_RE = re.compile(r'/video-?\d+_\d+', re.I)
+
     for tag in soup.find_all("a", href=True):
         href = tag["href"]
         if len(href) < 8:
@@ -745,6 +747,16 @@ def scrape_videos(html: str, base_url: str) -> list[dict]:
         if href.startswith(("#", "javascript:", "mailto:", "tel:")):
             continue
         if LISTING_RE.match(href):
+            continue
+        # VK Video individual video links (e.g. /video-123456_789)
+        if VK_VIDEO_LINK_RE.search(href):
+            title_text = (tag.get("title") or tag.get("aria-label") or
+                          tag.get("data-title") or tag.get_text(strip=True) or "").strip()[:200]
+            img = tag.select_one("img")
+            thumb = None
+            if img:
+                thumb = (img.get("src") or img.get("data-src") or img.get("data-original"))
+            add(href, title=title_text or None, thumb=thumb)
             continue
         if CONTENT_RE.search(href):
             title_text = (tag.get("title") or tag.get("aria-label") or
@@ -1284,9 +1296,12 @@ def _scan_site_sync(site: dict) -> list[dict]:
         return _scrape_youtube_channel(base_url, max_videos=None)
 
     # ── VK Video channel shortcut (sync path) ────────────────────────────
-    if _is_vk_channel_url(base_url):
+    if _is_vk_channel_url(base_url) and HAS_YT_DLP:
         log.info(f"  [sync] Detected VK Video channel — using yt-dlp")
-        return _scrape_vk_channel(base_url, max_videos=None)
+        result = _scrape_vk_channel(base_url, max_videos=None)
+        if result:
+            return result
+        log.info(f"  [sync] VK yt-dlp returned nothing, falling back to Playwright")
 
     max_pages = _effective_max_pages(site)
     all_videos = []
@@ -1410,21 +1425,21 @@ async def scan_site(site: dict, push_func=None):
 
     # ── VK Video channel shortcut ─────────────────────────────────────────────
     if not skip_playwright and _is_vk_channel_url(base_url):
-        log.info(f"  Detected VK Video channel — using yt-dlp (skipping Playwright)")
-        await push(f"PAGE|{site_id}|1|1|{base_url}")
-        try:
-            vk_videos = await asyncio.to_thread(
-                _scrape_vk_channel,
-                base_url,
-                None,
-            )
-            all_videos.extend(vk_videos)
-            log.info(f"  yt-dlp VK returned {len(vk_videos)} video(s)")
-        except Exception as e:
-            log.error(f"  yt-dlp VK scrape error: {e}")
-            await push(f"PAGE_ERROR|{site_id}|1|{e}")
-        await push(f"PAGE_DONE|{site_id}|1|{len(all_videos)}")
-        skip_playwright = True
+        if HAS_YT_DLP:
+            log.info(f"  Detected VK Video channel — using yt-dlp")
+            await push(f"PAGE|{site_id}|1|1|{base_url}")
+            try:
+                vk_videos = await asyncio.to_thread(_scrape_vk_channel, base_url, None)
+                all_videos.extend(vk_videos)
+                log.info(f"  yt-dlp VK returned {len(vk_videos)} video(s)")
+                if vk_videos:
+                    await push(f"PAGE_DONE|{site_id}|1|{len(all_videos)}")
+                    skip_playwright = True
+            except Exception as e:
+                log.error(f"  yt-dlp VK scrape error: {e}")
+                await push(f"PAGE_ERROR|{site_id}|1|{e}")
+        if not skip_playwright:
+            log.info(f"  VK Video: falling back to Playwright scrape")
 
     # ── Playwright crawl (non-channel sites) ─────────────────────────────────
     if not skip_playwright:
