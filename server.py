@@ -65,7 +65,7 @@ async def auth_gate(request, call_next):
         "/api/auth/status",
         "/api/health",
     }
-    public_pages = {"/", "/static/login.html", "/favicon.ico"}
+    public_pages = {"/", "/login", "/static/login.html", "/favicon.ico"}
 
     if routes.auth_enabled() and not routes.is_authenticated(request):
         if path.startswith("/api/") and path not in public_api:
