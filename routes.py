@@ -1741,187 +1741,200 @@ async def download_video(video_id: str):
     }
 
 
-@router.get("/api/sites/preview")
-async def preview_site(url: str = Query(...)):
-    """Quick 1-page scan of a URL to preview videos without saving to the DB."""
-    url = url.strip()
-    if not url.startswith("http"):
-        raise HTTPException(400, "URL must start with http:// or https://")
+_THUMB_ATTRS = ("src", "data-src", "data-lazy-src", "data-lazy",
+                "data-original", "data-image", "data-background",
+                "data-thumb", "data-poster", "data-url")
 
-    parsed = urlparse(url)
-    if parsed.scheme not in {"http", "https"}:
-        raise HTTPException(400, "Invalid URL scheme")
+_SKIP_WORDS = re.compile(
+    r'\b(login|register|signup|sign.up|contact|about|faq|privacy|terms'
+    r'|cookie|sitemap|advertis|newsletter|search|category|categories'
+    r'|tag|tags|channel|channels|model|models|studio|studios)\b',
+    re.I
+)
 
-    # Build a fake site dict for scan_site, but we don't write to DB.
-    site_id = short_id(url)
-    fake_site = {
-        "id": site_id,
-        "url": url,
-        "name": "",
-        "max_pages": 1,
-        "scan_interval": 300,
-        "rule_include_keywords": "",
-        "rule_exclude_keywords": "",
-        "rule_min_duration": 0,
-        "scan_profile": "fast",
-        "last_scan": None,
-    }
 
-    found_videos: list[dict] = []
-    error_detail: str = ""
+def _broad_scrape(html: str, base_url: str, seen: set, limit: int = 24) -> list[dict]:
+    """Extract content-looking links with thumbnails from raw HTML."""
+    from bs4 import BeautifulSoup as _BS
+    soup = _BS(html, "html.parser")
+    base_host = urlparse(base_url).netloc.lower()
+    results: list[dict] = []
 
-    async def _run_preview():
-        from scraper import _is_youtube_channel_url, _scrape_youtube_channel, scrape_videos
-        from bs4 import BeautifulSoup as _BS
-
-        if _is_youtube_channel_url(url):
-            try:
-                yt_vids = await asyncio.to_thread(_scrape_youtube_channel, url, 12)
-                return yt_vids[:12], ""
-            except Exception as e:
-                log.warning(f"Preview YT scrape failed: {e}")
-                return [], str(e)
-
-        # Fast path: try httpx first (no browser, ~5 s)
-        html = ""
-        fetch_err = ""
+    for a in soup.find_all("a", href=True):
+        if len(results) >= limit:
+            break
+        href = (a.get("href") or "").strip()
+        if not href:
+            continue
         try:
-            async with httpx.AsyncClient(timeout=12, follow_redirects=True) as client:
-                r = await client.get(url, headers=_browser_headers(url))
-                if r.status_code == 200:
-                    html = r.text
-        except Exception as e:
-            log.warning(f"Preview httpx fetch failed for {url}: {e}")
+            full = urljoin(base_url, href)
+        except Exception:
+            continue
+        p2 = urlparse(full)
+        if p2.scheme not in {"http", "https"}:
+            continue
+        if p2.netloc.lower() != base_host:
+            continue
+        path = p2.path.rstrip("/")
+        segments = [s for s in path.split("/") if s]
+        if len(segments) < 2:
+            continue
+        slug = segments[-1]
+        if len(slug) < 4 or re.search(r'^\d+$', slug):
+            continue
+        if _SKIP_WORDS.search(full):
+            continue
+        norm = full.split("?")[0].split("#")[0]
+        if norm in seen:
+            continue
+        seen.add(norm)
 
-        # If httpx already has good content and strict scrape succeeds, return early
-        if html:
-            strict = scrape_videos(html, url)
-            if strict:
-                return strict[:12], ""
+        title = a.get_text(" ", strip=True) or slug.replace("-", " ").replace("_", " ")
+        thumb = None
+        for img in a.find_all("img"):
+            for attr in _THUMB_ATTRS:
+                src = img.get(attr, "").strip()
+                if src and not src.startswith("data:"):
+                    try:
+                        thumb = urljoin(base_url, src)
+                    except Exception:
+                        pass
+                    break
+            if thumb:
+                break
+        if not thumb:
+            for el in a.find_all(True):
+                style = el.get("style", "")
+                m = re.search(r'background(?:-image)?\s*:\s*url\(["\']?([^"\')\s]+)["\']?\)', style)
+                if m:
+                    src = m.group(1).strip()
+                    if src and not src.startswith("data:"):
+                        try:
+                            thumb = urljoin(base_url, src)
+                            break
+                        except Exception:
+                            pass
 
-        # Playwright fallback: always run if strict scrape found nothing or httpx got little content
+        results.append({"url": full, "title": title, "thumb": thumb,
+                        "embed_url": None, "platform": "direct",
+                        "released_at": None, "cast_names": None, "duration": None})
+    return results
+
+
+async def _preview_fetch_html(page_url_str: str, site_id: str, use_playwright: bool) -> str:
+    """Fetch a single page via httpx, with optional Playwright fallback."""
+    html = ""
+    try:
+        async with httpx.AsyncClient(timeout=12, follow_redirects=True) as client:
+            r = await client.get(page_url_str, headers=_browser_headers(page_url_str))
+            if r.status_code == 200:
+                html = r.text
+    except Exception as e:
+        log.warning(f"Preview httpx failed for {page_url_str}: {e}")
+
+    if use_playwright:
         try:
             from scraper import _make_context
             from playwright.async_api import async_playwright
             async with async_playwright() as p:
                 browser, context = await _make_context(p, site_id)
                 try:
-                    page_obj = await context.new_page()
+                    pg = await context.new_page()
                     try:
-                        await page_obj.goto(url, timeout=20000, wait_until="domcontentloaded")
-                        await page_obj.wait_for_timeout(3000)
-                        html = await page_obj.content()
+                        await pg.goto(page_url_str, timeout=20000, wait_until="domcontentloaded")
+                        await pg.wait_for_timeout(3000)
+                        html = await pg.content()
                     finally:
-                        await page_obj.close()
+                        await pg.close()
                 finally:
                     await context.close()
                     await browser.close()
         except Exception as e:
-            log.warning(f"Preview Playwright fetch failed for {url}: {e}")
-            fetch_err = str(e)
-            if not html:
-                return [], fetch_err
+            log.warning(f"Preview Playwright failed for {page_url_str}: {e}")
 
-        # Strict scrape on Playwright HTML
-        strict_vids = scrape_videos(html, url)
-        if strict_vids:
-            return strict_vids[:12], ""
+    return html
 
-        # Fallback: broad link scan — pick content-looking <a> tags with nearby images
-        soup = _BS(html, "html.parser")
-        base_host = urlparse(url).netloc.lower()
-        broad: list[dict] = []
-        seen: set[str] = set()
 
-        SKIP_WORDS = re.compile(
-            r'\b(login|register|signup|sign.up|contact|about|faq|privacy|terms'
-            r'|cookie|sitemap|advertis|newsletter|search|category|categories'
-            r'|tag|tags|channel|channels|model|models|studio|studios)\b',
-            re.I
-        )
+@router.get("/api/sites/preview")
+async def preview_site(url: str = Query(...), max_pages: int = Query(1, ge=1, le=5)):
+    """Scan up to max_pages pages of a URL and return found videos without saving to DB."""
+    url = url.strip()
+    if not url.startswith("http"):
+        raise HTTPException(400, "URL must start with http:// or https://")
+    if urlparse(url).scheme not in {"http", "https"}:
+        raise HTTPException(400, "Invalid URL scheme")
 
-        for a in soup.find_all("a", href=True):
-            href = (a.get("href") or "").strip()
-            if not href:
-                continue
+    max_pages = max(1, min(max_pages, 5))
+    site_id = short_id(url)
+
+    async def _run_preview():
+        from scraper import _is_youtube_channel_url, _scrape_youtube_channel, scrape_videos, page_url as _page_url
+
+        if _is_youtube_channel_url(url):
             try:
-                full = urljoin(url, href)
-            except Exception:
-                continue
-            p2 = urlparse(full)
-            if p2.scheme not in {"http", "https"}:
-                continue
-            if p2.netloc.lower() != base_host:
-                continue
-            path = p2.path.rstrip("/")
-            segments = [s for s in path.split("/") if s]
-            # Need at least 2 path segments and a meaningful slug
-            if len(segments) < 2:
-                continue
-            slug = segments[-1]
-            if len(slug) < 4 or re.search(r'^\d+$', slug):
-                continue
-            if SKIP_WORDS.search(full):
-                continue
-            norm = full.split("?")[0].split("#")[0]
-            if norm in seen:
-                continue
-            seen.add(norm)
+                yt_vids = await asyncio.to_thread(_scrape_youtube_channel, url, max_pages * 12)
+                return yt_vids[:(max_pages * 12)], ""
+            except Exception as e:
+                return [], str(e)
 
-            # Grab title text and nearby image
-            title = a.get_text(" ", strip=True) or slug.replace("-", " ").replace("_", " ")
-            thumb = None
-            _THUMB_ATTRS = ("src", "data-src", "data-lazy-src", "data-lazy",
-                           "data-original", "data-image", "data-background",
-                           "data-thumb", "data-poster", "data-url")
-            for img in a.find_all("img"):
-                for attr in _THUMB_ATTRS:
-                    src = img.get(attr, "").strip()
-                    if src and not src.startswith("data:"):
-                        try:
-                            thumb = urljoin(url, src)
-                        except Exception:
-                            pass
-                        break
-                if thumb:
-                    break
-            # Also check <div/span> with background-image style inside the link
-            if not thumb:
-                for el in a.find_all(True):
-                    style = el.get("style", "")
-                    m = re.search(r'background(?:-image)?\s*:\s*url\(["\']?([^"\')\s]+)["\']?\)', style)
-                    if m:
-                        src = m.group(1).strip()
-                        if src and not src.startswith("data:"):
-                            try:
-                                thumb = urljoin(url, src)
-                                break
-                            except Exception:
-                                pass
+        all_vids: list[dict] = []
+        seen_urls: set = set()
+        pages_fetched = 0
+        use_playwright = False  # start with httpx; switch to Playwright if needed
 
-            broad.append({"url": full, "title": title, "thumb": thumb,
-                          "embed_url": None, "platform": "direct",
-                          "released_at": None, "cast_names": None, "duration": None})
-            if len(broad) >= 12:
+        for pg_num in range(1, max_pages + 1):
+            pg_url = _page_url(url, pg_num)
+
+            html = await _preview_fetch_html(pg_url, site_id, use_playwright=False)
+
+            strict = scrape_videos(html, pg_url) if html else []
+            if not strict and not use_playwright:
+                # First page needs Playwright — use it for all subsequent pages too
+                use_playwright = True
+                html = await _preview_fetch_html(pg_url, site_id, use_playwright=True)
+                strict = scrape_videos(html, pg_url) if html else []
+
+            if strict:
+                for v in strict:
+                    norm = (v.get("url") or "").split("?")[0]
+                    if norm not in seen_urls:
+                        seen_urls.add(norm)
+                        all_vids.append(v)
+            else:
+                broad = _broad_scrape(html or "", pg_url, seen_urls)
+                all_vids.extend(broad)
+
+            pages_fetched += 1
+
+            # Stop early if a paginated URL looks the same as previous
+            if pg_num > 1 and not strict and not _broad_scrape(html or "", pg_url, set()):
                 break
 
-        hint = "" if broad else "Page fetched but no recognisable video or content links found. Try a listing page URL (e.g. /videos, /scenes, /clips)."
-        return broad[:12], hint
+            if pg_num < max_pages:
+                await asyncio.sleep(0.5)
 
+        if not all_vids:
+            hint = "Page fetched but no recognisable video or content links found. Try a listing page URL (e.g. /videos, /scenes, /clips)."
+            return [], hint
+
+        return all_vids[:(max_pages * 24)], ""
+
+    found_videos: list[dict] = []
+    error_detail: str = ""
     try:
-        result = await asyncio.wait_for(_run_preview(), timeout=45)
+        result = await asyncio.wait_for(_run_preview(), timeout=max_pages * 40)
         found_videos, error_detail = result
     except asyncio.TimeoutError:
-        error_detail = "Preview timed out. The site may be slow or blocking automated access. Try adding it manually and running a scan."
-        log.warning(f"Preview scan timed out for {url}")
+        error_detail = "Preview timed out. The site may be slow or blocking automated access."
+        log.warning(f"Preview timed out for {url}")
     except Exception as e:
         error_detail = str(e)
-        log.warning(f"Preview scan error for {url}: {e}")
+        log.warning(f"Preview error for {url}: {e}")
 
     return {
         "url": url,
         "count": len(found_videos),
-        "videos": found_videos[:12],
+        "videos": found_videos,
         "hint": error_detail,
     }
 

@@ -723,6 +723,15 @@
                 <i class="bi bi-eye me-1"></i>Preview
               </button>
             </div>
+            <div class="d-flex align-items-center gap-2 mb-2" style="font-size:.8rem;color:var(--muted);">
+              <span>Preview pages:</span>
+              <div class="pages-control" style="margin:0;">
+                <button type="button" id="preview-pages-minus" style="width:24px;height:24px;font-size:.85rem;">−</button>
+                <span class="pages-val" id="preview-pages-val" style="font-size:.85rem;min-width:20px;">1</span>
+                <button type="button" id="preview-pages-plus" style="width:24px;height:24px;font-size:.85rem;">+</button>
+              </div>
+              <span style="font-size:.72rem;">(max 5 · more pages = slower)</span>
+            </div>
 
             <!-- Preview results area -->
             <div id="preview-area" style="display:none;" class="mb-3">
@@ -2182,9 +2191,20 @@ document.getElementById('add-pages-plus').onclick = () => {
 document.getElementById('addModal').addEventListener('show.bs.modal', () => {
   addPagesVal = 1;
   document.getElementById('add-pages-val').textContent = 1;
+  previewPagesVal = 1;
+  document.getElementById('preview-pages-val').textContent = 1;
   resetPreviewArea();
   resetDiscoverArea();
 });
+
+// ── Preview pages control ────────────────────────────────────────────────────
+let previewPagesVal = 1;
+document.getElementById('preview-pages-minus').onclick = () => {
+  if (previewPagesVal > 1) document.getElementById('preview-pages-val').textContent = --previewPagesVal;
+};
+document.getElementById('preview-pages-plus').onclick = () => {
+  if (previewPagesVal < 5) document.getElementById('preview-pages-val').textContent = ++previewPagesVal;
+};
 
 // ── Preview feature ──────────────────────────────────────────────────────────
 function resetPreviewArea() {
@@ -2215,7 +2235,7 @@ document.getElementById('btn-preview').onclick = async () => {
   btn.innerHTML = '<span class="spinner-border spinner-border-sm"></span>';
 
   try {
-    const data = await api(`/sites/preview?url=${encodeURIComponent(url)}`);
+    const data = await api(`/sites/preview?url=${encodeURIComponent(url)}&max_pages=${previewPagesVal}`);
     document.getElementById('preview-loading').style.display = 'none';
 
     if (!data.videos || data.videos.length === 0) {
@@ -2224,7 +2244,7 @@ document.getElementById('btn-preview').onclick = async () => {
       emptyEl.style.display = 'block';
     } else {
       document.getElementById('preview-count-label').textContent =
-        `Found ${data.count} video${data.count !== 1 ? 's' : ''} on first page (showing up to 12)`;
+        `Found ${data.count} video${data.count !== 1 ? 's' : ''} across ${previewPagesVal} page${previewPagesVal !== 1 ? 's' : ''}`;
       const grid = document.getElementById('preview-grid');
       grid.innerHTML = data.videos.map(v => {
         const thumb = v.thumb ? `${API}/thumb?url=${encodeURIComponent(v.thumb)}` : null;
