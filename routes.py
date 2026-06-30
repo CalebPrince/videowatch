@@ -27,6 +27,9 @@ VIDEOS_DIR.mkdir(exist_ok=True)
 LEGACY_VIDEOS_DIR = Path(__file__).resolve().parent.parent / "videos"
 import ipaddress
 import time
+import smtplib
+from email.mime.multipart import MIMEMultipart
+from email.mime.text import MIMEText
 
 from db import get_db, write_lock, DB_PATH
 
@@ -53,13 +56,15 @@ def _check_rate_limit(ip: str, max_attempts: int = 5, window_seconds: int = 300)
             headers={"Retry-After": str(retry_after)},
         )
 
-# ── Email (Resend) ────────────────────────────────────────────────────────────
-_RESEND_API_KEY = os.environ.get("RESEND_API_KEY", "")
-_EMAIL_FROM = os.environ.get("EMAIL_FROM", "VideoWatch <onboarding@resend.dev>")
+# ── Email (Gmail SMTP) ────────────────────────────────────────────────────────
+_SMTP_HOST = os.environ.get("SMTP_HOST", "smtp.gmail.com")
+_SMTP_PORT = int(os.environ.get("SMTP_PORT", "587"))
+_SMTP_USER = os.environ.get("SMTP_USER", "")
+_SMTP_PASSWORD = os.environ.get("SMTP_PASSWORD", "")
 _APP_BASE_URL = os.environ.get("APP_BASE_URL", "http://localhost:8000")
 
 def _email_configured() -> bool:
-    return bool(_RESEND_API_KEY)
+    return bool(_SMTP_USER and _SMTP_PASSWORD)
 
 def _send_verification_email(to_address: str, username: str, token: str) -> None:
     verify_url = f"{_APP_BASE_URL}/verify-email?token={token}"
@@ -87,16 +92,18 @@ def _send_verification_email(to_address: str, username: str, token: str) -> None
         f"This link expires in 24 hours.\n\n"
         f"If you didn't register, ignore this email."
     )
-    import httpx as _httpx
-    resp = _httpx.post(
-        "https://api.resend.com/emails",
-        headers={"Authorization": f"Bearer {_RESEND_API_KEY}", "Content-Type": "application/json"},
-        json={"from": _EMAIL_FROM, "to": [to_address], "subject": "Verify your VideoWatch account",
-              "html": html, "text": text},
-        timeout=10,
-    )
-    if resp.status_code >= 400:
-        raise RuntimeError(f"Resend error {resp.status_code}: {resp.text}")
+    msg = MIMEMultipart("alternative")
+    msg["Subject"] = "Verify your VideoWatch account"
+    msg["From"] = f"VideoWatch <{_SMTP_USER}>"
+    msg["To"] = to_address
+    msg["Reply-To"] = _SMTP_USER
+    msg.attach(MIMEText(text, "plain"))
+    msg.attach(MIMEText(html, "html"))
+    with smtplib.SMTP(_SMTP_HOST, _SMTP_PORT) as smtp:
+        smtp.ehlo()
+        smtp.starttls()
+        smtp.login(_SMTP_USER, _SMTP_PASSWORD)
+        smtp.sendmail(_SMTP_USER, to_address, msg.as_string())
 
 from scraper import (
     scan_site,
