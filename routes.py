@@ -1793,37 +1793,36 @@ async def preview_site(url: str = Query(...)):
         except Exception as e:
             log.warning(f"Preview httpx fetch failed for {url}: {e}")
 
-        # If httpx got enough content try scraping it immediately
-        if len(html) >= 5000:
+        # If httpx already has good content and strict scrape succeeds, return early
+        if html:
             strict = scrape_videos(html, url)
             if strict:
                 return strict[:12], ""
 
-        # Slow path: Playwright for JS-rendered sites (capped at 25 s)
-        if not html or len(html) < 5000:
-            try:
-                from scraper import _fetch_page, _make_context
-                from playwright.async_api import async_playwright
-                async with async_playwright() as p:
-                    browser, context = await _make_context(p, site_id)
+        # Playwright fallback: always run if strict scrape found nothing or httpx got little content
+        try:
+            from scraper import _make_context
+            from playwright.async_api import async_playwright
+            async with async_playwright() as p:
+                browser, context = await _make_context(p, site_id)
+                try:
+                    page_obj = await context.new_page()
                     try:
-                        page_obj = await context.new_page()
-                        try:
-                            await page_obj.goto(url, timeout=20000, wait_until="domcontentloaded")
-                            await page_obj.wait_for_timeout(2500)
-                            html = await page_obj.content()
-                        finally:
-                            await page_obj.close()
+                        await page_obj.goto(url, timeout=20000, wait_until="domcontentloaded")
+                        await page_obj.wait_for_timeout(3000)
+                        html = await page_obj.content()
                     finally:
-                        await context.close()
-                        await browser.close()
-            except Exception as e:
-                log.warning(f"Preview Playwright fetch failed for {url}: {e}")
-                fetch_err = str(e)
-                if not html:
-                    return [], fetch_err
+                        await page_obj.close()
+                finally:
+                    await context.close()
+                    await browser.close()
+        except Exception as e:
+            log.warning(f"Preview Playwright fetch failed for {url}: {e}")
+            fetch_err = str(e)
+            if not html:
+                return [], fetch_err
 
-        # Try strict platform-aware scrape first
+        # Strict scrape on Playwright HTML
         strict_vids = scrape_videos(html, url)
         if strict_vids:
             return strict_vids[:12], ""
