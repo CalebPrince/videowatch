@@ -362,11 +362,11 @@ def extract_title(soup: BeautifulSoup, fallback: str = "") -> str:
 
 
 def _format_discovered_title(title: str, platform: str) -> str:
-    """Keep exact title casing for YouTube, title-case for others."""
+    """Keep exact title casing for YouTube and VK, title-case for others."""
     clean = re.sub(r"\s+", " ", (title or "").strip())
     if not clean:
         return ""
-    if platform == "youtube":
+    if platform in {"youtube", "vk"}:
         return clean
     return normalize_title(clean)
 
@@ -750,7 +750,8 @@ def scrape_videos(html: str, base_url: str) -> list[dict]:
             continue
         # VK Video individual video links (e.g. /video-123456_789)
         if VK_VIDEO_LINK_RE.search(href):
-            # Title is in a specific testid div or the vkitTextClamp class
+            # Title is in a vkitTextClamp div; extract only direct text nodes
+            # to avoid picking up view-count/duration numbers from child spans.
             title_el = (
                 tag.find(attrs={"data-testid": "video_page_title"})
                 or tag.find(class_=lambda c: c and "vkitTextClamp__root" in c)
@@ -758,10 +759,16 @@ def scrape_videos(html: str, base_url: str) -> list[dict]:
             )
             title_text = ""
             if title_el:
-                title_text = title_el.get_text(" ", strip=True)
+                import bs4 as _bs4
+                # Prefer direct text nodes only (strips child-element noise)
+                direct = " ".join(
+                    str(n).strip() for n in title_el.children
+                    if isinstance(n, _bs4.NavigableString) and str(n).strip()
+                )
+                title_text = direct or title_el.get_text(" ", strip=True)
             if not title_text:
                 title_text = tag.get("title") or tag.get("aria-label") or tag.get("data-title") or ""
-            title_text = title_text.strip()[:200]
+            title_text = re.sub(r"\s+", " ", title_text).strip()[:200]
             img = tag.select_one("img")
             thumb = None
             if img:
