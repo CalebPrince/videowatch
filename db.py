@@ -181,6 +181,9 @@ def init_db():
                 """)
 
             add_column_if_missing(db, "sites", "group_name", "TEXT")
+            add_column_if_missing(db, "sites", "notify_enabled", "INTEGER DEFAULT 1")
+            add_column_if_missing(db, "videos", "is_watched", "INTEGER DEFAULT 0")
+            add_column_if_missing(db, "videos", "last_watched_at", "TEXT")
             db.execute(
                 "INSERT OR IGNORE INTO app_settings (key, value) VALUES (?, ?)",
                 ("autoscan_enabled", "1"),

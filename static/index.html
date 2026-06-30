@@ -448,6 +448,26 @@
       .topbar-actions .label-short {
         display: inline;
       }
+      /* Better mobile video grid: 2 columns on small screens */
+      #video-grid .col-12.col-sm-6.col-lg-4 {
+        flex: 0 0 50%;
+        max-width: 50%;
+      }
+      .v-cast { display: none; }
+      .status-quickbar { gap: .3rem; flex-wrap: wrap; }
+      .status-quickbar .btn { font-size: .72rem; padding: .2rem .5rem; }
+      .stat-card { padding: .6rem .75rem; }
+      .stat-value { font-size: 1.4rem; }
+      .v-title { font-size: .78rem; -webkit-line-clamp: 2; }
+      .v-meta { font-size: .65rem; gap: .2rem; }
+      .btn-icon { width: 22px; height: 22px; font-size: .7rem; }
+      #bulk-toolbar { font-size: .78rem; }
+    }
+    @media (max-width: 380px) {
+      #video-grid .col-12.col-sm-6.col-lg-4 {
+        flex: 0 0 100%;
+        max-width: 100%;
+      }
     }
 
     /* ── Stat card icons ── */
@@ -650,8 +670,20 @@
     <div class="status-quickbar" id="status-quickbar" aria-label="Quick video status views">
       <button type="button" class="btn btn-sm btn-outline-secondary" data-status="">All videos</button>
       <button type="button" class="btn btn-sm btn-outline-secondary" data-status="favorites">Favorites</button>
+      <button type="button" class="btn btn-sm btn-outline-secondary" data-status="unwatched">Unwatched</button>
       <button type="button" class="btn btn-sm btn-outline-secondary" data-status="archived">Archived</button>
       <button type="button" class="btn btn-sm btn-outline-secondary" data-status="ignored">Ignored</button>
+    </div>
+    <!-- Bulk action toolbar (hidden until checkboxes are ticked) -->
+    <div id="bulk-toolbar" style="display:none;align-items:center;gap:.5rem;flex-wrap:wrap;padding:.5rem .75rem;background:var(--card-bg);border:1px solid var(--border);border-radius:.5rem;margin-bottom:.75rem;">
+      <span id="bulk-count" style="font-size:.82rem;color:var(--muted);margin-right:.25rem;">0 selected</span>
+      <button class="btn btn-sm btn-outline-secondary" onclick="bulkAction('mark_seen')"><i class="bi bi-check2 me-1"></i>Mark seen</button>
+      <button class="btn btn-sm btn-outline-secondary" onclick="bulkAction('mark_watched')"><i class="bi bi-eye me-1"></i>Mark watched</button>
+      <button class="btn btn-sm btn-outline-secondary" onclick="bulkAction('favorite')"><i class="bi bi-star me-1"></i>Favorite</button>
+      <button class="btn btn-sm btn-outline-secondary" onclick="bulkAction('unfavorite')"><i class="bi bi-star me-1"></i>Unfavorite</button>
+      <button class="btn btn-sm btn-outline-secondary" onclick="bulkAction('archive')"><i class="bi bi-inbox me-1"></i>Archive</button>
+      <button class="btn btn-sm btn-outline-secondary" onclick="bulkAction('ignore')"><i class="bi bi-eye-slash me-1"></i>Ignore</button>
+      <button class="btn btn-sm btn-outline-danger ms-auto" onclick="clearBulkSelection()"><i class="bi bi-x-lg me-1"></i>Cancel</button>
     </div>
 
     <div class="row g-3 mb-4">
@@ -745,6 +777,15 @@
               <div id="preview-empty" style="display:none;font-size:.8rem;color:var(--muted);">No videos found on this page. Try a different URL (e.g. /videos or /clips listing page).</div>
               <div id="preview-error" style="display:none;font-size:.8rem;color:#dc2626;"></div>
             </div>
+
+            <!-- Auto-detect listing URL -->
+            <div id="detect-listing-area" style="display:none;margin-bottom:.5rem;">
+              <div style="font-size:.78rem;color:var(--muted);margin-bottom:.3rem;">Detected listing pages on this site:</div>
+              <div id="detect-listing-list" style="display:flex;flex-wrap:wrap;gap:.35rem;"></div>
+            </div>
+            <button type="button" id="btn-detect-listing" class="btn btn-sm btn-outline-secondary mb-3" style="font-size:.78rem;display:none;">
+              <i class="bi bi-search me-1"></i>Detect listing pages
+            </button>
 
             <label class="form-label mt-2" style="font-size:.85rem;">Display name <span style="color:var(--muted)">(optional)</span></label>
             <input type="text" id="inp-name" class="form-control" placeholder="e.g. My Video Site" />
@@ -852,6 +893,11 @@
 
         <label class="form-label mt-3" style="font-size:.85rem;">Minimum duration (seconds)</label>
         <input type="number" id="set-rule-min-duration" min="0" class="form-control" placeholder="0" />
+
+        <div class="form-check form-switch mt-3">
+          <input class="form-check-input" type="checkbox" id="set-notify-enabled" checked>
+          <label class="form-check-label" for="set-notify-enabled" style="font-size:.85rem;">Enable notifications for this site</label>
+        </div>
 
         <div id="set-error" class="text-danger mt-2" style="font-size:.82rem;display:none;"></div>
       </div>
@@ -1280,6 +1326,8 @@ function openVideoInNewTab(video) {
   if (!opened) {
     showToast('Popup blocked by browser. Please allow popups for this site.', 'warning');
   }
+  // Mark as watched in background
+  patchVideoState(video.id, { is_watched: true }).catch(() => {});
 }
 
 function isDirectPlayable(url) {
@@ -1447,6 +1495,95 @@ async function patchVideoState(videoId, patch) {
     body: JSON.stringify(patch),
   });
 }
+
+// ── Bulk selection ────────────────────────────────────────────────────────────
+function getCheckedVideoIds() {
+  return Array.from(document.querySelectorAll('#video-grid input[type=checkbox][data-vid]:checked'))
+    .map(c => c.dataset.vid);
+}
+
+function updateBulkSelection() {
+  const ids = getCheckedVideoIds();
+  const toolbar = document.getElementById('bulk-toolbar');
+  const countEl = document.getElementById('bulk-count');
+  if (ids.length > 0) {
+    toolbar.style.display = 'flex';
+    countEl.textContent = `${ids.length} selected`;
+  } else {
+    toolbar.style.display = 'none';
+  }
+}
+
+function clearBulkSelection() {
+  document.querySelectorAll('#video-grid input[type=checkbox][data-vid]').forEach(c => c.checked = false);
+  updateBulkSelection();
+}
+
+async function bulkAction(action) {
+  const ids = getCheckedVideoIds();
+  if (!ids.length) return;
+  try {
+    await api('/videos/bulk', { method: 'POST', body: JSON.stringify({ video_ids: ids, action }) });
+    clearBulkSelection();
+    await renderVideos();
+    showToast(`Applied "${action}" to ${ids.length} video(s)`, 'success');
+  } catch (e) {
+    showToast(e.message, 'danger');
+  }
+}
+
+// ── Auto-detect listing URL ───────────────────────────────────────────────────
+const btnDetectListing = document.getElementById('btn-detect-listing');
+const detectListingArea = document.getElementById('detect-listing-area');
+const detectListingList = document.getElementById('detect-listing-list');
+
+document.getElementById('inp-url').addEventListener('input', () => {
+  const val = document.getElementById('inp-url').value.trim();
+  if (val.startsWith('http')) {
+    btnDetectListing.style.display = '';
+  } else {
+    btnDetectListing.style.display = 'none';
+    detectListingArea.style.display = 'none';
+  }
+});
+
+btnDetectListing.addEventListener('click', async () => {
+  const url = document.getElementById('inp-url').value.trim();
+  if (!url) return;
+  btnDetectListing.disabled = true;
+  btnDetectListing.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span>Detecting…';
+  detectListingArea.style.display = 'none';
+  try {
+    const data = await api(`/sites/detect-listing?url=${encodeURIComponent(url)}`);
+    const suggestions = data.suggestions || [];
+    if (suggestions.length) {
+      detectListingList.innerHTML = '';
+      suggestions.forEach(s => {
+        const btn = document.createElement('button');
+        btn.type = 'button';
+        btn.className = 'btn btn-sm btn-outline-secondary';
+        btn.style.fontSize = '.75rem';
+        btn.textContent = s.label || s.url;
+        btn.title = s.url;
+        btn.addEventListener('click', () => {
+          document.getElementById('inp-url').value = s.url;
+          detectListingArea.style.display = 'none';
+          // Trigger preview
+          document.getElementById('btn-preview').click();
+        });
+        detectListingList.appendChild(btn);
+      });
+      detectListingArea.style.display = '';
+    } else {
+      showToast('No listing pages detected on homepage.', 'secondary');
+    }
+  } catch (e) {
+    showToast('Detect failed: ' + e.message, 'danger');
+  } finally {
+    btnDetectListing.disabled = false;
+    btnDetectListing.innerHTML = '<i class="bi bi-search me-1"></i>Detect listing pages';
+  }
+});
 
 function summarizeDownloadError(message) {
   const raw = (message || 'Download failed').trim();
@@ -1689,8 +1826,9 @@ async function renderVideos() {
   if (durationMin) params.set('duration_min', durationMin);
   if (platformFilt) params.set('platform', platformFilt);
   if (statusFilt === 'favorites') params.set('favorites_only', 'true');
-  if (statusFilt === 'archived') params.set('archived_only', 'true');
-  if (statusFilt === 'ignored') params.set('ignored_only', 'true');
+  if (statusFilt === 'archived') { params.set('include_archived', 'true'); params.set('archived_only', 'true'); }
+  if (statusFilt === 'ignored') { params.set('include_ignored', 'true'); params.set('ignored_only', 'true'); }
+  if (statusFilt === 'unwatched') params.set('unwatched_only', 'true');
   params.set('page', String(currentPage));
   params.set('per_page', String(PER_PAGE));
 
@@ -1904,6 +2042,23 @@ async function renderVideos() {
     meta.appendChild(ignBtn);
 
     body.appendChild(meta);
+
+    // Watched indicator
+    if (Number(v.is_watched)) {
+      const watchedPill = document.createElement('span');
+      watchedPill.style.cssText = 'position:absolute;top:.35rem;right:.35rem;background:rgba(0,0,0,.55);color:#a3e635;border-radius:999px;font-size:.65rem;padding:.1rem .4rem;pointer-events:none;z-index:3;';
+      watchedPill.innerHTML = '<i class="bi bi-eye-fill me-1"></i>Watched';
+      thumbWrap.style.position = 'relative';
+      thumbWrap.appendChild(watchedPill);
+    }
+
+    // Bulk select checkbox
+    const chk = document.createElement('input');
+    chk.type = 'checkbox';
+    chk.dataset.vid = v.id;
+    chk.style.cssText = 'position:absolute;top:.35rem;left:.35rem;z-index:4;width:1.1rem;height:1.1rem;cursor:pointer;accent-color:var(--brand);';
+    chk.addEventListener('change', () => updateBulkSelection());
+    thumbWrap.appendChild(chk);
 
     const card = document.createElement('div');
     card.className = `video-card${isNew ? ' is-new' : ''}`;
@@ -2123,6 +2278,7 @@ function openSettings(s) {
   document.getElementById('set-rule-include').value = s.rule_include_keywords || '';
   document.getElementById('set-rule-exclude').value = s.rule_exclude_keywords || '';
   document.getElementById('set-rule-min-duration').value = Number(s.rule_min_duration || 0);
+  document.getElementById('set-notify-enabled').checked = s.notify_enabled !== 0;
   document.getElementById('set-error').style.display = 'none';
   new bootstrap.Modal(document.getElementById('settingsModal')).show();
 }
@@ -2149,6 +2305,7 @@ document.getElementById('btn-settings-save').onclick = async () => {
         rule_include_keywords: document.getElementById('set-rule-include').value.trim(),
         rule_exclude_keywords: document.getElementById('set-rule-exclude').value.trim(),
         rule_min_duration: parseInt(document.getElementById('set-rule-min-duration').value || '0', 10),
+        notify_enabled: document.getElementById('set-notify-enabled').checked,
       }),
     });
     bootstrap.Modal.getInstance(document.getElementById('settingsModal')).hide();

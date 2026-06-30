@@ -325,7 +325,9 @@ def detect_platform(url: str):
     LISTING_SEGMENTS = {"videos", "video", "scenes", "scene", "movies", "movie",
                         "episodes", "episode", "clips", "clip", "models", "model",
                         "pornstars", "pornstar", "categories", "category",
-                        "tags", "tag", "channels", "channel", "studios", "studio"}
+                        "tags", "tag", "channels", "channel", "studios", "studio",
+                        "performers", "performer", "girls", "guys", "updates",
+                        "gallery", "galleries", "latest", "search", "networks"}
     if len(path_segments) >= 3:
         last_seg = path_segments[-1]
         if re.search(r'[a-zA-Z]{3,}', last_seg) and last_seg not in LISTING_SEGMENTS:

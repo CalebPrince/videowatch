@@ -100,6 +100,7 @@ class SiteIn(BaseModel):
     rule_exclude_keywords: str = ""
     rule_min_duration: int = 0
     scan_profile: str = "balanced"
+    notify_enabled: bool = True
 
 class SitePatch(BaseModel):
     name:          str | None = None
@@ -110,6 +111,7 @@ class SitePatch(BaseModel):
     rule_exclude_keywords: str | None = None
     rule_min_duration: int | None = None
     scan_profile: str | None = None
+    notify_enabled: bool | None = None
 
 class MarkSeenIn(BaseModel):
     site_id: str | None = None
@@ -149,6 +151,12 @@ class VideoStatePatch(BaseModel):
     is_favorite: bool | None = None
     is_archived: bool | None = None
     is_ignored: bool | None = None
+    is_watched: bool | None = None
+
+
+class BulkVideoActionIn(BaseModel):
+    video_ids: list[str]
+    action: str  # "favorite", "unfavorite", "archive", "unarchive", "ignore", "unignore", "mark_seen", "mark_watched", "mark_unwatched"
 
 
 class MergeDuplicateIn(BaseModel):
@@ -729,7 +737,9 @@ def validate_credentials(username: str, password: str) -> bool:
 def _notify_scan_summary(site: dict, found: int, added: int):
     enabled = (_read_setting("notify_enabled") or "0") == "1"
     webhook = (_read_setting("notify_webhook_url") or "").strip()
-    if not enabled or not webhook or added <= 0:
+    site_notify = site.get("notify_enabled")
+    site_notify_off = site_notify is not None and int(site_notify) == 0
+    if not enabled or not webhook or added <= 0 or site_notify_off:
         return
 
     site_label = site.get("name") or site.get("url") or site.get("id")
@@ -834,8 +844,8 @@ def add_site(body: SiteIn):
     _LISTING = {
         "videos","scenes","movies","episodes","clips","content",
         "latest","latest-updates","top-rated","most-popular",
-        "categories","models","pornstars","tags","channels",
-        "studios","networks","search",
+        "categories","models","model","pornstars","tags","channels",
+        "studios","networks","search","girls","guys","performers",
     }
     if (_p.path and _p.path != "/" and not _p.path.endswith("/")
             and not _p.query and _last not in _LISTING):
@@ -852,10 +862,11 @@ def add_site(body: SiteIn):
         with get_db() as db:
             if db.execute("SELECT id FROM sites WHERE url=?", (url,)).fetchone():
                 raise HTTPException(409, "Site already monitored")
+            notify_enabled = 1 if body.notify_enabled else 0
             db.execute(
                 "INSERT INTO sites (id, url, name, group_name, added_at, max_pages, scan_interval, "
-                "rule_include_keywords, rule_exclude_keywords, rule_min_duration, scan_profile) "
-                "VALUES (?,?,?,?,?,?,?,?,?,?,?)",
+                "rule_include_keywords, rule_exclude_keywords, rule_min_duration, scan_profile, notify_enabled) "
+                "VALUES (?,?,?,?,?,?,?,?,?,?,?,?)",
                 (
                     site_id,
                     url,
@@ -868,6 +879,7 @@ def add_site(body: SiteIn):
                     (body.rule_exclude_keywords or "").strip(),
                     rule_min_duration,
                     profile,
+                    notify_enabled,
                 ))
             db.commit()
     return {"id": site_id, "url": url, "name": body.name,
@@ -875,7 +887,7 @@ def add_site(body: SiteIn):
             "rule_include_keywords": (body.rule_include_keywords or "").strip(),
             "rule_exclude_keywords": (body.rule_exclude_keywords or "").strip(),
             "rule_min_duration": rule_min_duration,
-            "scan_profile": profile}
+            "scan_profile": profile, "notify_enabled": notify_enabled}
 
 
 @router.post("/api/auth/login")
@@ -1043,6 +1055,8 @@ def update_site(site_id: str, body: SitePatch):
             if body.scan_profile is not None:
                 prof = body.scan_profile.strip().lower()
                 updates["scan_profile"] = prof if prof in {"fast", "balanced", "deep"} else "balanced"
+            if body.notify_enabled is not None:
+                updates["notify_enabled"] = 1 if body.notify_enabled else 0
             if updates:
                 set_clause = ", ".join(f"{k}=?" for k in updates)
                 db.execute(f"UPDATE sites SET {set_clause} WHERE id=?",
@@ -1053,8 +1067,9 @@ def update_site(site_id: str, body: SitePatch):
 _LISTING_PATHS = {
     "videos", "scenes", "movies", "episodes", "clips",
     "content", "latest", "latest-updates", "top-rated",
-    "most-popular", "categories", "models", "pornstars",
+    "most-popular", "categories", "models", "model", "pornstars",
     "tags", "channels", "studios", "networks", "search",
+    "girls", "guys", "performers",
 }
 
 @router.post("/api/sites/fix-urls")
@@ -1101,7 +1116,10 @@ def list_videos(site_id: str | None = None,
                 duration_min: int | None = None, duration_max: int | None = None,
                 include_archived: bool = False,
                 include_ignored: bool = False,
-                favorites_only: bool = False):
+                favorites_only: bool = False,
+                unwatched_only: bool = False,
+                archived_only: bool = False,
+                ignored_only: bool = False):
     offset = (page - 1) * per_page
     with get_db() as db:
         filters = []
@@ -1136,6 +1154,12 @@ def list_videos(site_id: str | None = None,
             filters.append("COALESCE(videos.is_ignored, 0)=0")
         if favorites_only:
             filters.append("COALESCE(videos.is_favorite, 0)=1")
+        if unwatched_only:
+            filters.append("COALESCE(videos.is_watched, 0)=0")
+        if archived_only:
+            filters.append("COALESCE(videos.is_archived, 0)=1")
+        if ignored_only:
+            filters.append("COALESCE(videos.is_ignored, 0)=1")
 
         where = ("WHERE " + " AND ".join(filters)) if filters else ""
         order = """ORDER BY SUBSTR(COALESCE(videos.released_at, videos.found_at), 1, 19) DESC"""
@@ -1154,6 +1178,48 @@ def list_videos(site_id: str | None = None,
         "per_page":    per_page,
         "total_pages": max(1, -(-total // per_page)),
     }
+
+@router.post("/api/videos/bulk")
+def bulk_video_action(body: BulkVideoActionIn):
+    if not body.video_ids:
+        return {"ok": True, "affected": 0}
+    VALID_ACTIONS = {
+        "favorite", "unfavorite", "archive", "unarchive",
+        "ignore", "unignore", "mark_seen", "mark_watched", "mark_unwatched",
+    }
+    if body.action not in VALID_ACTIONS:
+        raise HTTPException(400, f"Unknown action: {body.action}")
+
+    placeholders = ",".join("?" * len(body.video_ids))
+    with write_lock:
+        with get_db() as db:
+            if body.action == "favorite":
+                db.execute(f"UPDATE videos SET is_favorite=1 WHERE id IN ({placeholders})", body.video_ids)
+            elif body.action == "unfavorite":
+                db.execute(f"UPDATE videos SET is_favorite=0 WHERE id IN ({placeholders})", body.video_ids)
+            elif body.action == "archive":
+                db.execute(f"UPDATE videos SET is_archived=1 WHERE id IN ({placeholders})", body.video_ids)
+            elif body.action == "unarchive":
+                db.execute(f"UPDATE videos SET is_archived=0 WHERE id IN ({placeholders})", body.video_ids)
+            elif body.action == "ignore":
+                db.execute(f"UPDATE videos SET is_ignored=1 WHERE id IN ({placeholders})", body.video_ids)
+            elif body.action == "unignore":
+                db.execute(f"UPDATE videos SET is_ignored=0 WHERE id IN ({placeholders})", body.video_ids)
+            elif body.action == "mark_seen":
+                db.execute(f"UPDATE videos SET is_new=0 WHERE id IN ({placeholders})", body.video_ids)
+            elif body.action == "mark_watched":
+                db.execute(
+                    f"UPDATE videos SET is_watched=1, last_watched_at=? WHERE id IN ({placeholders})",
+                    [now_iso()] + body.video_ids,
+                )
+            elif body.action == "mark_unwatched":
+                db.execute(f"UPDATE videos SET is_watched=0, last_watched_at=NULL WHERE id IN ({placeholders})", body.video_ids)
+            db.commit()
+            affected = db.execute(
+                f"SELECT COUNT(*) FROM videos WHERE id IN ({placeholders})", body.video_ids
+            ).fetchone()[0]
+    return {"ok": True, "affected": affected}
+
 
 @router.post("/api/videos/mark-seen")
 def mark_seen(body: MarkSeenIn):
@@ -1383,6 +1449,10 @@ def update_video_state(video_id: str, body: VideoStatePatch):
         updates["is_archived"] = 1 if body.is_archived else 0
     if body.is_ignored is not None:
         updates["is_ignored"] = 1 if body.is_ignored else 0
+    if body.is_watched is not None:
+        updates["is_watched"] = 1 if body.is_watched else 0
+        if body.is_watched:
+            updates["last_watched_at"] = now_iso()
     if not updates:
         return {"ok": True}
 
@@ -1957,6 +2027,63 @@ async def preview_site(url: str = Query(...), max_pages: int = Query(1, ge=1, le
         "videos": found_videos,
         "hint": error_detail,
     }
+
+
+@router.get("/api/sites/detect-listing")
+async def detect_listing_url(url: str = Query(...)):
+    """Fetch a homepage and find listing page links (videos, scenes, etc.)."""
+    _LISTING_SEGS = {
+        "videos", "scenes", "movies", "episodes", "clips", "content",
+        "latest", "latest-updates", "top-rated", "most-popular",
+        "categories", "models", "model", "pornstars", "tags", "channels",
+        "studios", "networks", "search", "girls", "guys", "performers",
+        "gallery", "galleries", "updates",
+    }
+    url = url.strip()
+    if not url.startswith("http"):
+        raise HTTPException(400, "URL must start with http")
+    try:
+        html = None
+        try:
+            async with httpx.AsyncClient(timeout=10, follow_redirects=True,
+                                         headers={"User-Agent": "Mozilla/5.0"}) as client:
+                r = await client.get(url)
+                html = r.text
+        except Exception:
+            pass
+        if not html or len(html) < 1000:
+            html = await _preview_fetch_html(url)
+        if not html:
+            return {"suggestions": []}
+        from bs4 import BeautifulSoup
+        soup = BeautifulSoup(html, "html.parser")
+        base = urlparse(url)
+        base_root = f"{base.scheme}://{base.netloc}"
+        seen = set()
+        suggestions = []
+        for a in soup.find_all("a", href=True):
+            href = a["href"].strip()
+            if href.startswith("/"):
+                href = base_root + href
+            elif not href.startswith("http"):
+                continue
+            p = urlparse(href)
+            if p.netloc != base.netloc:
+                continue
+            segs = [s.lower() for s in p.path.strip("/").split("/") if s]
+            if not segs:
+                continue
+            seg = segs[0]
+            if seg in _LISTING_SEGS and href not in seen:
+                seen.add(href)
+                label = (a.get_text(strip=True) or seg).strip()[:40]
+                suggestions.append({"url": href, "label": label or seg})
+            if len(suggestions) >= 10:
+                break
+        return {"suggestions": suggestions}
+    except Exception as e:
+        log.warning(f"detect-listing error: {e}")
+        return {"suggestions": []}
 
 
 @router.get("/api/sites/discover")
