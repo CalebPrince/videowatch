@@ -616,7 +616,12 @@ _VK_EXTRACT_JS = """
 () => {
     const seen = new Set();
     const results = [];
-    document.querySelectorAll('a[href*="/video-"]').forEach(a => {
+    // Match both /video-OWNER_ID and full https://vkvideo.ru/video-OWNER_ID
+    const allLinks = Array.from(document.querySelectorAll('a[href]')).filter(a => {
+        const h = a.getAttribute('href') || '';
+        return /\\/video-?\\d+_\\d+/.test(h) || /vkvideo\\.ru\\/video-?\\d+_\\d+/.test(h);
+    });
+    allLinks.forEach(a => {
         const href = a.getAttribute('href') || '';
         const match = href.match(/\\/video(-?\\d+_\\d+)/);
         if (!match) return;
@@ -667,22 +672,47 @@ _VK_EXTRACT_JS = """
 async def _scrape_vk_with_playwright(channel_url: str) -> list[dict]:
     """Scrape a VK Video channel page using Playwright JS evaluation."""
     base = channel_url.rstrip("/")
-    if not base.endswith("/all"):
-        base = base + "/all"
+    # Try base URL first; /all is not always a valid path on vkvideo.ru
+    urls_to_try = [base, base + "/all"] if not base.endswith("/all") else [base, base.rstrip("/all")]
 
+    raw = []
     try:
         from playwright.async_api import async_playwright as _ap
         async with _ap() as p:
             browser, context = await _make_context(p, "vk_pw")
             try:
                 page = await context.new_page()
-                await page.goto(base, wait_until="domcontentloaded", timeout=30000)
-                await page.wait_for_timeout(3000)
-                # Scroll several times to trigger lazy-loaded video cards
-                for _ in range(6):
-                    await page.evaluate("window.scrollBy(0, window.innerHeight * 3)")
-                    await page.wait_for_timeout(1200)
-                raw = await page.evaluate(_VK_EXTRACT_JS)
+                for try_url in urls_to_try:
+                    try:
+                        await page.goto(try_url, wait_until="domcontentloaded", timeout=30000)
+                    except Exception:
+                        try:
+                            await page.goto(try_url, wait_until="load", timeout=20000)
+                        except Exception:
+                            continue
+                    await page.wait_for_timeout(3000)
+                    page_title = await page.title()
+                    final_url = page.url
+                    log.info(f"  VK Playwright: loaded '{page_title}' at {final_url}")
+
+                    # Scroll to load lazy video cards
+                    for _ in range(8):
+                        await page.evaluate("window.scrollBy(0, window.innerHeight * 3)")
+                        await page.wait_for_timeout(1000)
+
+                    # Count all video-like links before extraction
+                    link_count = await page.evaluate(
+                        "() => document.querySelectorAll('a[href]').length"
+                    )
+                    vk_link_count = await page.evaluate(
+                        "() => document.querySelectorAll('a[href*=\"/video\"]').length"
+                    )
+                    log.info(f"  VK Playwright: {link_count} total links, {vk_link_count} /video links on page")
+
+                    raw = await page.evaluate(_VK_EXTRACT_JS)
+                    log.info(f"  VK Playwright: JS extraction returned {len(raw)} items")
+                    if raw:
+                        break
             finally:
                 await context.close()
                 await browser.close()
