@@ -806,7 +806,7 @@ def _create_user_record(username: str, raw_password: str, role: str):
 def _get_user(username: str) -> dict | None:
     with get_db() as db:
         row = db.execute(
-            "SELECT username, password_salt, password_hash, role, active, email_verified FROM users WHERE username=?",
+            "SELECT username, password_salt, password_hash, role, active, email_verified, onboarding_done FROM users WHERE username=?",
             (username,),
         ).fetchone()
     return dict(row) if row else None
@@ -1284,12 +1284,31 @@ def auth_change_password(body: ChangePasswordIn, request: Request):
 def auth_status(request: Request):
     enabled = auth_enabled()
     authenticated = is_authenticated(request)
+    onboarding_done = True
+    if authenticated:
+        username = request.session.get("auth_user")
+        if username:
+            row = _get_user(username)
+            onboarding_done = bool(row.get("onboarding_done")) if row else True
     return {
         "enabled": enabled,
         "authenticated": authenticated,
         "user": request.session.get("auth_user") if authenticated else None,
         "role": current_role(request) if authenticated else None,
+        "onboarding_done": onboarding_done,
     }
+
+
+@router.post("/api/auth/complete-onboarding")
+def complete_onboarding(request: Request):
+    if not is_authenticated(request):
+        raise HTTPException(401, "Authentication required")
+    username = request.session.get("auth_user")
+    with write_lock:
+        with get_db() as db:
+            db.execute("UPDATE users SET onboarding_done=1 WHERE username=?", (username,))
+            db.commit()
+    return {"ok": True}
 
 
 @router.get("/api/auth/role")

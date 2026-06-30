@@ -1057,6 +1057,121 @@
   </div>
 </div>
 
+<!-- Onboarding Wizard Modal -->
+<div class="modal fade" id="onboardingModal" tabindex="-1" data-bs-backdrop="static" data-bs-keyboard="false">
+  <div class="modal-dialog modal-dialog-centered" style="max-width:480px">
+    <div class="modal-content p-0" style="border-radius:18px;overflow:hidden;border:none;">
+
+      <!-- Progress bar -->
+      <div style="height:4px;background:#e2e8f0;">
+        <div id="ob-progress" style="height:100%;background:linear-gradient(90deg,#0f766e,#14b8a6);width:33%;transition:width .4s;"></div>
+      </div>
+
+      <!-- Step 1: Welcome -->
+      <div id="ob-step-1" class="p-4">
+        <div style="width:64px;height:64px;border-radius:50%;background:linear-gradient(135deg,#0f766e,#14b8a6);
+                    display:flex;align-items:center;justify-content:center;font-size:1.75rem;color:#fff;margin-bottom:1.25rem">
+          <i class="bi bi-play-circle-fill"></i>
+        </div>
+        <h4 style="font-weight:800;margin-bottom:.4rem">Welcome to VideoWatch!</h4>
+        <p id="ob-welcome-text" style="color:#64748b;margin-bottom:1.5rem;line-height:1.6">
+          You're all set up. VideoWatch monitors websites and channels for new videos — automatically, in the background.
+          Let's get you started in just 2 quick steps.
+        </p>
+        <div style="display:flex;flex-direction:column;gap:.75rem;margin-bottom:1.5rem">
+          <div style="display:flex;align-items:flex-start;gap:.75rem">
+            <div style="width:32px;height:32px;border-radius:50%;background:#d1fae5;color:#059669;
+                        display:flex;align-items:center;justify-content:center;flex-shrink:0;font-size:.9rem">
+              <i class="bi bi-globe2"></i>
+            </div>
+            <div>
+              <div style="font-weight:700;font-size:.88rem">Add a site or channel</div>
+              <div style="font-size:.8rem;color:#64748b">Any YouTube channel, VK page, Vimeo profile, or website.</div>
+            </div>
+          </div>
+          <div style="display:flex;align-items:flex-start;gap:.75rem">
+            <div style="width:32px;height:32px;border-radius:50%;background:#e0f2fe;color:#0284c7;
+                        display:flex;align-items:center;justify-content:center;flex-shrink:0;font-size:.9rem">
+              <i class="bi bi-arrow-repeat"></i>
+            </div>
+            <div>
+              <div style="font-weight:700;font-size:.88rem">Automatic scanning</div>
+              <div style="font-size:.8rem;color:#64748b">VideoWatch checks for new videos on a schedule you control.</div>
+            </div>
+          </div>
+          <div style="display:flex;align-items:flex-start;gap:.75rem">
+            <div style="width:32px;height:32px;border-radius:50%;background:#fef3c7;color:#d97706;
+                        display:flex;align-items:center;justify-content:center;flex-shrink:0;font-size:.9rem">
+              <i class="bi bi-bell-fill"></i>
+            </div>
+            <div>
+              <div style="font-weight:700;font-size:.88rem">Instant notifications</div>
+              <div style="font-size:.8rem;color:#64748b">Get alerted the moment a new video is detected.</div>
+            </div>
+          </div>
+        </div>
+        <button class="btn btn-sm w-100 py-2" onclick="obNext(2)"
+          style="background:linear-gradient(135deg,#0f766e,#14b8a6);color:#fff;border:none;border-radius:10px;font-weight:700;font-size:.95rem">
+          Get started <i class="bi bi-arrow-right ms-1"></i>
+        </button>
+        <button class="btn btn-link btn-sm w-100 mt-2" style="color:#94a3b8;font-size:.8rem" onclick="obSkip()">
+          Skip for now
+        </button>
+      </div>
+
+      <!-- Step 2: Add first site -->
+      <div id="ob-step-2" class="p-4" style="display:none">
+        <div style="display:flex;align-items:center;gap:.5rem;margin-bottom:1rem">
+          <button class="btn btn-sm btn-link p-0" style="color:#64748b" onclick="obNext(1)">
+            <i class="bi bi-arrow-left"></i>
+          </button>
+          <span style="font-size:.8rem;color:#94a3b8">Step 2 of 2</span>
+        </div>
+        <h5 style="font-weight:800;margin-bottom:.3rem">Add your first site</h5>
+        <p style="color:#64748b;font-size:.88rem;margin-bottom:1.25rem">
+          Paste the URL of any channel or website you want to monitor.
+        </p>
+        <div id="ob-site-err" style="display:none;font-size:.8rem;color:#dc2626;background:rgba(220,38,38,.08);
+             border:1px solid rgba(220,38,38,.2);border-radius:8px;padding:.5rem .75rem;margin-bottom:.75rem"></div>
+        <div style="margin-bottom:.85rem">
+          <label style="font-size:.82rem;font-weight:600;display:block;margin-bottom:.35rem">Site URL</label>
+          <input id="ob-url" class="form-control form-control-sm" type="url"
+            placeholder="https://www.youtube.com/@channel" autocomplete="off" />
+        </div>
+        <div style="margin-bottom:1.25rem">
+          <label style="font-size:.82rem;font-weight:600;display:block;margin-bottom:.35rem">Display name <span style="color:#94a3b8;font-weight:400">(optional)</span></label>
+          <input id="ob-name" class="form-control form-control-sm" type="text" placeholder="My favourite channel" />
+        </div>
+        <button class="btn btn-sm w-100 py-2" id="ob-add-btn" onclick="obAddSite()"
+          style="background:linear-gradient(135deg,#0f766e,#14b8a6);color:#fff;border:none;border-radius:10px;font-weight:700;font-size:.95rem">
+          <i class="bi bi-plus-circle me-1"></i>Add site & finish
+        </button>
+        <button class="btn btn-link btn-sm w-100 mt-2" style="color:#94a3b8;font-size:.8rem" onclick="obSkip()">
+          I'll add a site later
+        </button>
+      </div>
+
+      <!-- Step 3: Done -->
+      <div id="ob-step-3" class="p-4 text-center" style="display:none">
+        <div style="width:72px;height:72px;border-radius:50%;background:#d1fae5;color:#059669;
+                    display:flex;align-items:center;justify-content:center;font-size:2rem;margin:0 auto 1.25rem">
+          <i class="bi bi-check-circle-fill"></i>
+        </div>
+        <h5 style="font-weight:800;margin-bottom:.5rem">You're all set!</h5>
+        <p style="color:#64748b;font-size:.9rem;margin-bottom:1.5rem">
+          Your site has been added. VideoWatch will start scanning it automatically.<br>
+          Explore your dashboard to see new videos as they appear.
+        </p>
+        <button class="btn btn-sm w-100 py-2" onclick="obDone()"
+          style="background:linear-gradient(135deg,#0f766e,#14b8a6);color:#fff;border:none;border-radius:10px;font-weight:700;font-size:.95rem">
+          Go to dashboard <i class="bi bi-arrow-right ms-1"></i>
+        </button>
+      </div>
+
+    </div>
+  </div>
+</div>
+
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
 <script>
 const API = (() => {
@@ -2830,6 +2945,67 @@ setInterval(() => {
 setInterval(refreshLog, 60000);
 
 // ── Init ─────────────────────────────────────────────────────────────────────
+// ── Onboarding wizard ─────────────────────────────────────────────────────────
+let _obModal = null;
+
+function obNext(step) {
+  [1,2,3].forEach(s => {
+    document.getElementById(`ob-step-${s}`).style.display = s === step ? '' : 'none';
+  });
+  const pct = step === 1 ? '33%' : step === 2 ? '66%' : '100%';
+  document.getElementById('ob-progress').style.width = pct;
+}
+
+async function obSkip() {
+  await api('/auth/complete-onboarding', { method: 'POST' }).catch(() => {});
+  _obModal && _obModal.hide();
+}
+
+async function obDone() {
+  await api('/auth/complete-onboarding', { method: 'POST' }).catch(() => {});
+  _obModal && _obModal.hide();
+  await renderAll();
+}
+
+async function obAddSite() {
+  const url  = document.getElementById('ob-url').value.trim();
+  const name = document.getElementById('ob-name').value.trim();
+  const errEl = document.getElementById('ob-site-err');
+  errEl.style.display = 'none';
+  if (!url) {
+    errEl.textContent = 'Please enter a URL.';
+    errEl.style.display = 'block';
+    return;
+  }
+  const btn = document.getElementById('ob-add-btn');
+  btn.disabled = true;
+  btn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span>Adding…';
+  try {
+    await api('/sites', { method: 'POST', body: JSON.stringify({ url, name: name || null }) });
+    obNext(3);
+    document.getElementById('ob-progress').style.width = '100%';
+  } catch (ex) {
+    errEl.textContent = ex.message;
+    errEl.style.display = 'block';
+  } finally {
+    btn.disabled = false;
+    btn.innerHTML = '<i class="bi bi-plus-circle me-1"></i>Add site & finish';
+  }
+}
+
+async function maybeShowOnboarding(st) {
+  if (!st.authenticated || st.onboarding_done) return;
+  const el = document.getElementById('onboardingModal');
+  if (!el) return;
+  // Personalise welcome text
+  const welcomeText = document.getElementById('ob-welcome-text');
+  if (welcomeText && st.user) {
+    welcomeText.textContent = `Hey ${st.user}! VideoWatch monitors websites and channels for new videos — automatically, in the background. Let's get you started in just 2 quick steps.`;
+  }
+  _obModal = new bootstrap.Modal(el);
+  _obModal.show();
+}
+
 (async function init() {
   initMobileSidebar();
   const playerModal = document.getElementById('playerModal');
@@ -2840,6 +3016,7 @@ setInterval(refreshLog, 60000);
   api('/auth/status').then(st => {
     const el = document.getElementById('topbar-username');
     if (el && st.user) el.textContent = st.user;
+    maybeShowOnboarding(st);
   }).catch(() => {});
   // Normalise any saved site URLs (adds trailing slashes etc)
   await api('/sites/fix-urls', { method: 'POST' }).catch(() => {});

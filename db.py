@@ -187,6 +187,7 @@ def init_db():
             add_column_if_missing(db, "videos", "last_watched_at", "TEXT")
             add_column_if_missing(db, "users", "email", "TEXT")
             add_column_if_missing(db, "users", "email_verified", "INTEGER DEFAULT 0")
+            add_column_if_missing(db, "users", "onboarding_done", "INTEGER DEFAULT 0")
             db.execute("""
                 CREATE TABLE IF NOT EXISTS email_verifications (
                     token       TEXT PRIMARY KEY,
