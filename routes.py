@@ -80,13 +80,14 @@ _migrate_legacy_videos_dir()
 
 router = APIRouter()
 
-# ── SSE Progress Queue ────────────────────────────────────────────────────────
-progress_queue: asyncio.Queue = None
+# ── SSE Pub-Sub (one queue per connected client) ──────────────────────────────
+progress_queue: asyncio.Queue = None   # kept for legacy imports; not used internally
+_sse_subscribers: list[asyncio.Queue] = []
 
 async def push_progress(msg: str):
-    """Pushes a message to the SSE queue if initialized."""
-    if progress_queue is not None:
-        await progress_queue.put(msg)
+    """Broadcast a scan progress message to every connected SSE client."""
+    for q in list(_sse_subscribers):
+        await q.put(msg)
 
 # ── Pydantic Models ───────────────────────────────────────────────────────────
 
@@ -1652,19 +1653,45 @@ def merge_duplicate(body: MergeDuplicateIn, request: Request):
     return {"ok": True}
 
 @router.get("/api/scan/stream")
-async def scan_stream():
-    """SSE endpoint — frontend connects here to get live scan progress."""
+async def scan_stream(request: Request):
+    """SSE endpoint — one queue per client, messages filtered by site ownership."""
+    # Determine which site IDs this client is allowed to see events for.
+    # super_admin / auth-disabled → None means no filter (see everything).
+    if is_super_admin(request):
+        allowed_sites = None
+    else:
+        user = current_user(request) or ""
+        with get_db() as db:
+            allowed_sites = {
+                r[0] for r in db.execute(
+                    "SELECT id FROM sites WHERE owner=?", (user,)
+                ).fetchall()
+            }
+
+    queue: asyncio.Queue = asyncio.Queue()
+    _sse_subscribers.append(queue)
+
     async def event_gen():
-        yield "data: connected\n\n"
-        while True:
+        try:
+            yield "data: connected\n\n"
+            while True:
+                try:
+                    msg = await asyncio.wait_for(queue.get(), timeout=25)
+                    # Filter: only forward events belonging to this user's sites.
+                    if allowed_sites is not None:
+                        parts = msg.split('|')
+                        site_id = parts[1] if len(parts) >= 2 else ''
+                        if site_id and site_id not in allowed_sites:
+                            continue
+                    yield f"data: {msg}\n\n"
+                except asyncio.TimeoutError:
+                    yield ": ping\n\n"   # keep-alive
+        finally:
             try:
-                if progress_queue is None:
-                    await asyncio.sleep(1)
-                    continue
-                msg = await asyncio.wait_for(progress_queue.get(), timeout=25)
-                yield f"data: {msg}\n\n"
-            except asyncio.TimeoutError:
-                yield ": ping\n\n"   # keep-alive
+                _sse_subscribers.remove(queue)
+            except ValueError:
+                pass
+
     return StreamingResponse(event_gen(), media_type="text/event-stream",
                              headers={"Cache-Control": "no-cache",
                                       "X-Accel-Buffering": "no"})

@@ -128,7 +128,6 @@ async def _scheduler():
 
 @asynccontextmanager
 async def lifespan(application: FastAPI):
-    routes.progress_queue = asyncio.Queue()
     scheduler_task = asyncio.create_task(_scheduler())
     log.info("VideoWatch started — scheduler running")
     yield
