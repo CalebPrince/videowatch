@@ -393,6 +393,16 @@
       border-radius: 10px;
       box-shadow: 0 10px 20px rgba(15,118,110,.24);
     }
+    .topbar-username {
+      font-size: .8rem;
+      font-weight: 600;
+      color: var(--muted);
+      white-space: nowrap;
+      max-width: 120px;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    @media (max-width: 576px) { .topbar-username { display: none; } }
     .btn-profile {
       background: rgba(15,118,110,.1);
       border: 1px solid rgba(15,118,110,.3);
@@ -643,7 +653,8 @@
         <h6 id="topbar-title">All videos</h6>
         <div class="sub">Last scan: <span id="last-scan">—</span></div>
       </div>
-      <div class="dropdown ms-auto">
+      <div class="dropdown ms-auto d-flex align-items-center gap-2">
+        <span id="topbar-username" class="topbar-username"></span>
         <button class="btn btn-sm btn-profile dropdown-toggle" type="button" data-bs-toggle="dropdown" aria-expanded="false" aria-label="Account menu" title="Account">
           <i class="bi bi-person-circle"></i>
         </button>
@@ -2826,6 +2837,10 @@ setInterval(refreshLog, 60000);
     playerModal.addEventListener('hidden.bs.modal', resetInlinePlayer);
   }
   connectSSE();
+  api('/auth/status').then(st => {
+    const el = document.getElementById('topbar-username');
+    if (el && st.user) el.textContent = st.user;
+  }).catch(() => {});
   // Normalise any saved site URLs (adds trailing slashes etc)
   await api('/sites/fix-urls', { method: 'POST' }).catch(() => {});
   for (let i = 0; i < 3; i++) {
