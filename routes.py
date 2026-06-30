@@ -1855,8 +1855,25 @@ async def _preview_fetch_html(page_url_str: str, site_id: str, use_playwright: b
     return html
 
 
+def _filter_by_keywords(videos: list[dict], keywords: str, fallback: bool = True) -> list[dict]:
+    """Return videos whose title/url match any keyword. Falls back to all if none match."""
+    if not keywords or not keywords.strip():
+        return videos
+    terms = [t.strip().lower() for t in re.split(r'[,\s]+', keywords.strip()) if len(t.strip()) >= 2]
+    if not terms:
+        return videos
+
+    def score(v: dict) -> int:
+        text = ((v.get("title") or "") + " " + (v.get("url") or "")).lower()
+        return sum(1 for t in terms if t in text)
+
+    matched = [v for v in videos if score(v) > 0]
+    matched.sort(key=score, reverse=True)
+    return matched if matched else (videos if fallback else [])
+
+
 @router.get("/api/sites/preview")
-async def preview_site(url: str = Query(...), max_pages: int = Query(1, ge=1, le=5)):
+async def preview_site(url: str = Query(...), max_pages: int = Query(1, ge=1, le=5), keywords: str = Query("")):
     """Scan up to max_pages pages of a URL and return found videos without saving to DB."""
     url = url.strip()
     if not url.startswith("http"):
@@ -1930,6 +1947,9 @@ async def preview_site(url: str = Query(...), max_pages: int = Query(1, ge=1, le
     except Exception as e:
         error_detail = str(e)
         log.warning(f"Preview error for {url}: {e}")
+
+    if found_videos and keywords:
+        found_videos = _filter_by_keywords(found_videos, keywords)
 
     return {
         "url": url,

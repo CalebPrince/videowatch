@@ -2193,12 +2193,21 @@ document.getElementById('addModal').addEventListener('show.bs.modal', () => {
   document.getElementById('add-pages-val').textContent = 1;
   previewPagesVal = 1;
   document.getElementById('preview-pages-val').textContent = 1;
+  previewKeywords = '';
   resetPreviewArea();
   resetDiscoverArea();
 });
 
+document.getElementById('tab-url-btn').addEventListener('click', () => {
+  // If user manually switches to the URL tab (not via discovery), clear keywords
+  if (!document.getElementById('inp-discover-q').value.trim()) {
+    previewKeywords = '';
+  }
+});
+
 // ── Preview pages control ────────────────────────────────────────────────────
 let previewPagesVal = 1;
+let previewKeywords = '';
 document.getElementById('preview-pages-minus').onclick = () => {
   if (previewPagesVal > 1) document.getElementById('preview-pages-val').textContent = --previewPagesVal;
 };
@@ -2235,7 +2244,7 @@ document.getElementById('btn-preview').onclick = async () => {
   btn.innerHTML = '<span class="spinner-border spinner-border-sm"></span>';
 
   try {
-    const data = await api(`/sites/preview?url=${encodeURIComponent(url)}&max_pages=${previewPagesVal}`);
+    const data = await api(`/sites/preview?url=${encodeURIComponent(url)}&max_pages=${previewPagesVal}&keywords=${encodeURIComponent(previewKeywords)}`);
     document.getElementById('preview-loading').style.display = 'none';
 
     if (!data.videos || data.videos.length === 0) {
@@ -2285,16 +2294,16 @@ function resetDiscoverArea() {
 }
 
 function selectDiscoveredSite(url, title) {
-  // Switch to By URL tab
+  // Carry the discovery keywords into the preview so results are filtered
+  previewKeywords = document.getElementById('inp-discover-q').value.trim();
+
   const tabBtn = document.getElementById('tab-url-btn');
   if (tabBtn) tabBtn.click();
 
-  // Fill in the URL and name fields
   document.getElementById('inp-url').value = url;
   const nameInp = document.getElementById('inp-name');
   if (nameInp && !nameInp.value && title) nameInp.value = title;
 
-  // Wait for tab transition to complete before triggering preview
   setTimeout(() => document.getElementById('btn-preview').click(), 200);
 }
 
