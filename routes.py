@@ -15,7 +15,7 @@ from urllib.parse import urlparse, parse_qs, urlunparse, urljoin
 
 import httpx
 from fastapi import APIRouter, HTTPException, BackgroundTasks, Query, status, Response, Request
-from fastapi.responses import StreamingResponse, JSONResponse
+from fastapi.responses import StreamingResponse, JSONResponse, HTMLResponse, PlainTextResponse
 from pydantic import BaseModel
 import mimetypes
 from playwright.async_api import async_playwright
@@ -1577,6 +1577,45 @@ def stats():
             "scans": scans, "last_scan": last,
             "favorites": favorites, "archived": archived, "ignored": ignored,
             "platforms": platforms, "site_list": site_list}
+
+@router.get("/api/logs", response_class=HTMLResponse)
+def get_logs(lines: int = 300):
+    """Tail the server log file in the browser."""
+    log_file = Path(__file__).parent / "videowatch.log"
+    try:
+        text = log_file.read_text(encoding="utf-8", errors="replace")
+        tail = "\n".join(text.splitlines()[-lines:])
+    except Exception as e:
+        tail = f"Log file not found: {e}\n\nMake sure the server has been restarted after the latest update."
+    safe = tail.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+    return HTMLResponse(f"""<!doctype html><html><head><meta charset=utf-8>
+<title>VideoWatch Server Log</title>
+<style>body{{background:#0d0d1a;color:#7ecb9f;font-family:monospace;font-size:13px;padding:1rem;margin:0}}
+pre{{white-space:pre-wrap;word-break:break-all}}
+.ts{{color:#555}} .err{{color:#f87171}} .warn{{color:#fbbf24}}</style></head>
+<body><pre id=log>{safe}</pre>
+<script>
+// Auto-refresh every 4 seconds, keep scroll at bottom
+function colorize(){{
+  document.getElementById('log').innerHTML = document.getElementById('log').textContent
+    .split('\\n').map(l=>{{
+      if(l.includes(' ERROR ')||l.includes(' CRITICAL ')) return `<span class=err>${{l}}</span>`;
+      if(l.includes(' WARNING ')) return `<span class=warn>${{l}}</span>`;
+      const m=l.match(/^(\\d{{4}}-\\d{{2}}-\\d{{2}} \\d{{2}}:\\d{{2}}:\\d{{2}})/);
+      return m?`<span class=ts>${{m[1]}}</span>${{l.slice(m[1].length)}}`:l;
+    }}).join('\\n');
+}}
+colorize();
+window.scrollTo(0,document.body.scrollHeight);
+setInterval(()=>fetch(location.href+'?lines={lines}').then(r=>r.text()).then(h=>{{
+  const parser=new DOMParser();
+  const doc=parser.parseFromString(h,'text/html');
+  document.getElementById('log').textContent=doc.getElementById('log').textContent;
+  colorize();
+  window.scrollTo(0,document.body.scrollHeight);
+}}),4000);
+</script></body></html>""")
+
 
 @router.get("/api/health")
 def health():
