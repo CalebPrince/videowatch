@@ -923,6 +923,13 @@ def add_site(body: SiteIn, request: Request):
                     notify_enabled,
                     owner,
                 ))
+            # Auto-enable auto-scan when the very first site is added
+            site_count = db.execute("SELECT COUNT(*) FROM sites").fetchone()[0]
+            if site_count == 1:
+                db.execute(
+                    "INSERT INTO app_settings (key, value) VALUES ('autoscan_enabled', '1') "
+                    "ON CONFLICT(key) DO UPDATE SET value='1'",
+                )
             db.commit()
     return {"id": site_id, "url": url, "name": body.name,
             "group_name": body.group_name, "max_pages": max_pages, "scan_interval": scan_interval,
@@ -1183,6 +1190,13 @@ def remove_site(site_id: str, request: Request):
                 raise HTTPException(403, "Not authorised to delete this site")
             db.execute("DELETE FROM sites WHERE id=?", (site_id,))
             db.execute("DELETE FROM videos WHERE site_id=?", (site_id,))
+            # Auto-disable auto-scan when no sites remain
+            remaining = db.execute("SELECT COUNT(*) FROM sites").fetchone()[0]
+            if remaining == 0:
+                db.execute(
+                    "INSERT INTO app_settings (key, value) VALUES ('autoscan_enabled', '0') "
+                    "ON CONFLICT(key) DO UPDATE SET value='0'",
+                )
             db.commit()
     cp = cookie_path(site_id)
     if cp.exists():

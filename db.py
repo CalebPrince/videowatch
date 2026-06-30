@@ -187,6 +187,6 @@ def init_db():
             add_column_if_missing(db, "videos", "last_watched_at", "TEXT")
             db.execute(
                 "INSERT OR IGNORE INTO app_settings (key, value) VALUES (?, ?)",
-                ("autoscan_enabled", "1"),
+                ("autoscan_enabled", "0"),
             )
             db.commit()
