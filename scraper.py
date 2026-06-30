@@ -612,6 +612,111 @@ def _scrape_vk_channel(channel_url: str, max_videos: int | None = None) -> list[
     return videos
 
 
+_VK_EXTRACT_JS = """
+() => {
+    const seen = new Set();
+    const results = [];
+    document.querySelectorAll('a[href*="/video-"]').forEach(a => {
+        const href = a.getAttribute('href') || '';
+        const match = href.match(/\\/video(-?\\d+_\\d+)/);
+        if (!match) return;
+        const vid_id = match[1];
+        if (seen.has(vid_id)) return;
+
+        // Walk up to find the card container, then locate the title inside it
+        let container = a;
+        for (let i = 0; i < 6; i++) {
+            if (!container.parentElement) break;
+            container = container.parentElement;
+            const allLinks = container.querySelectorAll('a[href*="/video-' + vid_id + '"]');
+            if (allLinks.length >= 2) break;
+        }
+
+        const titleEl = container.querySelector(
+            '[data-testid="video_page_title"], [class*="vkitTextClamp__root"]'
+        );
+        // Get only direct text nodes + non-noise child text
+        let title = '';
+        if (titleEl) {
+            titleEl.childNodes.forEach(n => {
+                if (n.nodeType === 3) { title += n.textContent; }
+                else if (n.nodeType === 1) {
+                    const cls = n.className || '';
+                    if (!cls.includes('colorText') && !cls.includes('Subhead') &&
+                        !cls.includes('colorScheme') && !cls.includes('getColor')) {
+                        title += n.textContent;
+                    }
+                }
+            });
+            title = title.trim();
+        }
+        if (!title) title = a.getAttribute('aria-label') || a.getAttribute('title') || '';
+        if (!title) return;
+
+        const img = container.querySelector('img[src], img[data-src]');
+        const thumb = img ? (img.src || img.getAttribute('data-src') || '') : '';
+
+        seen.add(vid_id);
+        results.push({ vid_id, title: title.trim(), thumb });
+    });
+    return results;
+}
+"""
+
+
+async def _scrape_vk_with_playwright(channel_url: str) -> list[dict]:
+    """Scrape a VK Video channel page using Playwright JS evaluation."""
+    base = channel_url.rstrip("/")
+    if not base.endswith("/all"):
+        base = base + "/all"
+
+    try:
+        from playwright.async_api import async_playwright as _ap
+        async with _ap() as p:
+            browser, context = await _make_context(p, "vk_pw")
+            try:
+                page = await context.new_page()
+                await page.goto(base, wait_until="domcontentloaded", timeout=30000)
+                await page.wait_for_timeout(3000)
+                # Scroll several times to trigger lazy-loaded video cards
+                for _ in range(6):
+                    await page.evaluate("window.scrollBy(0, window.innerHeight * 3)")
+                    await page.wait_for_timeout(1200)
+                raw = await page.evaluate(_VK_EXTRACT_JS)
+            finally:
+                await context.close()
+                await browser.close()
+    except Exception as e:
+        log.warning(f"  VK Playwright scrape failed: {e}")
+        return []
+
+    now = datetime.now(timezone.utc)
+    videos = []
+    for i, item in enumerate(raw or []):
+        vid_id = item.get("vid_id", "")
+        title = (item.get("title") or "").strip()
+        if not vid_id or not title:
+            continue
+        m = re.search(r'(-?\d+)_(\d+)', vid_id)
+        embed_url = None
+        if m:
+            embed_url = f"https://vkvideo.ru/video_ext.php?oid={m.group(1)}&id={m.group(2)}&hd=2"
+        synthetic_dt = now - timedelta(minutes=i)
+        videos.append({
+            "url":         f"https://vkvideo.ru/video{vid_id}",
+            "title":       title,
+            "thumb":       item.get("thumb") or None,
+            "embed_url":   embed_url,
+            "platform":    "vk",
+            "released_at": synthetic_dt.strftime("%Y-%m-%dT%H:%M:%S"),
+            "cast_names":  None,
+            "duration":    None,
+        })
+
+    log.info(f"  VK Playwright: {len(videos)} video(s) from {channel_url}")
+    return videos
+
+
 # ── Parsing Logic ─────────────────────────────────────────────────────────────
 
 def scrape_videos(html: str, base_url: str) -> list[dict]:
@@ -1319,12 +1424,19 @@ def _scan_site_sync(site: dict) -> list[dict]:
         return _scrape_youtube_channel(base_url, max_videos=None)
 
     # ── VK Video channel shortcut (sync path) ────────────────────────────
-    if _is_vk_channel_url(base_url) and HAS_YT_DLP:
-        log.info(f"  [sync] Detected VK Video channel — using yt-dlp")
-        result = _scrape_vk_channel(base_url, max_videos=None)
-        if result:
-            return result
-        log.info(f"  [sync] VK yt-dlp returned nothing, falling back to Playwright")
+    if _is_vk_channel_url(base_url):
+        if HAS_YT_DLP:
+            log.info(f"  [sync] Detected VK Video channel — using yt-dlp")
+            result = _scrape_vk_channel(base_url, max_videos=None)
+            if result:
+                return result
+            log.info(f"  [sync] VK yt-dlp returned nothing, falling back to Playwright")
+        log.info(f"  [sync] VK Video: using dedicated Playwright scraper")
+        loop = asyncio.new_event_loop()
+        try:
+            return loop.run_until_complete(_scrape_vk_with_playwright(base_url))
+        finally:
+            loop.close()
 
     max_pages = _effective_max_pages(site)
     all_videos = []
@@ -1462,7 +1574,17 @@ async def scan_site(site: dict, push_func=None):
                 log.error(f"  yt-dlp VK scrape error: {e}")
                 await push(f"PAGE_ERROR|{site_id}|1|{e}")
         if not skip_playwright:
-            log.info(f"  VK Video: falling back to Playwright scrape")
+            log.info(f"  VK Video: using dedicated Playwright scraper")
+            await push(f"PAGE|{site_id}|1|1|{base_url}")
+            try:
+                vk_videos = await _scrape_vk_with_playwright(base_url)
+                all_videos.extend(vk_videos)
+                log.info(f"  VK Playwright returned {len(vk_videos)} video(s)")
+            except Exception as e:
+                log.error(f"  VK Playwright scrape error: {e}")
+                await push(f"PAGE_ERROR|{site_id}|1|{e}")
+            await push(f"PAGE_DONE|{site_id}|1|{len(all_videos)}")
+            skip_playwright = True
 
     # ── Playwright crawl (non-channel sites) ─────────────────────────────────
     if not skip_playwright:
