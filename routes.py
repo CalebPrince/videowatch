@@ -1847,14 +1847,33 @@ async def preview_site(url: str = Query(...)):
             # Grab title text and nearby image
             title = a.get_text(" ", strip=True) or slug.replace("-", " ").replace("_", " ")
             thumb = None
+            _THUMB_ATTRS = ("src", "data-src", "data-lazy-src", "data-lazy",
+                           "data-original", "data-image", "data-background",
+                           "data-thumb", "data-poster", "data-url")
             for img in a.find_all("img"):
-                src = img.get("src") or img.get("data-src") or img.get("data-lazy-src")
-                if src and not src.startswith("data:"):
-                    try:
-                        thumb = urljoin(url, src)
-                    except Exception:
-                        pass
+                for attr in _THUMB_ATTRS:
+                    src = img.get(attr, "").strip()
+                    if src and not src.startswith("data:"):
+                        try:
+                            thumb = urljoin(url, src)
+                        except Exception:
+                            pass
+                        break
+                if thumb:
                     break
+            # Also check <div/span> with background-image style inside the link
+            if not thumb:
+                for el in a.find_all(True):
+                    style = el.get("style", "")
+                    m = re.search(r'background(?:-image)?\s*:\s*url\(["\']?([^"\')\s]+)["\']?\)', style)
+                    if m:
+                        src = m.group(1).strip()
+                        if src and not src.startswith("data:"):
+                            try:
+                                thumb = urljoin(url, src)
+                                break
+                            except Exception:
+                                pass
 
             broad.append({"url": full, "title": title, "thumb": thumb,
                           "embed_url": None, "platform": "direct",

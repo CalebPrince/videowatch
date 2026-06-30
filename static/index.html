@@ -2233,7 +2233,8 @@ document.getElementById('btn-preview').onclick = async () => {
           <div style="border-radius:8px;overflow:hidden;border:1px solid var(--border);background:var(--card-bg);">
             <div style="aspect-ratio:16/9;background:#0d0d1a;overflow:hidden;">
               ${thumb
-                ? `<img src="${thumb}" style="width:100%;height:100%;object-fit:cover;" loading="lazy" onerror="this.style.display='none'" />`
+                ? `<img src="${thumb}" style="width:100%;height:100%;object-fit:cover;" loading="lazy"
+                    onerror="this.style.display='none';this.parentElement.innerHTML='<div style=\\'width:100%;height:100%;display:flex;align-items:center;justify-content:center;color:rgba(255,255,255,.18);font-size:1.2rem;\\'><i class=\\'bi bi-play-circle\\'></i></div>'" />`
                 : `<div style="width:100%;height:100%;display:flex;align-items:center;justify-content:center;color:rgba(255,255,255,.18);font-size:1.2rem;"><i class="bi bi-play-circle"></i></div>`
               }
             </div>
