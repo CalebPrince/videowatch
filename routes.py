@@ -755,7 +755,7 @@ def _create_user_record(username: str, raw_password: str, role: str):
 def _get_user(username: str) -> dict | None:
     with get_db() as db:
         row = db.execute(
-            "SELECT username, password_salt, password_hash, role, active FROM users WHERE username=?",
+            "SELECT username, password_salt, password_hash, role, active, email_verified FROM users WHERE username=?",
             (username,),
         ).fetchone()
     return dict(row) if row else None
