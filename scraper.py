@@ -1741,6 +1741,8 @@ async def scan_site(site: dict, push_func=None):
         skip_playwright = True
 
     # ── VK Video channel shortcut ─────────────────────────────────────────────
+    log.info(f"  VK channel check: url={base_url!r} match={_is_vk_channel_url(base_url)}")
+    await push(f"LOG|{site_id}|VK check: {base_url} → match={_is_vk_channel_url(base_url)}")
     if not skip_playwright and _is_vk_channel_url(base_url):
         await push(f"LOG|{site_id}|VK channel detected: {base_url}")
         if HAS_YT_DLP:

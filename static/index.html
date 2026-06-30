@@ -1178,6 +1178,8 @@ function connectSSE() {
     } else if (type === 'SCHEDULER_ERROR') {
       addLog(`Scheduler error: ${parts[2]}`, 'err');
       showToast('Scheduler error while scanning', 'danger');
+    } else if (type === 'LOG') {
+      addLog(parts.slice(2).join('|'));
     }
   };
 
