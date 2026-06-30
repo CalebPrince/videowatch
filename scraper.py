@@ -688,7 +688,13 @@ _VK_EXTRACT_JS = """
 
 
 async def _scrape_vk_with_playwright(channel_url: str, push=None) -> list[dict]:
-    """Scrape a VK Video channel page using Playwright JS evaluation."""
+    """
+    Scrape a VK Video channel page by intercepting its API network responses.
+    VK uses virtual scroll (DOM recycling), so DOM scraping always sees the same
+    few cards.  Intercepting XHR/fetch gives clean JSON with real per-video data.
+    """
+    import json as _json
+
     async def _push(msg):
         if push:
             await push(msg)
@@ -697,14 +703,64 @@ async def _scrape_vk_with_playwright(channel_url: str, push=None) -> list[dict]:
     base = channel_url.rstrip("/")
     urls_to_try = [base] if base.endswith("/all") else [base, base + "/all"]
 
-    raw = []
+    api_items: list[dict] = []   # raw video objects from VK's API
+    seen_api_ids: set[str] = set()
+
+    def _ingest_response_body(body_text: str):
+        """Try to extract video items from a VK API JSON response."""
+        try:
+            data = _json.loads(body_text)
+        except Exception:
+            return
+        # VK API wraps results in response.items or response[0].items etc.
+        candidates = []
+        resp = data.get("response") or data.get("payload") or data
+        if isinstance(resp, list):
+            for r in resp:
+                if isinstance(r, dict):
+                    candidates.extend(r.get("items") or r.get("videos") or [])
+        elif isinstance(resp, dict):
+            candidates = resp.get("items") or resp.get("videos") or []
+        for item in candidates:
+            if not isinstance(item, dict):
+                continue
+            vid_id_str = item.get("id") or item.get("video_id")
+            owner_id   = item.get("owner_id")
+            if vid_id_str is None or owner_id is None:
+                continue
+            key = f"{owner_id}_{vid_id_str}"
+            if key in seen_api_ids:
+                continue
+            seen_api_ids.add(key)
+            api_items.append({**item, "_key": key})
+
     try:
         from playwright.async_api import async_playwright as _ap
         async with _ap() as p:
             browser, context = await _make_context(p, "vk_pw")
             try:
                 page = await context.new_page()
+
+                # Intercept all responses and harvest video API payloads
+                async def on_response(response):
+                    url = response.url
+                    # VK video list API calls contain "video" and are JSON
+                    if not ("video" in url.lower() or "execute" in url.lower()):
+                        return
+                    ct = response.headers.get("content-type", "")
+                    if "json" not in ct:
+                        return
+                    try:
+                        body = await response.text()
+                        _ingest_response_body(body)
+                    except Exception:
+                        pass
+
+                page.on("response", on_response)
+
                 for try_url in urls_to_try:
+                    api_items.clear()
+                    seen_api_ids.clear()
                     try:
                         await page.goto(try_url, wait_until="domcontentloaded", timeout=30000)
                     except Exception:
@@ -713,45 +769,55 @@ async def _scrape_vk_with_playwright(channel_url: str, push=None) -> list[dict]:
                         except Exception:
                             continue
                     await page.wait_for_timeout(3000)
-                    final_url = page.url
-                    await _push(f"Loaded page: {final_url}")
+                    await _push(f"Loaded page: {page.url}")
+                    await _push(f"API items after initial load: {len(api_items)}")
 
-                    # Count unique video links before scroll
-                    before = await page.evaluate(
-                        "() => new Set(Array.from(document.querySelectorAll('a[href]'))"
-                        ".map(a=>a.getAttribute('href')).filter(h=>h&&/\\/video-?\\d+_\\d+/.test(h))).size"
-                    )
-                    await _push(f"Video links before scroll: {before}")
-
-                    # Scroll using Page Down keypresses — works better with virtual lists
-                    await page.keyboard.press("End")
-                    await page.wait_for_timeout(1000)
-                    prev_count = before
-                    for step in range(20):
+                    # Scroll to trigger paginated API loads
+                    prev_count = len(api_items)
+                    stall = 0
+                    for step in range(30):
                         await page.keyboard.press("End")
                         await page.evaluate("window.scrollTo(0, document.body.scrollHeight)")
-                        await page.wait_for_timeout(900)
-                        count = await page.evaluate(
-                            "() => new Set(Array.from(document.querySelectorAll('a[href]'))"
-                            ".map(a=>a.getAttribute('href')).filter(h=>h&&/\\/video-?\\d+_\\d+/.test(h))).size"
-                        )
-                        if count != prev_count:
-                            await _push(f"Step {step+1}: {count} unique video links")
-                            prev_count = count
-                        elif step > 4 and count == prev_count:
-                            break  # no new content loading
+                        await page.wait_for_timeout(800)
+                        cur = len(api_items)
+                        if cur != prev_count:
+                            await _push(f"Step {step+1}: {cur} API video items")
+                            prev_count = cur
+                            stall = 0
+                        else:
+                            stall += 1
+                            if stall >= 5:
+                                break  # no new data after 5 consecutive scroll steps
 
-                    await page.wait_for_timeout(1000)
-                    total_links = await page.evaluate(
-                        "() => new Set(Array.from(document.querySelectorAll('a[href]'))"
-                        ".map(a=>a.getAttribute('href')).filter(h=>h&&/\\/video-?\\d+_\\d+/.test(h))).size"
-                    )
-                    await _push(f"Total unique video links found: {total_links}")
+                    await _push(f"Total API items collected: {len(api_items)}")
 
-                    raw = await page.evaluate(_VK_EXTRACT_JS)
-                    await _push(f"JS extraction: {len(raw)} items (unique titles)")
-                    if raw:
-                        break
+                    # Fallback: if API interception yielded nothing, fall back to DOM
+                    if not api_items:
+                        await _push("No API items — falling back to DOM extraction")
+                        raw_dom = await page.evaluate(_VK_EXTRACT_JS)
+                        await _push(f"DOM extraction: {len(raw_dom)} items")
+                        # Convert DOM format to api_items format for unified processing below
+                        for x in raw_dom:
+                            vid_id_str = x.get("vid_id", "")
+                            m = re.search(r'(-?\d+)_(\d+)', vid_id_str)
+                            if not m:
+                                continue
+                            key = vid_id_str
+                            if key in seen_api_ids:
+                                continue
+                            seen_api_ids.add(key)
+                            api_items.append({
+                                "_key":     key,
+                                "_dom":     True,
+                                "title":    x.get("title", ""),
+                                "image":    [{"url": x.get("thumb", "")}] if x.get("thumb") else [],
+                                "owner_id": int(m.group(1)),
+                                "id":       int(m.group(2)),
+                            })
+
+                    if api_items:
+                        break  # found videos; skip the /all variant
+
             finally:
                 await context.close()
                 await browser.close()
@@ -762,30 +828,54 @@ async def _scrape_vk_with_playwright(channel_url: str, push=None) -> list[dict]:
 
     now = datetime.now(timezone.utc)
     videos = []
-    seen_ids: set[str] = set()
-    log.info(f"  VK Playwright raw items: {len(raw or [])} — ids: {[x.get('vid_id') for x in (raw or [])[:10]]}")
-    for i, item in enumerate(raw or []):
-        vid_id = item.get("vid_id", "")
-        title = (item.get("title") or "").strip()
-        if not vid_id or not title:
+    seen_video_ids: set[str] = set()
+    log.info(f"  VK API items: {len(api_items)} — keys: {[x.get('_key') for x in api_items[:10]]}")
+
+    for i, item in enumerate(api_items):
+        key = item.get("_key", "")
+        if not key or key in seen_video_ids:
             continue
-        if vid_id in seen_ids:
+        seen_video_ids.add(key)
+
+        owner_id   = item.get("owner_id", 0)
+        vid_id_num = item.get("id", 0)
+        title      = (item.get("title") or "").strip()
+        if not title:
             continue
-        seen_ids.add(vid_id)
-        m = re.search(r'(-?\d+)_(\d+)', vid_id)
-        embed_url = None
-        if m:
-            embed_url = f"https://vkvideo.ru/video_ext.php?oid={m.group(1)}&id={m.group(2)}&hd=2"
-        synthetic_dt = now - timedelta(minutes=i)
+
+        # Thumbnail: VK returns image[] array sorted by width, pick largest
+        images = item.get("image") or item.get("photo") or []
+        thumb = None
+        if images:
+            best = max(images, key=lambda x: x.get("width", 0)) if isinstance(images[0], dict) else None
+            if best:
+                thumb = best.get("url") or best.get("src")
+
+        # Release date from unix timestamp
+        released_at = None
+        ts = item.get("date") or item.get("added")
+        if ts:
+            try:
+                released_at = datetime.fromtimestamp(int(ts), tz=timezone.utc).strftime("%Y-%m-%dT%H:%M:%S")
+            except Exception:
+                pass
+        if not released_at:
+            released_at = (now - timedelta(minutes=i)).strftime("%Y-%m-%dT%H:%M:%S")
+
+        # Duration in seconds
+        duration = item.get("duration")
+
+        embed_url = f"https://vkvideo.ru/video_ext.php?oid={owner_id}&id={vid_id_num}&hd=2"
+
         videos.append({
-            "url":         f"https://vkvideo.ru/video{vid_id}",
+            "url":         f"https://vkvideo.ru/video{owner_id}_{vid_id_num}",
             "title":       title,
-            "thumb":       item.get("thumb") or None,
+            "thumb":       thumb,
             "embed_url":   embed_url,
             "platform":    "vk",
-            "released_at": synthetic_dt.strftime("%Y-%m-%dT%H:%M:%S"),
+            "released_at": released_at,
             "cast_names":  None,
-            "duration":    None,
+            "duration":    str(duration) if duration else None,
         })
 
     log.info(f"  VK Playwright: {len(videos)} unique video(s) from {channel_url}")
