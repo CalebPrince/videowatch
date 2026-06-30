@@ -183,6 +183,42 @@ def init_db():
             add_column_if_missing(db, "sites", "group_name", "TEXT")
             add_column_if_missing(db, "sites", "notify_enabled", "INTEGER DEFAULT 1")
             add_column_if_missing(db, "sites", "owner", "TEXT")
+
+            # Migrate sites table: replace UNIQUE(url) with UNIQUE(url, owner)
+            idx_rows = db.execute("PRAGMA index_list(sites)").fetchall()
+            has_url_owner_unique = any(
+                [r[2] for r in db.execute(f"PRAGMA index_info({idx[1]})").fetchall()] == ["url", "owner"]
+                for idx in idx_rows if idx[2]
+            )
+            if not has_url_owner_unique:
+                log.info("Migrating sites table: UNIQUE(url) -> UNIQUE(url, owner)")
+                db.executescript("""
+                    CREATE TABLE IF NOT EXISTS sites_new (
+                        id            TEXT PRIMARY KEY,
+                        url           TEXT NOT NULL,
+                        name          TEXT,
+                        group_name    TEXT,
+                        added_at      TEXT NOT NULL,
+                        last_scan     TEXT,
+                        max_pages     INTEGER DEFAULT 1,
+                        scan_interval INTEGER DEFAULT 300,
+                        rule_include_keywords TEXT DEFAULT '',
+                        rule_exclude_keywords TEXT DEFAULT '',
+                        rule_min_duration INTEGER DEFAULT 0,
+                        scan_profile  TEXT DEFAULT 'balanced',
+                        notify_enabled INTEGER DEFAULT 1,
+                        owner         TEXT,
+                        UNIQUE(url, owner)
+                    );
+                    INSERT OR IGNORE INTO sites_new
+                        SELECT id, url, name, group_name, added_at, last_scan, max_pages, scan_interval,
+                               rule_include_keywords, rule_exclude_keywords, rule_min_duration,
+                               scan_profile, notify_enabled, owner
+                        FROM sites;
+                    DROP TABLE sites;
+                    ALTER TABLE sites_new RENAME TO sites;
+                """)
+                log.info("Sites table migration complete")
             add_column_if_missing(db, "videos", "is_watched", "INTEGER DEFAULT 0")
             add_column_if_missing(db, "videos", "last_watched_at", "TEXT")
             add_column_if_missing(db, "users", "email", "TEXT")
