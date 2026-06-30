@@ -779,13 +779,13 @@ async def _scrape_vk_with_playwright(channel_url: str, push=None) -> list[dict]:
                     seen_api_ids.clear()
                     captured_urls.clear()
                     try:
-                        await page.goto(try_url, wait_until="domcontentloaded", timeout=30000)
+                        await page.goto(try_url, wait_until="networkidle", timeout=45000)
                     except Exception:
                         try:
-                            await page.goto(try_url, wait_until="load", timeout=20000)
+                            await page.goto(try_url, wait_until="domcontentloaded", timeout=30000)
                         except Exception:
                             continue
-                    await page.wait_for_timeout(3000)
+                    await page.wait_for_timeout(8000)
                     try:
                         final_url = page.url
                         await _push(f"Loaded page: {final_url}")
