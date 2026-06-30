@@ -1732,26 +1732,47 @@ def set_scan_automation_status(body: AutomationToggleIn):
     return {"ok": True, "enabled": body.enabled}
 
 @router.get("/api/scan/status")
-def scan_status():
+def scan_status(request: Request):
     with get_db() as db:
-        rows = db.execute(
-            "SELECT scan_log.*, sites.name as site_name, sites.url as site_url "
-            "FROM scan_log LEFT JOIN sites ON scan_log.site_id = sites.id "
-            "ORDER BY scanned_at DESC LIMIT 50"
-        ).fetchall()
+        if is_super_admin(request):
+            rows = db.execute(
+                "SELECT scan_log.*, sites.name as site_name, sites.url as site_url "
+                "FROM scan_log LEFT JOIN sites ON scan_log.site_id = sites.id "
+                "ORDER BY scanned_at DESC LIMIT 50"
+            ).fetchall()
+        else:
+            owner = current_user(request)
+            rows = db.execute(
+                "SELECT scan_log.*, sites.name as site_name, sites.url as site_url "
+                "FROM scan_log LEFT JOIN sites ON scan_log.site_id = sites.id "
+                "WHERE sites.owner=? ORDER BY scanned_at DESC LIMIT 50",
+                (owner,)
+            ).fetchall()
     return [dict(r) for r in rows]
 
 
 @router.get("/api/scan/health")
-def scan_health(limit: int = 20):
+def scan_health(request: Request, limit: int = 20):
     limit = max(5, min(limit, 100))
     with get_db() as db:
+        if is_super_admin(request):
+            owner_filter = ""
+            params_overall = (limit,)
+            params_per_site = (limit * 10,)
+        else:
+            owner = current_user(request)
+            owner_filter = "WHERE s.owner=?"
+            params_overall = (owner, limit)
+            params_per_site = (owner, limit * 10)
+
         overall = db.execute(
             "SELECT COUNT(*) as runs, "
             "AVG(CASE WHEN message LIKE 'ERROR:%' THEN 0.0 ELSE 1.0 END) as success_rate, "
             "AVG(found) as avg_found, AVG(added) as avg_added "
-            "FROM (SELECT * FROM scan_log ORDER BY id DESC LIMIT ?)",
-            (limit,),
+            "FROM scan_log JOIN sites ON scan_log.site_id=sites.id "
+            + ("" if is_super_admin(request) else "WHERE sites.owner=? ") +
+            "ORDER BY scan_log.id DESC LIMIT ?",
+            params_overall,
         ).fetchone()
 
         per_site = [dict(r) for r in db.execute(
@@ -1761,10 +1782,10 @@ def scan_health(limit: int = 20):
             "ROUND(AVG(l.found), 2) as avg_found, "
             "ROUND(AVG(l.added), 2) as avg_added, "
             "MAX(l.scanned_at) as last_scan "
-            "FROM sites s "
+            "FROM sites s " + owner_filter + " "
             "LEFT JOIN (SELECT * FROM scan_log ORDER BY id DESC LIMIT ?) l ON l.site_id=s.id "
             "GROUP BY s.id ORDER BY runs DESC, last_scan DESC",
-            (limit * 10,),
+            params_per_site,
         ).fetchall()]
 
     anomalies = []
