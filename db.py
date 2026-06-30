@@ -194,6 +194,13 @@ def init_db():
                     expires_at  TEXT NOT NULL
                 )
             """)
+            db.execute("""
+                CREATE TABLE IF NOT EXISTS password_resets (
+                    token       TEXT PRIMARY KEY,
+                    username    TEXT NOT NULL,
+                    expires_at  TEXT NOT NULL
+                )
+            """)
             db.execute(
                 "INSERT OR IGNORE INTO app_settings (key, value) VALUES (?, ?)",
                 ("autoscan_enabled", "0"),

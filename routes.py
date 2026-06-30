@@ -105,6 +105,46 @@ def _send_verification_email(to_address: str, username: str, token: str) -> None
         smtp.login(_SMTP_USER, _SMTP_PASSWORD)
         smtp.sendmail(_SMTP_USER, to_address, msg.as_string())
 
+
+def _send_reset_email(to_address: str, username: str, token: str) -> None:
+    reset_url = f"{_APP_BASE_URL}/reset-password?token={token}"
+    html = f"""
+    <div style="font-family:sans-serif;max-width:480px;margin:auto;padding:24px">
+      <h2 style="color:#0f766e;margin-bottom:8px">Reset your password</h2>
+      <p style="color:#374151">Hi <strong>{username}</strong>,</p>
+      <p style="color:#374151">We received a request to reset your VideoWatch password. Click the button below to choose a new one.</p>
+      <a href="{reset_url}"
+         style="display:inline-block;padding:12px 28px;background:#0f766e;color:#fff;
+                text-decoration:none;border-radius:8px;font-weight:700;margin:16px 0;font-size:15px">
+        Reset Password
+      </a>
+      <p style="color:#6b7280;font-size:13px;margin-top:24px">
+        This link expires in <strong>1 hour</strong>.<br>
+        If you didn't request a password reset, you can safely ignore this email.
+      </p>
+      <hr style="border:none;border-top:1px solid #e5e7eb;margin:24px 0"/>
+      <p style="color:#9ca3af;font-size:12px">VideoWatch · Your personal video monitoring hub</p>
+    </div>
+    """
+    text = (
+        f"Hi {username},\n\n"
+        f"Reset your VideoWatch password by visiting:\n{reset_url}\n\n"
+        f"This link expires in 1 hour.\n\n"
+        f"If you didn't request this, ignore this email."
+    )
+    msg = MIMEMultipart("alternative")
+    msg["Subject"] = "Reset your VideoWatch password"
+    msg["From"] = f"VideoWatch <{_SMTP_USER}>"
+    msg["To"] = to_address
+    msg["Reply-To"] = _SMTP_USER
+    msg.attach(MIMEText(text, "plain"))
+    msg.attach(MIMEText(html, "html"))
+    with smtplib.SMTP(_SMTP_HOST, _SMTP_PORT) as smtp:
+        smtp.ehlo()
+        smtp.starttls()
+        smtp.login(_SMTP_USER, _SMTP_PASSWORD)
+        smtp.sendmail(_SMTP_USER, to_address, msg.as_string())
+
 from scraper import (
     scan_site,
     scan_all_sites,
@@ -205,6 +245,16 @@ class LoginIn(BaseModel):
 
 class ChangePasswordIn(BaseModel):
     current_password: str
+    new_password: str
+    confirm_password: str
+
+
+class ForgotPasswordIn(BaseModel):
+    email: str
+
+
+class ResetPasswordIn(BaseModel):
+    token: str
     new_password: str
     confirm_password: str
 
@@ -1138,6 +1188,65 @@ def verify_email(token: str):
             db.commit()
     log.info(f"Email verified for user: {row['username']}")
     return {"ok": True, "username": row["username"]}
+
+
+@router.post("/api/auth/forgot-password")
+def forgot_password(body: ForgotPasswordIn):
+    email = (body.email or "").strip().lower()
+    if not email:
+        raise HTTPException(400, "Email address is required")
+    # Look up user by email — always return 200 to avoid user enumeration
+    with get_db() as db:
+        row = db.execute("SELECT username FROM users WHERE email=?", (email,)).fetchone()
+    if row and _email_configured():
+        username = row["username"]
+        from datetime import timedelta
+        token = secrets.token_urlsafe(32)
+        expires = (datetime.now(timezone.utc) + timedelta(hours=1)).isoformat()
+        with write_lock:
+            with get_db() as db:
+                db.execute(
+                    "INSERT OR REPLACE INTO password_resets (token, username, expires_at) VALUES (?,?,?)",
+                    (token, username, expires),
+                )
+                db.commit()
+        try:
+            _send_reset_email(email, username, token)
+        except Exception as exc:
+            log.error(f"Failed to send password reset email to {email}: {exc}")
+    return {"ok": True, "message": "If that email is registered, a reset link has been sent."}
+
+
+@router.post("/api/auth/reset-password")
+def reset_password(body: ResetPasswordIn):
+    if not body.new_password or len(body.new_password) < 8:
+        raise HTTPException(400, "Password must be at least 8 characters")
+    if body.new_password != body.confirm_password:
+        raise HTTPException(400, "Passwords do not match")
+    now = datetime.now(timezone.utc).isoformat()
+    with write_lock:
+        with get_db() as db:
+            row = db.execute(
+                "SELECT username, expires_at FROM password_resets WHERE token=?", (body.token,)
+            ).fetchone()
+            if not row:
+                raise HTTPException(400, "Invalid or already used reset link")
+            if row["expires_at"] < now:
+                db.execute("DELETE FROM password_resets WHERE token=?", (body.token,))
+                db.commit()
+                raise HTTPException(400, "Reset link has expired. Please request a new one.")
+            username = row["username"]
+            salt = secrets.token_bytes(16)
+            salt_b64 = base64.b64encode(salt).decode("ascii")
+            hash_b64 = _pbkdf2_hash(body.new_password, salt_b64)
+            db.execute(
+                "UPDATE users SET password_salt=?, password_hash=?, updated_at=? WHERE username=?",
+                (salt_b64, hash_b64, now_iso(), username),
+            )
+            db.execute("DELETE FROM password_resets WHERE token=?", (body.token,))
+            db.commit()
+    log.info(f"Password reset for user: {username}")
+    return {"ok": True}
 
 
 @router.post("/api/auth/change-password")

@@ -64,10 +64,12 @@ async def auth_gate(request, call_next):
         "/api/auth/login",
         "/api/auth/register",
         "/api/auth/verify-email",
+        "/api/auth/forgot-password",
+        "/api/auth/reset-password",
         "/api/auth/status",
         "/api/health",
     }
-    public_pages = {"/", "/login", "/register", "/verify-email", "/static/login.html", "/favicon.ico"}
+    public_pages = {"/", "/login", "/register", "/verify-email", "/forgot-password", "/reset-password", "/static/login.html", "/favicon.ico"}
 
     # Expire sessions that have passed their TTL
     expires_at = request.session.get("session_expires_at")
@@ -215,6 +217,22 @@ def verify_email_page():
     if page.exists():
         return FileResponse(str(page))
     raise HTTPException(404, "verify-email.html not found in static/")
+
+
+@app.get("/forgot-password")
+def forgot_password_page():
+    page = STATIC_DIR / "forgot-password.html"
+    if page.exists():
+        return FileResponse(str(page))
+    raise HTTPException(404, "forgot-password.html not found in static/")
+
+
+@app.get("/reset-password")
+def reset_password_page():
+    page = STATIC_DIR / "reset-password.html"
+    if page.exists():
+        return FileResponse(str(page))
+    raise HTTPException(404, "reset-password.html not found in static/")
 
 
 @app.get("/settings")
