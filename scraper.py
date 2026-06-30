@@ -268,6 +268,7 @@ YOUTUBE_PATTERNS = [
 VIMEO_PAT = re.compile(r'vimeo\.com/(?:video/)?(\d+)')
 TWITCH_PAT = re.compile(r'twitch\.tv/videos/(\d+)')
 DAILYMOTION_PAT = re.compile(r'dailymotion\.com/video/([\w]+)')
+VK_VIDEO_PAT = re.compile(r'vkvideo\.ru/video(-?\d+_\d+)|vk\.com/video(-?\d+_\d+)')
 
 # Matches YouTube channel/user URLs (handle, channel ID, legacy /c/ and /user/)
 YOUTUBE_CHANNEL_RE = re.compile(
@@ -275,10 +276,20 @@ YOUTUBE_CHANNEL_RE = re.compile(
     re.I,
 )
 
+# Matches VK Video channel/user pages: vkvideo.ru/@handle or vkvideo.ru/public12345
+VK_CHANNEL_RE = re.compile(
+    r'vkvideo\.ru/(@[\w.-]+|public\d+|club\d+|id\d+)(/all|/videos)?/?$',
+    re.I,
+)
+
 
 def _is_youtube_channel_url(url: str) -> bool:
     """Return True when the URL points to a YouTube channel (not a single video)."""
     return bool(YOUTUBE_CHANNEL_RE.search(url))
+
+
+def _is_vk_channel_url(url: str) -> bool:
+    return bool(VK_CHANNEL_RE.search(url))
 
 
 def detect_platform(url: str):
@@ -305,6 +316,11 @@ def detect_platform(url: str):
         return ("dailymotion", f"https://www.dailymotion.com/video/{vid}",
                 f"https://www.dailymotion.com/thumbnail/video/{vid}",
                 f"https://www.dailymotion.com/embed/video/{vid}")
+    m = VK_VIDEO_PAT.search(url)
+    if m:
+        vid = m.group(1) or m.group(2)
+        return ("vk", f"https://vkvideo.ru/video{vid}", None,
+                f"https://vkvideo.ru/video_ext.php?oid={vid.split('_')[0]}&id={vid.split('_')[1]}&hd=2")
     if VIDEO_EXTENSIONS.search(url):
         return ("direct", url, None, url)
 
@@ -514,6 +530,87 @@ def _scrape_youtube_channel(channel_url: str, max_videos: int | None = None) -> 
 
     log.info(f"  yt-dlp: {len(videos)} video(s) from {channel_url}")
     return videos
+
+
+def _scrape_vk_channel(channel_url: str, max_videos: int | None = None) -> list[dict]:
+    """Use yt-dlp to extract videos from a VK Video channel page."""
+    if not HAS_YT_DLP:
+        log.warning("yt-dlp is not installed; cannot scrape VK Video channel.")
+        return []
+
+    # Normalise to the /all page which lists all videos
+    base = channel_url.rstrip("/")
+    if not base.endswith("/all"):
+        base = base + "/all"
+
+    ydl_opts = {
+        "quiet": True,
+        "no_warnings": True,
+        "extract_flat": "in_playlist",
+        "skip_download": True,
+        "ignoreerrors": True,
+    }
+    if max_videos:
+        ydl_opts["playlistend"] = max_videos
+
+    videos: list[dict] = []
+    try:
+        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+            info = ydl.extract_info(base, download=False)
+            if not info:
+                log.warning(f"  yt-dlp: no info returned for {base}")
+                return []
+
+            entries = info.get("entries") or []
+            now = datetime.now(timezone.utc)
+
+            for position, entry in enumerate(entries):
+                if not entry:
+                    continue
+                vid_id = entry.get("id") or entry.get("url", "")
+                if not vid_id:
+                    continue
+
+                title = (entry.get("title") or "").strip()
+                thumb = entry.get("thumbnail") or None
+
+                upload_date = entry.get("upload_date")
+                released_at = None
+                if upload_date and len(upload_date) == 8:
+                    iso_date = f"{upload_date[:4]}-{upload_date[4:6]}-{upload_date[6:]}"
+                    released_at = parse_release_date(iso_date)
+                if not released_at:
+                    synthetic_dt = now - timedelta(minutes=position)
+                    released_at = synthetic_dt.strftime("%Y-%m-%dT%H:%M:%S")
+
+                # Build canonical URL
+                video_url = entry.get("url") or entry.get("webpage_url") or ""
+                if not video_url.startswith("http"):
+                    video_url = f"https://vkvideo.ru/video{vid_id}"
+
+                # Embed via vkvideo player
+                m = re.search(r'(-?\d+)_(\d+)', vid_id)
+                embed_url = None
+                if m:
+                    embed_url = f"https://vkvideo.ru/video_ext.php?oid={m.group(1)}&id={m.group(2)}&hd=2"
+
+                videos.append({
+                    "url":         video_url,
+                    "title":       normalize_title(title),
+                    "thumb":       thumb,
+                    "embed_url":   embed_url,
+                    "platform":    "vk",
+                    "released_at": released_at,
+                    "cast_names":  None,
+                    "duration":    parse_duration(entry.get("duration")),
+                })
+
+    except Exception as e:
+        log.warning(f"  yt-dlp VK scrape failed for {channel_url}: {e}")
+
+    log.info(f"  yt-dlp VK: {len(videos)} video(s) from {channel_url}")
+    return videos
+
 
 # ── Parsing Logic ─────────────────────────────────────────────────────────────
 
@@ -1186,6 +1283,11 @@ def _scan_site_sync(site: dict) -> list[dict]:
         log.info(f"  [sync] Detected YouTube channel — using yt-dlp")
         return _scrape_youtube_channel(base_url, max_videos=None)
 
+    # ── VK Video channel shortcut (sync path) ────────────────────────────
+    if _is_vk_channel_url(base_url):
+        log.info(f"  [sync] Detected VK Video channel — using yt-dlp")
+        return _scrape_vk_channel(base_url, max_videos=None)
+
     max_pages = _effective_max_pages(site)
     all_videos = []
 
@@ -1289,9 +1391,6 @@ async def scan_site(site: dict, push_func=None):
     skip_playwright = False  # set True when yt-dlp handles the fetch
 
     # ── YouTube channel shortcut ──────────────────────────────────────────────
-    # When the site URL is a YouTube channel/handle page, use yt-dlp to pull the
-    # full video list instead of Playwright. This avoids YouTube's bot detection
-    # and is far faster for channels with many videos.
     if _is_youtube_channel_url(base_url):
         log.info(f"  Detected YouTube channel — using yt-dlp (skipping Playwright)")
         await push(f"PAGE|{site_id}|1|1|{base_url}")
@@ -1299,7 +1398,7 @@ async def scan_site(site: dict, push_func=None):
             yt_videos = await asyncio.to_thread(
                 _scrape_youtube_channel,
                 base_url,
-                None,   # None = fetch ALL videos, no limit
+                None,
             )
             all_videos.extend(yt_videos)
             log.info(f"  yt-dlp returned {len(yt_videos)} video(s)")
@@ -1309,7 +1408,25 @@ async def scan_site(site: dict, push_func=None):
         await push(f"PAGE_DONE|{site_id}|1|{len(all_videos)}")
         skip_playwright = True
 
-    # ── Playwright crawl (non-YouTube-channel sites) ──────────────────────────
+    # ── VK Video channel shortcut ─────────────────────────────────────────────
+    if not skip_playwright and _is_vk_channel_url(base_url):
+        log.info(f"  Detected VK Video channel — using yt-dlp (skipping Playwright)")
+        await push(f"PAGE|{site_id}|1|1|{base_url}")
+        try:
+            vk_videos = await asyncio.to_thread(
+                _scrape_vk_channel,
+                base_url,
+                None,
+            )
+            all_videos.extend(vk_videos)
+            log.info(f"  yt-dlp VK returned {len(vk_videos)} video(s)")
+        except Exception as e:
+            log.error(f"  yt-dlp VK scrape error: {e}")
+            await push(f"PAGE_ERROR|{site_id}|1|{e}")
+        await push(f"PAGE_DONE|{site_id}|1|{len(all_videos)}")
+        skip_playwright = True
+
+    # ── Playwright crawl (non-channel sites) ─────────────────────────────────
     if not skip_playwright:
         try:
             async with async_playwright() as p:
