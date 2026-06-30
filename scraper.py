@@ -705,34 +705,45 @@ async def _scrape_vk_with_playwright(channel_url: str, push=None) -> list[dict]:
 
     api_items: list[dict] = []   # raw video objects from VK's API
     seen_api_ids: set[str] = set()
+    captured_urls: list[str] = []  # for debug logging
 
-    def _ingest_response_body(body_text: str):
-        """Try to extract video items from a VK API JSON response."""
+    def _find_video_lists(obj, depth: int = 0) -> list[list]:
+        """Recursively search a parsed JSON object for lists of video-like dicts."""
+        if depth > 8:
+            return []
+        found = []
+        if isinstance(obj, list) and obj:
+            # Looks like a video list if items are dicts with title + (owner_id or duration or views)
+            if isinstance(obj[0], dict):
+                sample = obj[0]
+                if "title" in sample and ("owner_id" in sample or "duration" in sample or "views" in sample):
+                    found.append(obj)
+            for item in obj:
+                found.extend(_find_video_lists(item, depth + 1))
+        elif isinstance(obj, dict):
+            for val in obj.values():
+                found.extend(_find_video_lists(val, depth + 1))
+        return found
+
+    def _ingest_response_body(body_text: str, url: str = ""):
+        """Try to extract video items from any VK JSON response."""
         try:
             data = _json.loads(body_text)
         except Exception:
             return
-        # VK API wraps results in response.items or response[0].items etc.
-        candidates = []
-        resp = data.get("response") or data.get("payload") or data
-        if isinstance(resp, list):
-            for r in resp:
-                if isinstance(r, dict):
-                    candidates.extend(r.get("items") or r.get("videos") or [])
-        elif isinstance(resp, dict):
-            candidates = resp.get("items") or resp.get("videos") or []
-        for item in candidates:
-            if not isinstance(item, dict):
-                continue
-            vid_id_str = item.get("id") or item.get("video_id")
-            owner_id   = item.get("owner_id")
-            if vid_id_str is None or owner_id is None:
-                continue
-            key = f"{owner_id}_{vid_id_str}"
-            if key in seen_api_ids:
-                continue
-            seen_api_ids.add(key)
-            api_items.append({**item, "_key": key})
+        for video_list in _find_video_lists(data):
+            for item in video_list:
+                if not isinstance(item, dict):
+                    continue
+                vid_id_str = item.get("id") or item.get("video_id")
+                owner_id   = item.get("owner_id")
+                if vid_id_str is None or owner_id is None:
+                    continue
+                key = f"{owner_id}_{vid_id_str}"
+                if key in seen_api_ids:
+                    continue
+                seen_api_ids.add(key)
+                api_items.append({**item, "_key": key, "_src_url": url})
 
     try:
         from playwright.async_api import async_playwright as _ap
@@ -741,18 +752,21 @@ async def _scrape_vk_with_playwright(channel_url: str, push=None) -> list[dict]:
             try:
                 page = await context.new_page()
 
-                # Intercept all responses and harvest video API payloads
+                # Intercept ALL JSON responses — VK may use any URL pattern
                 async def on_response(response):
-                    url = response.url
-                    # VK video list API calls contain "video" and are JSON
-                    if not ("video" in url.lower() or "execute" in url.lower()):
-                        return
                     ct = response.headers.get("content-type", "")
                     if "json" not in ct:
                         return
+                    url = response.url
+                    before = len(api_items)
                     try:
                         body = await response.text()
-                        _ingest_response_body(body)
+                        if len(body) < 100 or '"title"' not in body:
+                            return
+                        _ingest_response_body(body, url)
+                        gained = len(api_items) - before
+                        if gained:
+                            captured_urls.append(f"+{gained} from {url[:120]}")
                     except Exception:
                         pass
 
@@ -761,6 +775,7 @@ async def _scrape_vk_with_playwright(channel_url: str, push=None) -> list[dict]:
                 for try_url in urls_to_try:
                     api_items.clear()
                     seen_api_ids.clear()
+                    captured_urls.clear()
                     try:
                         await page.goto(try_url, wait_until="domcontentloaded", timeout=30000)
                     except Exception:
@@ -790,6 +805,8 @@ async def _scrape_vk_with_playwright(channel_url: str, push=None) -> list[dict]:
                                 break  # no new data after 5 consecutive scroll steps
 
                     await _push(f"Total API items collected: {len(api_items)}")
+                    for dbg in captured_urls[:10]:
+                        await _push(f"  API source: {dbg}")
 
                     # Fallback: if API interception yielded nothing, fall back to DOM
                     if not api_items:
