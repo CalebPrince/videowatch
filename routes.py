@@ -1739,3 +1739,123 @@ async def download_video(video_id: str):
         "local_url": f"/api/video/{video_id}",
         "resolved_url": resolved["resolved_url"],
     }
+
+
+@router.get("/api/sites/preview")
+async def preview_site(url: str = Query(...)):
+    """Quick 1-page scan of a URL to preview videos without saving to the DB."""
+    url = url.strip()
+    if not url.startswith("http"):
+        raise HTTPException(400, "URL must start with http:// or https://")
+
+    parsed = urlparse(url)
+    if parsed.scheme not in {"http", "https"}:
+        raise HTTPException(400, "Invalid URL scheme")
+
+    # Build a fake site dict for scan_site, but we don't write to DB.
+    site_id = short_id(url)
+    fake_site = {
+        "id": site_id,
+        "url": url,
+        "name": "",
+        "max_pages": 1,
+        "scan_interval": 300,
+        "rule_include_keywords": "",
+        "rule_exclude_keywords": "",
+        "rule_min_duration": 0,
+        "scan_profile": "fast",
+        "last_scan": None,
+    }
+
+    found_videos: list[dict] = []
+
+
+    async def _run_preview():
+        from scraper import _fetch_page, _make_context, _is_youtube_channel_url, _scrape_youtube_channel, scrape_videos
+        from playwright.async_api import async_playwright
+
+        vids: list[dict] = []
+        if _is_youtube_channel_url(url):
+            try:
+                yt_vids = await asyncio.to_thread(_scrape_youtube_channel, url, 12)
+                vids.extend(yt_vids[:12])
+            except Exception as e:
+                log.warning(f"Preview YT scrape failed: {e}")
+        else:
+            try:
+                async with async_playwright() as p:
+                    browser, context = await _make_context(p, site_id)
+                    try:
+                        html = await _fetch_page(context, url, first_page=True)
+                        page_vids = scrape_videos(html, url)
+                        vids.extend(page_vids[:12])
+                    finally:
+                        await context.close()
+                        await browser.close()
+            except Exception as e:
+                log.warning(f"Preview scan failed for {url}: {e}")
+        return vids
+
+    try:
+        found_videos = await asyncio.wait_for(_run_preview(), timeout=60)
+    except asyncio.TimeoutError:
+        log.warning(f"Preview scan timed out for {url}")
+    except Exception as e:
+        log.warning(f"Preview scan error for {url}: {e}")
+
+    return {
+        "url": url,
+        "count": len(found_videos),
+        "videos": found_videos[:12],
+    }
+
+
+@router.get("/api/sites/discover")
+async def discover_sites(q: str = Query(...)):
+    """Search DuckDuckGo for websites matching the given keywords and return URL suggestions."""
+    query = q.strip()
+    if not query:
+        raise HTTPException(400, "Search query is required")
+
+    search_url = f"https://lite.duckduckgo.com/lite/?q={httpx.utils.quote(query + ' site videos')}"
+    headers = {
+        "User-Agent": (
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+            "AppleWebKit/537.36 (KHTML, like Gecko) "
+            "Chrome/126.0.0.0 Safari/537.36"
+        ),
+        "Accept-Language": "en-US,en;q=0.9",
+    }
+
+    results: list[dict] = []
+    try:
+        async with httpx.AsyncClient(timeout=12, follow_redirects=True) as client:
+            r = await client.get(search_url, headers=headers)
+            if r.status_code == 200:
+                from bs4 import BeautifulSoup
+                soup = BeautifulSoup(r.text, "html.parser")
+                seen_hosts: set[str] = set()
+                for a in soup.select("a.result-link"):
+                    href = (a.get("href") or "").strip()
+                    if not href or not href.startswith("http"):
+                        continue
+                    p = urlparse(href)
+                    host = p.netloc.lower()
+                    if not host or host in seen_hosts:
+                        continue
+                    # Skip search engines, social media, wikis
+                    skip = {"google.com", "facebook.com", "twitter.com", "wikipedia.org",
+                            "reddit.com", "instagram.com", "linkedin.com", "duckduckgo.com",
+                            "bing.com", "amazon.com", "youtube.com"}
+                    if any(host == s or host.endswith("." + s) for s in skip):
+                        continue
+                    seen_hosts.add(host)
+                    site_url = f"{p.scheme}://{p.netloc}/"
+                    title = a.get_text(strip=True) or host
+                    results.append({"url": site_url, "title": title, "host": host})
+                    if len(results) >= 8:
+                        break
+    except Exception as e:
+        log.warning(f"Site discovery search failed: {e}")
+
+    return {"query": query, "results": results}

@@ -692,41 +692,99 @@
 
 <!-- ── Add Modal ── -->
 <div class="modal fade" id="addModal" tabindex="-1">
-  <div class="modal-dialog modal-dialog-centered">
+  <div class="modal-dialog modal-dialog-centered modal-lg">
     <div class="modal-content p-1">
       <div class="modal-header border-0 pb-0">
         <h5 class="modal-title" style="font-size:1rem;font-weight:700;">Add website</h5>
         <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
       </div>
       <div class="modal-body">
-        <label class="form-label" style="font-size:.85rem;">Website URL</label>
-        <input type="url" id="inp-url" class="form-control" placeholder="https://example.com/videos" />
+        <!-- Tabs -->
+        <ul class="nav nav-tabs mb-3" id="addModalTabs" role="tablist" style="font-size:.84rem;">
+          <li class="nav-item" role="presentation">
+            <button class="nav-link active" id="tab-url-btn" data-bs-toggle="tab" data-bs-target="#tab-url" type="button" role="tab">
+              <i class="bi bi-link-45deg me-1"></i>By URL
+            </button>
+          </li>
+          <li class="nav-item" role="presentation">
+            <button class="nav-link" id="tab-discover-btn" data-bs-toggle="tab" data-bs-target="#tab-discover" type="button" role="tab">
+              <i class="bi bi-search me-1"></i>Find sites
+            </button>
+          </li>
+        </ul>
 
-        <label class="form-label mt-3" style="font-size:.85rem;">Display name <span style="color:var(--muted)">(optional)</span></label>
-        <input type="text" id="inp-name" class="form-control" placeholder="e.g. Brazzers" />
+        <div class="tab-content">
+          <!-- Tab 1: Enter URL -->
+          <div class="tab-pane fade show active" id="tab-url" role="tabpanel">
+            <label class="form-label" style="font-size:.85rem;">Website URL</label>
+            <div class="input-group mb-2">
+              <input type="url" id="inp-url" class="form-control" placeholder="https://example.com/videos" />
+              <button class="btn btn-outline-secondary" type="button" id="btn-preview" title="Preview videos found on this site">
+                <i class="bi bi-eye me-1"></i>Preview
+              </button>
+            </div>
 
-        <label class="form-label mt-3" style="font-size:.85rem;">Group / category <span style="color:var(--muted)">(optional)</span></label>
-        <input type="text" id="inp-group" class="form-control" placeholder="e.g. Streaming sites" />
+            <!-- Preview results area -->
+            <div id="preview-area" style="display:none;" class="mb-3">
+              <div id="preview-loading" style="display:none;font-size:.8rem;color:var(--muted);">
+                <span class="spinner-border spinner-border-sm me-1"></span>Scanning for videos…
+              </div>
+              <div id="preview-results" style="display:none;">
+                <div style="font-size:.78rem;color:var(--muted);margin-bottom:.4rem;" id="preview-count-label"></div>
+                <div id="preview-grid" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(130px,1fr));gap:.5rem;max-height:200px;overflow-y:auto;"></div>
+              </div>
+              <div id="preview-empty" style="display:none;font-size:.8rem;color:var(--muted);">No videos found on this page. Try a different URL (e.g. /videos or /clips listing page).</div>
+              <div id="preview-error" style="display:none;font-size:.8rem;color:#dc2626;"></div>
+            </div>
 
-        <label class="form-label mt-3" style="font-size:.85rem;">Pages per scan</label>
-        <div class="pages-control">
-          <button type="button" id="add-pages-minus">−</button>
-          <span class="pages-val" id="add-pages-val">1</span>
-          <button type="button" id="add-pages-plus">+</button>
-          <span style="font-size:.8rem;color:var(--muted)">page(s) · max 20</span>
+            <label class="form-label mt-2" style="font-size:.85rem;">Display name <span style="color:var(--muted)">(optional)</span></label>
+            <input type="text" id="inp-name" class="form-control" placeholder="e.g. My Video Site" />
+
+            <label class="form-label mt-3" style="font-size:.85rem;">Group / category <span style="color:var(--muted)">(optional)</span></label>
+            <input type="text" id="inp-group" class="form-control" placeholder="e.g. Streaming sites" />
+
+            <label class="form-label mt-3" style="font-size:.85rem;">Pages per scan</label>
+            <div class="pages-control">
+              <button type="button" id="add-pages-minus">−</button>
+              <span class="pages-val" id="add-pages-val">1</span>
+              <button type="button" id="add-pages-plus">+</button>
+              <span style="font-size:.8rem;color:var(--muted)">page(s) · max 20</span>
+            </div>
+
+            <label class="form-label mt-3" style="font-size:.85rem;">Auto-scan every</label>
+            <select id="inp-interval" class="form-select form-select-sm">
+              <option value="300">5 minutes</option>
+              <option value="600">10 minutes</option>
+              <option value="1800">30 minutes</option>
+              <option value="3600">1 hour</option>
+              <option value="21600">6 hours</option>
+              <option value="86400">24 hours</option>
+            </select>
+
+            <div id="add-error" class="text-danger mt-2" style="font-size:.82rem;display:none;"></div>
+          </div>
+
+          <!-- Tab 2: Discover by keyword -->
+          <div class="tab-pane fade" id="tab-discover" role="tabpanel">
+            <label class="form-label" style="font-size:.85rem;">Search keywords</label>
+            <div class="input-group mb-3">
+              <input type="text" id="inp-discover-q" class="form-control" placeholder="e.g. cooking tutorials, news clips, sports highlights…" />
+              <button class="btn btn-outline-secondary" type="button" id="btn-discover">
+                <i class="bi bi-search me-1"></i>Search
+              </button>
+            </div>
+
+            <div id="discover-loading" style="display:none;font-size:.8rem;color:var(--muted);">
+              <span class="spinner-border spinner-border-sm me-1"></span>Searching for sites…
+            </div>
+            <div id="discover-results" style="display:none;">
+              <div style="font-size:.78rem;color:var(--muted);margin-bottom:.5rem;">Click a site to select it and preview its videos.</div>
+              <div id="discover-list"></div>
+            </div>
+            <div id="discover-empty" style="display:none;font-size:.8rem;color:var(--muted);">No results found. Try different keywords.</div>
+            <div id="discover-error" style="display:none;font-size:.8rem;color:#dc2626;"></div>
+          </div>
         </div>
-
-        <label class="form-label mt-3" style="font-size:.85rem;">Auto-scan every</label>
-        <select id="inp-interval" class="form-select form-select-sm">
-          <option value="300">5 minutes</option>
-          <option value="600">10 minutes</option>
-          <option value="1800">30 minutes</option>
-          <option value="3600">1 hour</option>
-          <option value="21600">6 hours</option>
-          <option value="86400">24 hours</option>
-        </select>
-
-        <div id="add-error" class="text-danger mt-2" style="font-size:.82rem;display:none;"></div>
       </div>
       <div class="modal-footer border-0 pt-0">
         <button class="btn btn-sm btn-secondary" data-bs-dismiss="modal">Cancel</button>
@@ -2124,6 +2182,153 @@ document.getElementById('add-pages-plus').onclick = () => {
 document.getElementById('addModal').addEventListener('show.bs.modal', () => {
   addPagesVal = 1;
   document.getElementById('add-pages-val').textContent = 1;
+  resetPreviewArea();
+  resetDiscoverArea();
+});
+
+// ── Preview feature ──────────────────────────────────────────────────────────
+function resetPreviewArea() {
+  const area = document.getElementById('preview-area');
+  if (area) area.style.display = 'none';
+  ['preview-loading','preview-results','preview-empty','preview-error'].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.style.display = 'none';
+  });
+  const grid = document.getElementById('preview-grid');
+  if (grid) grid.innerHTML = '';
+}
+
+document.getElementById('btn-preview').onclick = async () => {
+  const url = document.getElementById('inp-url').value.trim();
+  if (!url) {
+    showToast('Enter a URL to preview.', 'warning');
+    return;
+  }
+
+  resetPreviewArea();
+  const area = document.getElementById('preview-area');
+  area.style.display = 'block';
+  document.getElementById('preview-loading').style.display = 'block';
+
+  const btn = document.getElementById('btn-preview');
+  btn.disabled = true;
+  btn.innerHTML = '<span class="spinner-border spinner-border-sm"></span>';
+
+  try {
+    const data = await api(`/sites/preview?url=${encodeURIComponent(url)}`);
+    document.getElementById('preview-loading').style.display = 'none';
+
+    if (!data.videos || data.videos.length === 0) {
+      document.getElementById('preview-empty').style.display = 'block';
+    } else {
+      document.getElementById('preview-count-label').textContent =
+        `Found ${data.count} video${data.count !== 1 ? 's' : ''} on first page (showing up to 12)`;
+      const grid = document.getElementById('preview-grid');
+      grid.innerHTML = data.videos.map(v => {
+        const thumb = v.thumb ? `${API}/thumb?url=${encodeURIComponent(v.thumb)}` : null;
+        const title = v.title || 'Untitled';
+        return `
+          <div style="border-radius:8px;overflow:hidden;border:1px solid var(--border);background:var(--card-bg);">
+            <div style="aspect-ratio:16/9;background:#0d0d1a;overflow:hidden;">
+              ${thumb
+                ? `<img src="${thumb}" style="width:100%;height:100%;object-fit:cover;" loading="lazy" onerror="this.style.display='none'" />`
+                : `<div style="width:100%;height:100%;display:flex;align-items:center;justify-content:center;color:rgba(255,255,255,.18);font-size:1.2rem;"><i class="bi bi-play-circle"></i></div>`
+              }
+            </div>
+            <div style="padding:.3rem .4rem;font-size:.65rem;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:var(--ink);" title="${title.replace(/"/g,'&quot;')}">${title}</div>
+          </div>`;
+      }).join('');
+      document.getElementById('preview-results').style.display = 'block';
+    }
+  } catch (e) {
+    document.getElementById('preview-loading').style.display = 'none';
+    const errEl = document.getElementById('preview-error');
+    errEl.textContent = `Preview failed: ${e.message}`;
+    errEl.style.display = 'block';
+  } finally {
+    btn.disabled = false;
+    btn.innerHTML = '<i class="bi bi-eye me-1"></i>Preview';
+  }
+};
+
+// ── Discover feature ─────────────────────────────────────────────────────────
+function resetDiscoverArea() {
+  ['discover-loading','discover-results','discover-empty','discover-error'].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.style.display = 'none';
+  });
+  const list = document.getElementById('discover-list');
+  if (list) list.innerHTML = '';
+}
+
+async function selectDiscoveredSite(url, title) {
+  // Switch to By URL tab
+  const tabBtn = document.getElementById('tab-url-btn');
+  if (tabBtn) tabBtn.click();
+
+  // Fill in the URL field
+  document.getElementById('inp-url').value = url;
+  if (title) {
+    const nameInp = document.getElementById('inp-name');
+    if (!nameInp.value) nameInp.value = title;
+  }
+
+  // Auto-trigger preview
+  document.getElementById('btn-preview').click();
+}
+
+document.getElementById('btn-discover').onclick = async () => {
+  const q = document.getElementById('inp-discover-q').value.trim();
+  if (!q) {
+    showToast('Enter keywords to search.', 'warning');
+    return;
+  }
+
+  resetDiscoverArea();
+  document.getElementById('discover-loading').style.display = 'block';
+
+  const btn = document.getElementById('btn-discover');
+  btn.disabled = true;
+  btn.innerHTML = '<span class="spinner-border spinner-border-sm"></span>';
+
+  try {
+    const data = await api(`/sites/discover?q=${encodeURIComponent(q)}`);
+    document.getElementById('discover-loading').style.display = 'none';
+
+    if (!data.results || data.results.length === 0) {
+      document.getElementById('discover-empty').style.display = 'block';
+    } else {
+      const list = document.getElementById('discover-list');
+      list.innerHTML = data.results.map(r => `
+        <div class="d-flex align-items-center gap-2 p-2 mb-1"
+          style="border:1px solid var(--border);border-radius:8px;cursor:pointer;background:var(--card-bg);transition:background .15s;"
+          onmouseenter="this.style.background='var(--surface-soft)'"
+          onmouseleave="this.style.background='var(--card-bg)'"
+          onclick="selectDiscoveredSite(${JSON.stringify(r.url)}, ${JSON.stringify(r.title)})">
+          <div style="width:28px;height:28px;border-radius:6px;background:rgba(15,118,110,.12);display:flex;align-items:center;justify-content:center;flex-shrink:0;">
+            <i class="bi bi-globe" style="font-size:.75rem;color:var(--brand);"></i>
+          </div>
+          <div style="min-width:0;">
+            <div style="font-size:.82rem;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${r.title || r.host}</div>
+            <div style="font-size:.7rem;color:var(--muted);">${r.url}</div>
+          </div>
+          <i class="bi bi-arrow-right ms-auto" style="color:var(--muted);flex-shrink:0;font-size:.75rem;"></i>
+        </div>`).join('');
+      document.getElementById('discover-results').style.display = 'block';
+    }
+  } catch (e) {
+    document.getElementById('discover-loading').style.display = 'none';
+    const errEl = document.getElementById('discover-error');
+    errEl.textContent = `Search failed: ${e.message}`;
+    errEl.style.display = 'block';
+  } finally {
+    btn.disabled = false;
+    btn.innerHTML = '<i class="bi bi-search me-1"></i>Search';
+  }
+};
+
+document.getElementById('inp-discover-q').addEventListener('keydown', e => {
+  if (e.key === 'Enter') document.getElementById('btn-discover').click();
 });
 
 document.getElementById('btn-add').onclick = async () => {
