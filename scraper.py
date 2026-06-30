@@ -760,12 +760,18 @@ def scrape_videos(html: str, base_url: str) -> list[dict]:
             title_text = ""
             if title_el:
                 import bs4 as _bs4
-                # Prefer direct text nodes only (strips child-element noise)
-                direct = " ".join(
-                    str(n).strip() for n in title_el.children
-                    if isinstance(n, _bs4.NavigableString) and str(n).strip()
-                )
-                title_text = direct or title_el.get_text(" ", strip=True)
+                # Walk children: include text nodes and content spans,
+                # but skip VK's decorative colour/subhead spans which add noise.
+                _NOISE_CLS = ("colorText", "Subhead", "colorScheme", "colorIcon", "getColor")
+                parts = []
+                for child in title_el.children:
+                    if isinstance(child, _bs4.NavigableString):
+                        parts.append(str(child))
+                    else:
+                        cls_str = " ".join(child.get("class") or [])
+                        if not any(x in cls_str for x in _NOISE_CLS):
+                            parts.append(child.get_text(" ", strip=True))
+                title_text = " ".join(p.strip() for p in parts if p.strip())
             if not title_text:
                 title_text = tag.get("title") or tag.get("aria-label") or tag.get("data-title") or ""
             title_text = re.sub(r"\s+", " ", title_text).strip()[:200]
