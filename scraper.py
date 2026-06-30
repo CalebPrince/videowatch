@@ -626,35 +626,55 @@ _VK_EXTRACT_JS = """
         return clone.textContent.replace(/\\s+/g, ' ').trim();
     }
 
-    // Find the smallest ancestor of `start` that contains links to exactly
-    // ONE unique video id — that is the card boundary for this title element.
-    function findCard(start) {
-        let node = start.parentElement;
-        for (let i = 0; i < 12 && node; i++) {
-            const ids = new Set(
-                Array.from(node.querySelectorAll('a[href]'))
-                    .map(a => { const m = (a.getAttribute('href')||'').match(VID_RE); return m && m[1]; })
-                    .filter(Boolean)
-            );
-            if (ids.size === 1) return { card: node, vid_id: [...ids][0] };
-            if (ids.size > 1)   return null; // overshot into the list container
+    // Walk up from el to find the nearest ancestor <a href="/video-...">
+    function nearestVideoAnchor(el) {
+        let node = el.parentElement;
+        for (let i = 0; i < 10 && node; i++) {
+            if (node.tagName === 'A') {
+                const m = (node.getAttribute('href') || '').match(VID_RE);
+                if (m) return { anchor: node, vid_id: m[1] };
+            }
             node = node.parentElement;
         }
         return null;
     }
 
+    // Walk up from el to find the smallest ancestor that contains only ONE
+    // unique vid_id among its links. Stops before overshooting into a multi-card
+    // container. Returns the last good single-id node found.
+    function findCardBoundary(startNode, targetVidId) {
+        let best = startNode;
+        let node = startNode.parentElement;
+        for (let i = 0; i < 10 && node; i++) {
+            const ids = new Set(
+                Array.from(node.querySelectorAll('a[href]'))
+                    .map(a => { const m = (a.getAttribute('href')||'').match(VID_RE); return m && m[1]; })
+                    .filter(Boolean)
+            );
+            if (ids.size === 0 || (ids.size === 1 && ids.has(targetVidId))) {
+                best = node; // still scoped to our video, keep going up
+            } else {
+                break; // hit a container with other videos — stop
+            }
+            node = node.parentElement;
+        }
+        return best;
+    }
+
     Array.from(document.querySelectorAll(
         '[data-testid="video_page_title"],[class*="vkitTextClamp__root"]'
     )).forEach(titleEl => {
-        const found = findCard(titleEl);
-        if (!found) return;
-        const { card, vid_id } = found;
+        // Find vid_id via nearest ancestor anchor
+        const anc = nearestVideoAnchor(titleEl);
+        if (!anc) return;
+        const { anchor, vid_id } = anc;
         if (seen.has(vid_id)) return;
 
         const title = extractTitle(titleEl);
         if (!title) return;
 
-        // Thumbnail: img inside the card but NOT inside the title element itself
+        // Find the card boundary to get the thumbnail
+        const card = findCardBoundary(anchor, vid_id);
         let thumb = '';
         const imgs = Array.from(card.querySelectorAll('img[src]'))
             .filter(img => img.src && !img.src.startsWith('data:') && !titleEl.contains(img));
@@ -743,7 +763,7 @@ async def _scrape_vk_with_playwright(channel_url: str, push=None) -> list[dict]:
                     before = len(api_items)
                     try:
                         body = await response.text()
-                        if len(body) < 100 or '"title"' not in body:
+                        if len(body) < 100:
                             return
                         _ingest_response_body(body, url)
                         gained = len(api_items) - before
@@ -790,12 +810,11 @@ async def _scrape_vk_with_playwright(channel_url: str, push=None) -> list[dict]:
                     for dbg in captured_urls[:10]:
                         await _push(f"  API source: {dbg}")
 
-                    # Fallback: if API interception yielded nothing, fall back to DOM
+                    # Fallback 1: DOM JS extraction
                     if not api_items:
-                        await _push("No API items — falling back to DOM extraction")
+                        await _push("No API items — trying DOM extraction")
                         raw_dom = await page.evaluate(_VK_EXTRACT_JS)
                         await _push(f"DOM extraction: {len(raw_dom)} items")
-                        # Convert DOM format to api_items format for unified processing below
                         for x in raw_dom:
                             vid_id_str = x.get("vid_id", "")
                             m = re.search(r'(-?\d+)_(\d+)', vid_id_str)
@@ -812,6 +831,31 @@ async def _scrape_vk_with_playwright(channel_url: str, push=None) -> list[dict]:
                                 "image":    [{"url": x.get("thumb", "")}] if x.get("thumb") else [],
                                 "owner_id": int(m.group(1)),
                                 "id":       int(m.group(2)),
+                            })
+
+                    # Fallback 2: raw HTML → scrape_videos (always finds video links)
+                    if not api_items:
+                        await _push("DOM extraction empty — falling back to HTML scrape")
+                        html = await page.content()
+                        html_videos = scrape_videos(html, try_url)
+                        await _push(f"HTML scrape: {len(html_videos)} items")
+                        for v in html_videos:
+                            href = v.get("url", "")
+                            mm = re.search(r'/video(-?\d+_\d+)', href)
+                            if not mm:
+                                continue
+                            key = mm.group(1)
+                            if key in seen_api_ids:
+                                continue
+                            seen_api_ids.add(key)
+                            mo = re.search(r'(-?\d+)_(\d+)', key)
+                            api_items.append({
+                                "_key":     key,
+                                "_dom":     True,
+                                "title":    v.get("title", ""),
+                                "image":    [{"url": v.get("thumb", "")}] if v.get("thumb") else [],
+                                "owner_id": int(mo.group(1)) if mo else 0,
+                                "id":       int(mo.group(2)) if mo else 0,
                             })
 
                     if api_items:
