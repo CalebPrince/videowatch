@@ -154,6 +154,87 @@
     }
     [data-theme="dark"] .cardx { background: var(--card); border-color: var(--border); color: var(--ink); }
     [data-theme="dark"] .site-row { background: #162032; border-color: var(--border); }
+
+    /* ── Users table ── */
+    .btn-brand-outline {
+      border: 1.5px solid var(--brand); color: var(--brand);
+      background: transparent; border-radius: 8px; font-size: .82rem; font-weight: 600;
+    }
+    .btn-brand-outline:hover { background: rgba(15,118,110,.08); }
+    .btn-brand-solid {
+      background: linear-gradient(135deg, var(--brand), #14b8a6);
+      border: none; color: #fff; border-radius: 8px; font-size: .82rem; font-weight: 600;
+    }
+    .form-label-sm { font-size: .75rem; font-weight: 600; color: var(--muted); margin-bottom: .2rem; display: block; }
+    .user-add-card {
+      background: rgba(15,118,110,.05);
+      border: 1.5px dashed rgba(15,118,110,.3);
+      border-radius: 12px;
+      padding: .9rem 1rem;
+    }
+    .user-add-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr 1fr;
+      gap: .65rem;
+    }
+    @media (max-width: 600px) { .user-add-grid { grid-template-columns: 1fr; } }
+    .users-table-wrap { overflow-x: auto; }
+    .users-table {
+      width: 100%; border-collapse: collapse; font-size: .84rem;
+    }
+    .users-table thead tr {
+      border-bottom: 2px solid var(--border);
+    }
+    .users-table th {
+      padding: .5rem .75rem; font-size: .72rem; font-weight: 700;
+      text-transform: uppercase; letter-spacing: .6px; color: var(--muted);
+    }
+    .users-table tbody tr {
+      border-bottom: 1px solid var(--border);
+      transition: background .12s;
+    }
+    .users-table tbody tr:last-child { border-bottom: none; }
+    .users-table tbody tr:hover { background: rgba(15,118,110,.04); }
+    .users-table td { padding: .65rem .75rem; vertical-align: middle; }
+    .u-avatar {
+      width: 30px; height: 30px; border-radius: 50%;
+      background: linear-gradient(135deg, var(--brand), #14b8a6);
+      color: #fff; display: inline-flex; align-items: center; justify-content: center;
+      font-size: .75rem; font-weight: 700; flex-shrink: 0; margin-right: .55rem;
+    }
+    .u-name { font-weight: 600; }
+    .role-badge {
+      display: inline-flex; align-items: center; gap: .3rem;
+      padding: .2rem .6rem; border-radius: 999px; font-size: .72rem; font-weight: 700;
+    }
+    .role-badge.super_admin { background: rgba(15,118,110,.12); color: #0f766e; }
+    .role-badge.admin       { background: rgba(99,102,241,.12); color: #4f46e5; }
+    .role-badge.viewer      { background: rgba(100,116,139,.1);  color: #475569; }
+    .status-badge {
+      display: inline-flex; align-items: center; gap: .3rem;
+      padding: .2rem .6rem; border-radius: 999px; font-size: .72rem; font-weight: 700;
+    }
+    .status-badge.active   { background: rgba(16,185,129,.12); color: #047857; }
+    .status-badge.disabled { background: rgba(239,68,68,.1);   color: #dc2626; }
+    .u-action-btn {
+      background: none; border: 1px solid var(--border); border-radius: 7px;
+      padding: .28rem .55rem; cursor: pointer; font-size: .78rem; color: var(--muted);
+      transition: background .12s, color .12s, border-color .12s;
+    }
+    .u-action-btn:hover { background: rgba(15,118,110,.1); color: var(--brand); border-color: var(--brand); }
+    .u-action-btn.danger:hover { background: rgba(239,68,68,.08); color: #dc2626; border-color: #dc2626; }
+    .u-edit-row td { background: rgba(15,118,110,.04); }
+    .u-edit-row select { height: 30px; border: 1px solid var(--border); border-radius: 6px; padding: 0 .5rem; font-size: .8rem; }
+    [data-theme="dark"] .users-table tbody tr:hover { background: rgba(255,255,255,.03); }
+    [data-theme="dark"] .u-edit-row td { background: rgba(15,118,110,.08); }
+    [data-theme="dark"] .role-badge.super_admin { background: rgba(15,118,110,.2); color: #5eead4; }
+    [data-theme="dark"] .role-badge.admin       { background: rgba(99,102,241,.2); color: #a5b4fc; }
+    [data-theme="dark"] .role-badge.viewer      { background: rgba(100,116,139,.2); color: #94a3b8; }
+    [data-theme="dark"] .status-badge.active    { background: rgba(16,185,129,.18); color: #34d399; }
+    [data-theme="dark"] .status-badge.disabled  { background: rgba(239,68,68,.15); color: #f87171; }
+    [data-theme="dark"] .u-action-btn { border-color: #334155; color: #94a3b8; }
+    [data-theme="dark"] .user-add-card { background: rgba(15,118,110,.08); border-color: rgba(15,118,110,.25); }
+    [data-theme="dark"] .u-edit-row select { background: #0f172a; color: #e2e8f0; border-color: #334155; }
     [data-theme="dark"] .site-title { color: var(--ink); }
     [data-theme="dark"] .dupe { background: #162032; border-color: var(--border); }
     [data-theme="dark"] .pill { background: #0f172a; border-color: var(--border); color: var(--ink); }
@@ -241,24 +322,58 @@
       </section>
 
       <section id="users" class="cardx pane hidden">
-        <h6>Users and Roles</h6>
-        <div class="site-row">
-          <div class="site-title">Add user</div>
-          <div class="site-controls" style="grid-template-columns: repeat(3, minmax(0, 1fr));">
-            <input id="new-user-name" placeholder="username" />
-            <input id="new-user-pass" type="password" placeholder="password (min 8 chars)" />
-            <select id="new-user-role">
-              <option value="viewer">viewer</option>
-              <option value="admin">admin</option>
-              <option value="super_admin">super admin</option>
-            </select>
+        <div class="d-flex align-items-center justify-content-between mb-3 flex-wrap gap-2">
+          <h6 class="mb-0"><i class="bi bi-people-fill me-2" style="color:var(--brand)"></i>Users &amp; Roles</h6>
+          <button class="btn btn-sm btn-brand-outline" id="btn-show-add-user">
+            <i class="bi bi-person-plus-fill me-1"></i>Add user
+          </button>
+        </div>
+
+        <!-- Add user form (hidden by default) -->
+        <div id="add-user-form" class="user-add-card mb-3" style="display:none;">
+          <div class="user-add-grid">
+            <div>
+              <label class="form-label-sm">Username</label>
+              <input id="new-user-name" class="form-control form-control-sm" placeholder="e.g. johndoe" />
+            </div>
+            <div>
+              <label class="form-label-sm">Password</label>
+              <input id="new-user-pass" type="password" class="form-control form-control-sm" placeholder="min 8 characters" />
+            </div>
+            <div>
+              <label class="form-label-sm">Role</label>
+              <select id="new-user-role" class="form-select form-select-sm">
+                <option value="viewer">Viewer</option>
+                <option value="admin">Admin</option>
+                <option value="super_admin">Super Admin</option>
+              </select>
+            </div>
           </div>
-          <div class="dupe-actions">
-            <button class="btn btn-sm btn-outline-secondary" id="btn-user-add">Add user</button>
+          <div class="d-flex align-items-center gap-2 mt-2">
+            <button class="btn btn-sm btn-brand-solid" id="btn-user-add">
+              <i class="bi bi-check-lg me-1"></i>Create user
+            </button>
+            <button class="btn btn-sm btn-outline-secondary" id="btn-cancel-add-user">Cancel</button>
             <span class="meta" id="user-add-msg"></span>
           </div>
         </div>
-        <div id="users-list"></div>
+
+        <!-- Users table -->
+        <div class="users-table-wrap">
+          <table class="users-table" id="users-list">
+            <thead>
+              <tr>
+                <th>User</th>
+                <th>Role</th>
+                <th>Status</th>
+                <th>Joined</th>
+                <th style="text-align:right">Actions</th>
+              </tr>
+            </thead>
+            <tbody id="users-tbody"></tbody>
+          </table>
+          <div id="users-empty" class="meta" style="display:none;padding:.75rem 0;">No users found.</div>
+        </div>
       </section>
 
       <section id="duplicates" class="cardx pane hidden">
@@ -333,60 +448,119 @@
       document.getElementById('notify-msg').textContent = '';
     }
 
+    const ROLE_LABELS = { super_admin: 'Super Admin', admin: 'Admin', viewer: 'Viewer' };
+    const ROLE_ICONS  = { super_admin: 'bi-shield-fill-check', admin: 'bi-person-fill-gear', viewer: 'bi-eye-fill' };
+
     async function loadUsers() {
-      const root = document.getElementById('users-list');
-      if (!root) return;
-      root.innerHTML = '';
+      const tbody = document.getElementById('users-tbody');
+      const empty = document.getElementById('users-empty');
+      if (!tbody) return;
+      tbody.innerHTML = '';
       const users = await api('/users');
       if (!users.length) {
-        root.innerHTML = '<div class="meta">No users found.</div>';
+        empty.style.display = '';
         return;
       }
+      empty.style.display = 'none';
 
       users.forEach(u => {
-        const row = document.createElement('div');
-        row.className = 'site-row';
-        row.innerHTML = `
-          <div class="site-title">${u.username}</div>
-          <div class="meta">Created: ${new Date(u.created_at).toLocaleString()} | Updated: ${new Date(u.updated_at).toLocaleString()}</div>
-          <div class="site-controls" style="grid-template-columns: repeat(2, minmax(0, 1fr)); margin-top:.45rem;">
-            <select data-k="role">
-              <option value="viewer" ${u.role === 'viewer' ? 'selected' : ''}>viewer</option>
-              <option value="admin" ${u.role === 'admin' ? 'selected' : ''}>admin</option>
-              <option value="super_admin" ${u.role === 'super_admin' ? 'selected' : ''}>super admin</option>
-            </select>
-            <select data-k="active">
-              <option value="1" ${u.active ? 'selected' : ''}>active</option>
-              <option value="0" ${!u.active ? 'selected' : ''}>disabled</option>
-            </select>
-          </div>
-          <div class="dupe-actions">
-            <button class="btn btn-sm btn-outline-secondary">Save user</button>
-            <span class="meta"></span>
-          </div>
+        const initials = u.username.slice(0, 2).toUpperCase();
+        const roleClass = u.role || 'viewer';
+        const roleLabel = ROLE_LABELS[roleClass] || roleClass;
+        const roleIcon  = ROLE_ICONS[roleClass]  || 'bi-person';
+        const joined = u.created_at ? new Date(u.created_at).toLocaleDateString(undefined, { year:'numeric', month:'short', day:'numeric' }) : '—';
+
+        // Main row
+        const tr = document.createElement('tr');
+        tr.dataset.username = u.username;
+        tr.innerHTML = `
+          <td>
+            <div class="d-flex align-items-center">
+              <span class="u-avatar">${initials}</span>
+              <span class="u-name">${u.username}</span>
+            </div>
+          </td>
+          <td>
+            <span class="role-badge ${roleClass}">
+              <i class="bi ${roleIcon}"></i> ${roleLabel}
+            </span>
+          </td>
+          <td>
+            <span class="status-badge ${u.active ? 'active' : 'disabled'}">
+              <i class="bi ${u.active ? 'bi-circle-fill' : 'bi-slash-circle'}"></i>
+              ${u.active ? 'Active' : 'Disabled'}
+            </span>
+          </td>
+          <td class="meta">${joined}</td>
+          <td style="text-align:right">
+            <div class="d-flex gap-1 justify-content-end">
+              <button class="u-action-btn btn-edit" title="Edit user">
+                <i class="bi bi-pencil-fill"></i>
+              </button>
+            </div>
+          </td>
         `;
 
-        const msg = row.querySelector('.dupe-actions .meta');
-        row.querySelector('button').onclick = async () => {
+        // Inline edit row (hidden by default)
+        const editTr = document.createElement('tr');
+        editTr.className = 'u-edit-row';
+        editTr.style.display = 'none';
+        editTr.innerHTML = `
+          <td colspan="5">
+            <div class="d-flex align-items-center gap-2 flex-wrap py-1">
+              <span class="meta" style="font-weight:600;min-width:80px;">${u.username}</span>
+              <select data-k="role">
+                <option value="viewer"     ${u.role === 'viewer'     ? 'selected' : ''}>Viewer</option>
+                <option value="admin"      ${u.role === 'admin'      ? 'selected' : ''}>Admin</option>
+                <option value="super_admin"${u.role === 'super_admin'? 'selected' : ''}>Super Admin</option>
+              </select>
+              <select data-k="active">
+                <option value="1" ${u.active ? 'selected' : ''}>Active</option>
+                <option value="0" ${!u.active ? 'selected' : ''}>Disabled</option>
+              </select>
+              <button class="u-action-btn btn-save" title="Save changes">
+                <i class="bi bi-check-lg"></i> Save
+              </button>
+              <button class="u-action-btn btn-cancel" title="Cancel">
+                <i class="bi bi-x-lg"></i>
+              </button>
+              <span class="edit-msg meta"></span>
+            </div>
+          </td>
+        `;
+
+        // Toggle edit row
+        tr.querySelector('.btn-edit').onclick = () => {
+          const visible = editTr.style.display !== 'none';
+          editTr.style.display = visible ? 'none' : '';
+        };
+
+        // Save
+        editTr.querySelector('.btn-save').onclick = async () => {
+          const msg = editTr.querySelector('.edit-msg');
           msg.textContent = '';
           try {
             await api(`/users/${encodeURIComponent(u.username)}`, {
               method: 'PATCH',
               body: JSON.stringify({
-                role: row.querySelector('[data-k="role"]').value,
-                active: row.querySelector('[data-k="active"]').value === '1',
+                role: editTr.querySelector('[data-k="role"]').value,
+                active: editTr.querySelector('[data-k="active"]').value === '1',
               }),
             });
-            msg.textContent = 'Saved';
-            msg.className = 'ok';
             await loadUsers();
           } catch (e) {
             msg.textContent = e.message;
-            msg.className = 'err';
+            msg.className = 'edit-msg err';
           }
         };
 
-        root.appendChild(row);
+        // Cancel
+        editTr.querySelector('.btn-cancel').onclick = () => {
+          editTr.style.display = 'none';
+        };
+
+        tbody.appendChild(tr);
+        tbody.appendChild(editTr);
       });
     }
 
@@ -541,6 +715,15 @@
       }
     };
 
+    // Toggle add-user form
+    document.getElementById('btn-show-add-user')?.addEventListener('click', () => {
+      const form = document.getElementById('add-user-form');
+      form.style.display = form.style.display === 'none' ? '' : 'none';
+    });
+    document.getElementById('btn-cancel-add-user')?.addEventListener('click', () => {
+      document.getElementById('add-user-form').style.display = 'none';
+    });
+
     const addUserBtn = document.getElementById('btn-user-add');
     if (addUserBtn) {
       addUserBtn.onclick = async () => {
@@ -559,8 +742,7 @@
           document.getElementById('new-user-name').value = '';
           document.getElementById('new-user-pass').value = '';
           document.getElementById('new-user-role').value = 'viewer';
-          msg.textContent = 'User created.';
-          msg.className = 'ok';
+          document.getElementById('add-user-form').style.display = 'none';
           await loadUsers();
         } catch (e) {
           msg.textContent = e.message;
