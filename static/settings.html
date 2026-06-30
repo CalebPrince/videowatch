@@ -796,14 +796,29 @@
         window.location.href = '/';
         return;
       }
-      await Promise.all([loadGeneral(), loadHealth(), loadNotifications(), loadSitesRules(), loadDuplicates()]);
-      if (['admin', 'super_admin'].includes((auth.role || '').toLowerCase())) {
+      const role = (auth.role || '').toLowerCase();
+      const isSuperAdmin = role === 'super_admin';
+      const isAdmin      = isSuperAdmin || role === 'admin';
+
+      // Sections visible to all authenticated users
+      await Promise.all([loadGeneral(), loadHealth(), loadNotifications(), loadSitesRules()]);
+
+      // Users & Roles — admin and super_admin only
+      if (isAdmin) {
         await loadUsers();
       } else {
-        const usersBtn = document.querySelector('.navbtn[data-target="users"]');
-        if (usersBtn) usersBtn.classList.add('hidden');
-        const usersPane = document.getElementById('users');
-        if (usersPane) usersPane.innerHTML = '<h6>Users and Roles</h6><div class="meta">Admin role required.</div>';
+        document.querySelector('.navbtn[data-target="users"]')?.classList.add('hidden');
+        document.getElementById('users')?.classList.add('hidden');
+      }
+
+      // Duplicates & Maintenance — super_admin only
+      if (isSuperAdmin) {
+        await loadDuplicates();
+      } else {
+        document.querySelector('.navbtn[data-target="duplicates"]')?.classList.add('hidden');
+        document.getElementById('duplicates')?.classList.add('hidden');
+        document.querySelector('.navbtn[data-target="maintenance"]')?.classList.add('hidden');
+        document.getElementById('maintenance')?.classList.add('hidden');
       }
     })();
   </script>
