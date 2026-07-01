@@ -3883,10 +3883,73 @@ function closeVideoModal(e) {
   renderVideos();
 }
 
-// Close on Escape key
+// ── Keyboard shortcuts ────────────────────────────────────────────────────────
 document.addEventListener('keydown', e => {
-  if (e.key === 'Escape' && _vpVideo) closeVideoModal({ target: document.getElementById('vp-modal') });
+  // Never fire when typing in an input/textarea
+  if (['INPUT','TEXTAREA','SELECT'].includes(e.target.tagName)) return;
+  if (e.ctrlKey || e.metaKey || e.altKey) return;
+
+  // Modal shortcuts
+  if (_vpVideo) {
+    if (e.key === 'Escape') { closeVideoModal({ target: document.getElementById('vp-modal') }); return; }
+    if (e.key === 'f' || e.key === 'F') { vpToggle('favorite'); return; }
+    if (e.key === 'a' || e.key === 'A') { vpToggle('archive'); return; }
+    if (e.key === 'w' || e.key === 'W') { vpToggle('watched'); return; }
+    if (e.key === 'Enter') { window.open(_vpVideo.url, '_blank', 'noopener'); return; }
+    return;
+  }
+
+  // Global shortcuts
+  if (e.key === '/') {
+    e.preventDefault();
+    const s = document.getElementById('video-search') || document.querySelector('input[type=search]');
+    s?.focus();
+    return;
+  }
+  if (e.key === 'n' || e.key === 'N') {
+    // Toggle "New only" filter
+    const newBtn = document.querySelector('.filter-bar button[data-status="new"]');
+    newBtn?.click(); return;
+  }
+  if (e.key === '?') {
+    showKbHelp(); return;
+  }
 });
+
+function showKbHelp() {
+  const existing = document.getElementById('kb-help-overlay');
+  if (existing) { existing.remove(); return; }
+  const ov = document.createElement('div');
+  ov.id = 'kb-help-overlay';
+  ov.style.cssText = 'position:fixed;inset:0;z-index:3000;background:rgba(0,0,0,.7);display:flex;align-items:center;justify-content:center;';
+  ov.onclick = () => ov.remove();
+  const box = document.createElement('div');
+  box.style.cssText = 'background:var(--card-bg,#1e293b);border-radius:14px;padding:1.5rem 2rem;min-width:320px;max-width:460px;color:var(--text,#e2e8f0);box-shadow:0 32px 80px rgba(0,0,0,.5);';
+  const shortcuts = [
+    ['Global', ''],
+    ['/', 'Focus search'],
+    ['N', 'Toggle New filter'],
+    ['?', 'Show / hide this help'],
+    ['In video modal', ''],
+    ['F', 'Toggle favorite'],
+    ['W', 'Toggle watched'],
+    ['A', 'Toggle archive'],
+    ['Enter', 'Open on site'],
+    ['Esc', 'Close modal'],
+  ];
+  box.innerHTML = `<div style="font-weight:800;font-size:1rem;margin-bottom:1rem;"><i class="bi bi-keyboard me-2"></i>Keyboard shortcuts</div>` +
+    shortcuts.map(([k, d]) => d
+      ? `<div style="display:flex;justify-content:space-between;padding:.3rem 0;border-bottom:1px solid rgba(255,255,255,.06);font-size:.85rem;">
+           <span style="color:#94a3b8;">${d}</span>
+           <kbd style="background:rgba(255,255,255,.1);border-radius:5px;padding:.1rem .45rem;font-size:.8rem;font-family:monospace;">${k}</kbd>
+         </div>`
+      : `<div style="font-size:.7rem;font-weight:700;color:#4f8ef7;margin-top:.9rem;margin-bottom:.2rem;text-transform:uppercase;letter-spacing:.05em;">${k}</div>`
+    ).join('') +
+    `<div style="font-size:.72rem;color:#475569;margin-top:1rem;text-align:center;">Click anywhere or press Esc to close</div>`;
+  ov.appendChild(box);
+  document.body.appendChild(ov);
+  ov.addEventListener('keydown', e => { if (e.key === 'Escape' || e.key === '?') ov.remove(); });
+}
 </script>
 
 </body>
