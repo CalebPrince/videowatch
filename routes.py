@@ -3199,6 +3199,41 @@ def delete_waitlist_entry(entry_id: int, request: Request):
     return {"ok": True}
 
 
+@router.post("/api/admin/broadcast")
+def admin_broadcast(request: Request, body: dict):
+    """Send an email announcement to all verified users (or optionally to waitlist too)."""
+    if not is_super_admin(request):
+        raise HTTPException(403, "Super admin only")
+    subject = (body.get("subject") or "").strip()
+    html_body = (body.get("html") or "").strip()
+    text_body = (body.get("text") or "").strip()
+    include_waitlist = bool(body.get("include_waitlist", False))
+    if not subject or not html_body:
+        raise HTTPException(400, "subject and html are required")
+
+    with get_db() as db:
+        user_rows = db.execute(
+            "SELECT email FROM users WHERE email IS NOT NULL AND email_verified=1"
+        ).fetchall()
+        waitlist_rows = db.execute("SELECT email FROM waitlist").fetchall() if include_waitlist else []
+
+    recipients = list({r["email"] for r in user_rows if r["email"]} |
+                      {r["email"] for r in waitlist_rows if r["email"]})
+
+    def _blast():
+        sent, failed = 0, 0
+        for addr in recipients:
+            try:
+                _send_email_simple(addr, subject, html_body, text_body)
+                sent += 1
+            except Exception:
+                failed += 1
+        log.info(f"Broadcast '{subject}': sent={sent} failed={failed}")
+
+    threading.Thread(target=_blast, daemon=True).start()
+    return {"ok": True, "queued": len(recipients)}
+
+
 @router.get("/api/health")
 def health():
     healthy = True

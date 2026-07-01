@@ -695,6 +695,33 @@
             <div style="font-size:.78rem;">Transaction history will appear here once Stripe is connected.</div>
           </div>
         </div>
+
+        <!-- Email broadcast -->
+        <div style="margin-top:1.5rem;border-top:1px solid var(--border);padding-top:1.25rem;">
+          <div style="font-weight:700;font-size:.85rem;margin-bottom:.75rem;"><i class="bi bi-megaphone me-1" style="color:var(--brand)"></i>Email Broadcast</div>
+          <div style="background:var(--card-bg);border:1px solid var(--border);border-radius:10px;padding:1rem;">
+            <div style="margin-bottom:.6rem;">
+              <label style="font-size:.78rem;font-weight:600;display:block;margin-bottom:.25rem;">Subject</label>
+              <input id="bc-subject" type="text" placeholder="Announcement subject…" style="width:100%;font-size:.82rem;padding:.35rem .6rem;border:1px solid var(--border);border-radius:6px;background:var(--input-bg,#f8fafc);color:var(--text);" />
+            </div>
+            <div style="margin-bottom:.6rem;">
+              <label style="font-size:.78rem;font-weight:600;display:block;margin-bottom:.25rem;">Message (HTML)</label>
+              <textarea id="bc-html" rows="5" placeholder="<p>Hello VideoWatch users…</p>" style="width:100%;font-size:.82rem;padding:.35rem .6rem;border:1px solid var(--border);border-radius:6px;background:var(--input-bg,#f8fafc);color:var(--text);resize:vertical;font-family:monospace;"></textarea>
+            </div>
+            <div style="margin-bottom:.8rem;">
+              <label style="font-size:.78rem;font-weight:600;display:block;margin-bottom:.25rem;">Plain-text fallback</label>
+              <textarea id="bc-text" rows="3" placeholder="Hello VideoWatch users…" style="width:100%;font-size:.82rem;padding:.35rem .6rem;border:1px solid var(--border);border-radius:6px;background:var(--input-bg,#f8fafc);color:var(--text);resize:vertical;"></textarea>
+            </div>
+            <div style="display:flex;align-items:center;gap:1rem;flex-wrap:wrap;">
+              <label style="display:flex;align-items:center;gap:.4rem;font-size:.8rem;cursor:pointer;">
+                <input type="checkbox" id="bc-include-waitlist" />
+                Also send to waitlist subscribers
+              </label>
+              <button id="bc-send-btn" class="btn btn-sm btn-primary ms-auto" onclick="sendBroadcast()"><i class="bi bi-send me-1"></i>Send Broadcast</button>
+            </div>
+            <div id="bc-status" style="margin-top:.6rem;font-size:.8rem;display:none;"></div>
+          </div>
+        </div>
       </section>
     </main>
   </div>
@@ -1563,6 +1590,31 @@
     // ── Payments ─────────────────────────────────────────────────────────────
     const PLAN_COLORS = { free: '#64748b', pro: '#0f766e', unlimited: '#7c3aed' };
     const PLAN_LABELS = { free: 'Free', pro: 'Pro', unlimited: 'Unlimited' };
+    // ── Broadcast ─────────────────────────────────────────────────────────────
+    async function sendBroadcast() {
+      const subject = document.getElementById('bc-subject').value.trim();
+      const html = document.getElementById('bc-html').value.trim();
+      const text = document.getElementById('bc-text').value.trim();
+      const include_waitlist = document.getElementById('bc-include-waitlist').checked;
+      const statusEl = document.getElementById('bc-status');
+      const btn = document.getElementById('bc-send-btn');
+      if (!subject || !html) { showToast('Subject and HTML body are required.', 'warning'); return; }
+      if (!confirm(`Send broadcast "${subject}" to all verified users${include_waitlist ? ' + waitlist' : ''}?`)) return;
+      btn.disabled = true;
+      statusEl.style.display = 'none';
+      try {
+        const res = await api('/admin/broadcast', { method: 'POST', body: JSON.stringify({ subject, html, text, include_waitlist }) });
+        statusEl.textContent = `✓ Queued for ${res.queued} recipient(s).`;
+        statusEl.style.color = 'var(--brand)';
+        statusEl.style.display = '';
+      } catch(e) {
+        statusEl.textContent = 'Failed: ' + (e.message || 'unknown error');
+        statusEl.style.color = '#dc3545';
+        statusEl.style.display = '';
+      }
+      btn.disabled = false;
+    }
+
     // ── Analytics ─────────────────────────────────────────────────────────────
     let _analyticsCharts = {};
 
