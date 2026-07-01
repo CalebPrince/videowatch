@@ -285,6 +285,25 @@ def init_db():
                 )
             """)
             db.execute("CREATE INDEX IF NOT EXISTS idx_api_tokens_owner ON api_tokens(owner)")
+            db.execute("""
+                CREATE TABLE IF NOT EXISTS collections (
+                    id         TEXT PRIMARY KEY,
+                    owner      TEXT NOT NULL,
+                    name       TEXT NOT NULL,
+                    created_at TEXT NOT NULL
+                )
+            """)
+            db.execute("CREATE INDEX IF NOT EXISTS idx_collections_owner ON collections(owner)")
+            db.execute("""
+                CREATE TABLE IF NOT EXISTS collection_videos (
+                    collection_id TEXT NOT NULL,
+                    video_id      TEXT NOT NULL,
+                    added_at      TEXT NOT NULL,
+                    PRIMARY KEY (collection_id, video_id),
+                    FOREIGN KEY (collection_id) REFERENCES collections(id) ON DELETE CASCADE,
+                    FOREIGN KEY (video_id)      REFERENCES videos(id)      ON DELETE CASCADE
+                )
+            """)
             db.execute(
                 "INSERT OR IGNORE INTO app_settings (key, value) VALUES (?, ?)",
                 ("autoscan_enabled", "0"),

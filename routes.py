@@ -3239,6 +3239,122 @@ def admin_broadcast(request: Request, body: dict):
     return {"ok": True, "queued": len(recipients)}
 
 
+@router.get("/api/collections")
+def list_collections(request: Request):
+    username = _api_auth(request)
+    with get_db() as db:
+        rows = db.execute(
+            """SELECT c.id, c.name, c.created_at, COUNT(cv.video_id) AS video_count
+               FROM collections c
+               LEFT JOIN collection_videos cv ON cv.collection_id=c.id
+               WHERE c.owner=? GROUP BY c.id ORDER BY c.created_at DESC""",
+            (username,)
+        ).fetchall()
+    return [dict(r) for r in rows]
+
+
+@router.post("/api/collections")
+def create_collection(request: Request, body: dict):
+    username = _api_auth(request)
+    name = (body.get("name") or "").strip()
+    if not name:
+        raise HTTPException(400, "name is required")
+    cid = str(__import__("uuid").uuid4())
+    with write_lock:
+        with get_db() as db:
+            db.execute(
+                "INSERT INTO collections (id, owner, name, created_at) VALUES (?,?,?,?)",
+                (cid, username, name, now_iso())
+            )
+            db.commit()
+    return {"id": cid, "name": name, "video_count": 0}
+
+
+@router.delete("/api/collections/{cid}")
+def delete_collection(cid: str, request: Request):
+    username = _api_auth(request)
+    with write_lock:
+        with get_db() as db:
+            row = db.execute("SELECT owner FROM collections WHERE id=?", (cid,)).fetchone()
+            if not row:
+                raise HTTPException(404)
+            if row["owner"] != username:
+                raise HTTPException(403)
+            db.execute("DELETE FROM collections WHERE id=?", (cid,))
+            db.commit()
+    return {"ok": True}
+
+
+@router.patch("/api/collections/{cid}")
+def rename_collection(cid: str, request: Request, body: dict):
+    username = _api_auth(request)
+    name = (body.get("name") or "").strip()
+    if not name:
+        raise HTTPException(400, "name is required")
+    with write_lock:
+        with get_db() as db:
+            row = db.execute("SELECT owner FROM collections WHERE id=?", (cid,)).fetchone()
+            if not row:
+                raise HTTPException(404)
+            if row["owner"] != username:
+                raise HTTPException(403)
+            db.execute("UPDATE collections SET name=? WHERE id=?", (name, cid))
+            db.commit()
+    return {"ok": True}
+
+
+@router.get("/api/collections/{cid}/videos")
+def collection_videos(cid: str, request: Request):
+    username = _api_auth(request)
+    with get_db() as db:
+        col = db.execute("SELECT owner FROM collections WHERE id=?", (cid,)).fetchone()
+        if not col or col["owner"] != username:
+            raise HTTPException(404)
+        rows = db.execute(
+            """SELECT v.id, v.title, v.url, v.thumb, v.platform, v.duration,
+                      v.is_favorite, v.is_watched, v.note, s.name AS site_name
+               FROM collection_videos cv
+               JOIN videos v ON v.id=cv.video_id
+               JOIN sites s ON s.id=v.site_id
+               WHERE cv.collection_id=?
+               ORDER BY cv.added_at DESC""",
+            (cid,)
+        ).fetchall()
+    return [dict(r) for r in rows]
+
+
+@router.post("/api/collections/{cid}/videos")
+def add_to_collection(cid: str, request: Request, body: dict):
+    username = _api_auth(request)
+    video_id = (body.get("video_id") or "").strip()
+    if not video_id:
+        raise HTTPException(400, "video_id required")
+    with write_lock:
+        with get_db() as db:
+            col = db.execute("SELECT owner FROM collections WHERE id=?", (cid,)).fetchone()
+            if not col or col["owner"] != username:
+                raise HTTPException(404)
+            db.execute(
+                "INSERT OR IGNORE INTO collection_videos (collection_id, video_id, added_at) VALUES (?,?,?)",
+                (cid, video_id, now_iso())
+            )
+            db.commit()
+    return {"ok": True}
+
+
+@router.delete("/api/collections/{cid}/videos/{video_id}")
+def remove_from_collection(cid: str, video_id: str, request: Request):
+    username = _api_auth(request)
+    with write_lock:
+        with get_db() as db:
+            col = db.execute("SELECT owner FROM collections WHERE id=?", (cid,)).fetchone()
+            if not col or col["owner"] != username:
+                raise HTTPException(404)
+            db.execute("DELETE FROM collection_videos WHERE collection_id=? AND video_id=?", (cid, video_id))
+            db.commit()
+    return {"ok": True}
+
+
 @router.get("/api/videos/history")
 def watch_history(request: Request, limit: int = Query(100, ge=1, le=500), offset: int = Query(0, ge=0)):
     """Return videos the current user has marked as watched, newest-watched first."""
