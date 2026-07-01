@@ -1963,7 +1963,7 @@ async function openCollectionPopover(anchor, v) {
 
   const pop = document.createElement('div');
   pop.className = 'tag-popover';
-  pop.style.cssText = 'width:230px;max-height:280px;overflow-y:auto;';
+  pop.style.cssText = 'width:220px;max-height:260px;overflow-y:auto;';
   _collectionPopover = pop;
 
   const hdr = document.createElement('div');
@@ -1976,7 +1976,11 @@ async function openCollectionPopover(anchor, v) {
   loading.textContent = 'Loading…';
   pop.appendChild(loading);
 
-  anchor.appendChild(pop);
+  // Position below anchor (same pattern as tag popover)
+  document.body.appendChild(pop);
+  const rect = anchor.getBoundingClientRect();
+  pop.style.top  = `${rect.bottom + window.scrollY + 4}px`;
+  pop.style.left = `${Math.min(rect.left + window.scrollX, window.innerWidth - 230)}px`;
 
   // Fetch collections and membership
   const [cols, membership] = await Promise.all([
@@ -1990,7 +1994,7 @@ async function openCollectionPopover(anchor, v) {
   if (!cols.length) {
     const empty = document.createElement('div');
     empty.style.cssText = 'font-size:.78rem;color:var(--muted);';
-    empty.textContent = 'No collections yet. Create one in Settings.';
+    empty.textContent = 'No collections yet. Create one in Settings → Collections.';
     pop.appendChild(empty);
   } else {
     cols.forEach(col => {
@@ -2014,13 +2018,12 @@ async function openCollectionPopover(anchor, v) {
   }
 
   setTimeout(() => {
-    function handler(e) {
-      if (!pop.contains(e.target) && e.target !== anchor) {
+    document.addEventListener('click', function handler(e) {
+      if (!pop.contains(e.target)) {
         pop.remove(); _collectionPopover = null;
         document.removeEventListener('click', handler);
       }
-    }
-    document.addEventListener('click', handler);
+    });
   }, 0);
 }
 
