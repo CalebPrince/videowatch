@@ -2447,6 +2447,40 @@ def set_user_prefs(request: Request, body: dict):
     return {"ok": True, "ui_theme": theme}
 
 
+@router.patch("/api/user/email")
+def update_user_email(request: Request, body: dict):
+    if not is_authenticated(request):
+        raise HTTPException(401)
+    email = (body.get("email") or "").strip().lower()
+    if not email or not re.match(r'^[^@\s]+@[^@\s]+\.[^@\s]+$', email):
+        raise HTTPException(400, "A valid email address is required")
+    username = current_user(request)
+    with write_lock:
+        with get_db() as db:
+            existing = db.execute("SELECT username FROM users WHERE email=? AND username!=?", (email, username)).fetchone()
+            if existing:
+                raise HTTPException(409, "That email is already in use by another account")
+            db.execute(
+                "UPDATE users SET email=?, email_verified=0, updated_at=? WHERE username=?",
+                (email, now_iso(), username),
+            )
+            db.commit()
+    # Send verification email if configured
+    if _email_configured():
+        token = secrets.token_urlsafe(32)
+        expires = (datetime.now(timezone.utc).replace(microsecond=0).isoformat())
+        with write_lock:
+            with get_db() as db:
+                db.execute("DELETE FROM email_verifications WHERE username=?", (username,))
+                from datetime import timedelta
+                exp = (datetime.now(timezone.utc) + timedelta(hours=24)).isoformat()
+                db.execute("INSERT INTO email_verifications (token, username, expires_at) VALUES (?,?,?)", (token, username, exp))
+                db.commit()
+        threading.Thread(target=_send_verification_email, args=(email, username, token), daemon=True).start()
+        return {"ok": True, "email": email, "verification_sent": True}
+    return {"ok": True, "email": email, "verification_sent": False}
+
+
 @router.post("/api/user/delete-account")
 def delete_own_account(request: Request, body: dict):
     if not is_authenticated(request):
