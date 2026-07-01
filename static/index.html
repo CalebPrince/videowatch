@@ -814,12 +814,9 @@
       <input type="search" id="search-inp" placeholder="Search titles, cast, site, url…" />
       <div class="filter-labeled"><span class="filter-float-label">Released after</span><input type="date" id="released-after" aria-label="Released after date" /></div>
       <div class="filter-labeled" id="dur-filter-wrap" style="position:relative;padding-top:.9rem;">
-        <span class="filter-float-label" style="top:.15rem;">Duration</span>
-        <div style="display:flex;align-items:center;gap:.35rem;width:100%;">
-          <input type="range" id="duration-min" min="0" max="7200" step="30" value="0" style="flex:1;accent-color:var(--brand);cursor:pointer;" aria-label="Minimum duration" />
-          <input type="range" id="duration-max" min="0" max="7200" step="30" value="7200" style="flex:1;accent-color:var(--brand);cursor:pointer;" aria-label="Maximum duration" />
-        </div>
-        <div id="dur-label" style="font-size:.72rem;color:var(--muted);text-align:center;margin-top:.1rem;line-height:1.2;">Any duration</div>
+        <span class="filter-float-label" style="top:.15rem;">Min duration: <span id="dur-label">Any</span></span>
+        <input type="range" id="duration-min" min="0" max="7200" step="30" value="0" style="width:100%;accent-color:var(--brand);cursor:pointer;margin-top:.25rem;" aria-label="Minimum duration" />
+        <input type="range" id="duration-max" min="0" max="7200" step="30" value="7200" style="display:none;" aria-label="Maximum duration" />
       </div>
       <select id="site-filter" aria-label="Filter by site group">
         <option value="">All sites</option>
@@ -3577,24 +3574,16 @@ function _fmtDur(sec) {
 }
 function _updateDurSliders() {
   const minEl = document.getElementById('duration-min');
-  const maxEl = document.getElementById('duration-max');
   const lbl   = document.getElementById('dur-label');
-  if (!minEl || !maxEl) return;
-  let lo = parseInt(minEl.value, 10), hi = parseInt(maxEl.value, 10);
-  if (lo > hi) { maxEl.value = lo; hi = lo; }
+  if (!minEl) return;
+  const lo = parseInt(minEl.value, 10);
   durationMin = lo > 0 ? String(lo) : '';
-  durationMax = hi < 7200 ? String(hi) : '';
-  if (lbl) {
-    if (!durationMin && !durationMax) lbl.textContent = 'Any duration';
-    else if (!durationMin) lbl.textContent = `Up to ${_fmtDur(hi)}`;
-    else if (!durationMax) lbl.textContent = `${_fmtDur(lo)}+`;
-    else lbl.textContent = `${_fmtDur(lo)} – ${_fmtDur(hi)}`;
-  }
+  durationMax = '';
+  if (lbl) lbl.textContent = lo > 0 ? `${_fmtDur(lo)}+` : 'Any';
   currentPage = 1;
   renderVideos();
 }
 document.getElementById('duration-min').addEventListener('input', _updateDurSliders);
-document.getElementById('duration-max').addEventListener('input', _updateDurSliders);
 
 document.getElementById('site-filter').addEventListener('change', e => {
   activeGroup = e.target.value || null;
