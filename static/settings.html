@@ -268,6 +268,7 @@
       <button class="navbtn" data-target="users" title="User accounts and roles"><i class="bi bi-people me-1"></i>Users and Roles</button>
       <button class="navbtn" id="navbtn-allsites" data-target="allsites" title="All monitored sites across all users"><i class="bi bi-diagram-3-fill me-1"></i>All Users' Sites</button>
       <button class="navbtn" id="navbtn-userstats" data-target="userstats" title="Usage statistics per user"><i class="bi bi-bar-chart-fill me-1"></i>Usage Stats</button>
+      <button class="navbtn" id="navbtn-audit" data-target="audit" title="Audit log"><i class="bi bi-journal-text me-1"></i>Audit Log</button>
       <button class="navbtn" data-target="duplicates" title="Duplicate video candidates"><i class="bi bi-files me-1"></i>Duplicates</button>
       <button class="navbtn" data-target="maintenance" title="Maintenance actions"><i class="bi bi-tools me-1"></i>Maintenance</button>
     </aside>
@@ -376,6 +377,15 @@
           </table>
           <div id="users-empty" class="meta" style="display:none;padding:.75rem 0;">No users found.</div>
         </div>
+      </section>
+
+      <section id="audit" class="cardx pane hidden">
+        <div class="d-flex align-items-center justify-content-between mb-3 flex-wrap gap-2">
+          <h6 class="mb-0"><i class="bi bi-journal-text me-2" style="color:var(--brand)"></i>Audit Log</h6>
+          <button class="btn btn-sm btn-outline-secondary" id="btn-audit-refresh"><i class="bi bi-arrow-clockwise me-1"></i>Refresh</button>
+        </div>
+        <div id="audit-body"></div>
+        <div class="d-flex gap-2 mt-3" id="audit-pagination" style="display:none!important"></div>
       </section>
 
       <section id="userstats" class="cardx pane hidden">
@@ -634,6 +644,84 @@
 
         list.appendChild(row);
       });
+    }
+
+    const ACTION_ICONS = {
+      login: 'bi-box-arrow-in-right text-success',
+      login_failed: 'bi-x-circle text-danger',
+      logout: 'bi-box-arrow-right text-secondary',
+      register: 'bi-person-plus text-primary',
+      site_add: 'bi-plus-circle text-success',
+      site_delete: 'bi-trash text-danger',
+      scan_all: 'bi-arrow-repeat text-info',
+      scan_site: 'bi-arrow-repeat text-info',
+      user_create: 'bi-person-fill-add text-success',
+      user_update: 'bi-person-fill-gear text-warning',
+      password_reset: 'bi-shield-lock text-warning',
+    };
+
+    let _auditOffset = 0;
+    const _auditLimit = 50;
+
+    async function loadAuditLog(offset = 0) {
+      const root = document.getElementById('audit-body');
+      const pag  = document.getElementById('audit-pagination');
+      if (!root) return;
+      _auditOffset = offset;
+      root.innerHTML = '<p class="meta">Loading…</p>';
+      try {
+        const d = await api(`/admin/audit?limit=${_auditLimit}&offset=${offset}`);
+        if (!d.rows.length) { root.innerHTML = '<p class="meta">No entries yet.</p>'; pag.style.display = 'none'; return; }
+        root.innerHTML = `
+          <table style="width:100%;border-collapse:collapse;font-size:.82rem">
+            <thead>
+              <tr style="border-bottom:2px solid var(--border)">
+                <th style="padding:.4rem .6rem;font-size:.71rem;color:var(--muted);font-weight:700;text-transform:uppercase">Time</th>
+                <th style="padding:.4rem .6rem;font-size:.71rem;color:var(--muted);font-weight:700;text-transform:uppercase">User</th>
+                <th style="padding:.4rem .6rem;font-size:.71rem;color:var(--muted);font-weight:700;text-transform:uppercase">Action</th>
+                <th style="padding:.4rem .6rem;font-size:.71rem;color:var(--muted);font-weight:700;text-transform:uppercase">Detail</th>
+                <th style="padding:.4rem .6rem;font-size:.71rem;color:var(--muted);font-weight:700;text-transform:uppercase">IP</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${d.rows.map(r => `
+                <tr style="border-bottom:1px solid var(--border)">
+                  <td style="padding:.45rem .6rem;white-space:nowrap;color:var(--muted)">${(r.timestamp||'').slice(0,19).replace('T',' ')}</td>
+                  <td style="padding:.45rem .6rem;font-weight:600">${r.username}</td>
+                  <td style="padding:.45rem .6rem">
+                    <i class="bi ${ACTION_ICONS[r.action] || 'bi-dot'} me-1"></i>${r.action}
+                  </td>
+                  <td style="padding:.45rem .6rem;color:var(--muted);font-size:.78rem;word-break:break-all">${r.detail || '—'}</td>
+                  <td style="padding:.45rem .6rem;color:var(--muted);font-size:.78rem">${r.ip || '—'}</td>
+                </tr>`).join('')}
+            </tbody>
+          </table>`;
+        // Pagination
+        const total = d.total;
+        pag.style.display = total > _auditLimit ? 'flex' : 'none';
+        pag.innerHTML = '';
+        if (offset > 0) {
+          const prev = document.createElement('button');
+          prev.className = 'btn btn-sm btn-outline-secondary';
+          prev.textContent = '← Newer';
+          prev.onclick = () => loadAuditLog(Math.max(0, offset - _auditLimit));
+          pag.appendChild(prev);
+        }
+        if (offset + _auditLimit < total) {
+          const next = document.createElement('button');
+          next.className = 'btn btn-sm btn-outline-secondary';
+          next.textContent = 'Older →';
+          next.onclick = () => loadAuditLog(offset + _auditLimit);
+          pag.appendChild(next);
+        }
+        const info = document.createElement('span');
+        info.className = 'meta';
+        info.style.alignSelf = 'center';
+        info.textContent = `${offset + 1}–${Math.min(offset + _auditLimit, total)} of ${total}`;
+        pag.appendChild(info);
+      } catch (e) {
+        root.innerHTML = `<p class="err">Failed to load: ${e.message}</p>`;
+      }
     }
 
     async function loadUserStats() {
@@ -916,7 +1004,8 @@
 
       // Duplicates, Maintenance, All Users' Sites — super_admin only
       if (isSuperAdmin) {
-        await Promise.allSettled([loadDuplicates(), loadAllSites(), loadUserStats()]);
+        await Promise.allSettled([loadDuplicates(), loadAllSites(), loadUserStats(), loadAuditLog()]);
+        document.getElementById('btn-audit-refresh')?.addEventListener('click', () => loadAuditLog(_auditOffset));
       } else {
         document.querySelector('.navbtn[data-target="duplicates"]')?.remove();
         document.getElementById('duplicates')?.remove();
@@ -926,6 +1015,8 @@
         document.getElementById('allsites')?.remove();
         document.getElementById('navbtn-userstats')?.remove();
         document.getElementById('userstats')?.remove();
+        document.getElementById('navbtn-audit')?.remove();
+        document.getElementById('audit')?.remove();
       }
     })();
   </script>
