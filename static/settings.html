@@ -399,7 +399,15 @@
       </section>
 
       <section id="duplicates" class="cardx pane hidden">
-        <h6>Duplicate Candidates</h6>
+        <div class="d-flex align-items-center justify-content-between mb-3 flex-wrap gap-2">
+          <h6 class="mb-0"><i class="bi bi-files me-2" style="color:var(--brand)"></i>Duplicate Candidates</h6>
+          <div class="d-flex gap-2">
+            <button class="btn btn-sm btn-outline-secondary" id="btn-dupe-refresh"><i class="bi bi-arrow-clockwise me-1"></i>Refresh</button>
+            <button class="btn btn-sm btn-outline-warning" id="btn-merge-all">
+              <i class="bi bi-intersect me-1"></i>Merge All
+            </button>
+          </div>
+        </div>
         <div id="dupe-list"></div>
       </section>
 
@@ -815,59 +823,105 @@
       }
     }
 
+    function shortUrl(url) {
+      try { return new URL(url).hostname + new URL(url).pathname.slice(0, 30); } catch { return url?.slice(0, 40) || ''; }
+    }
+
     async function loadDuplicates() {
       const root = document.getElementById('dupe-list');
-      root.innerHTML = '';
-      const groups = await api('/videos/duplicates?limit=40');
-      if (!groups.length) {
-        root.innerHTML = '<div class="meta">No duplicate candidates found.</div>';
-        return;
-      }
+      root.innerHTML = '<p class="meta">Loading…</p>';
+      try {
+        const groups = await api('/videos/duplicates?limit=40');
+        root.innerHTML = '';
+        if (!groups.length) {
+          root.innerHTML = '<div class="meta">No duplicate candidates found.</div>';
+          return;
+        }
 
-      groups.forEach(g => {
-        const keepDefault = g.videos[0]?.id;
-        const block = document.createElement('div');
-        block.className = 'dupe';
-        block.innerHTML = `
-          <div><strong>${g.title_key}</strong> ${g.released_at ? `(${g.released_at})` : ''}</div>
-          <div class="meta">${g.count} rows</div>
-          <div class="dupe-actions">
-            <select class="form-select form-select-sm keep" style="max-width:220px;">
-              ${g.videos.map(v => `<option value="${v.id}" ${v.id === keepDefault ? 'selected' : ''}>keep ${v.id.slice(0,8)} - ${new Date(v.found_at).toLocaleString()}</option>`).join('')}
-            </select>
-            <select class="form-select form-select-sm rem" style="max-width:220px;">
-              ${g.videos.filter(v => v.id !== keepDefault).map(v => `<option value="${v.id}">remove ${v.id.slice(0,8)} - ${new Date(v.found_at).toLocaleString()}</option>`).join('')}
-            </select>
-            <button class="btn btn-sm btn-outline-secondary">Merge</button>
-            <span class="meta"></span>
-          </div>
-        `;
-        const mergeBtn = block.querySelector('button');
-        const msg = block.querySelector('.meta:last-child');
-        mergeBtn.onclick = async () => {
-          try {
-            const keep_id = block.querySelector('.keep').value;
-            const remove_id = block.querySelector('.rem').value;
-            if (!keep_id || !remove_id || keep_id === remove_id) {
-              msg.textContent = 'Choose different keep/remove rows.';
-              msg.className = 'err';
-              return;
-            }
-            await api('/videos/duplicates/merge', {
-              method: 'POST',
-              body: JSON.stringify({ keep_id, remove_id }),
-            });
-            msg.textContent = 'Merged';
-            msg.className = 'ok';
-            await loadDuplicates();
-          } catch (e) {
-            msg.textContent = e.message;
-            msg.className = 'err';
-          }
-        };
-        root.appendChild(block);
-      });
+        groups.forEach(g => {
+          const block = document.createElement('div');
+          block.className = 'dupe';
+
+          const header = document.createElement('div');
+          header.innerHTML = `<strong style="font-size:.88rem">${g.title_key}</strong>${g.released_at ? ` <span class="meta">(${g.released_at})</span>` : ''} <span class="meta">${g.count} copies</span>`;
+          block.appendChild(header);
+
+          // Video rows
+          const table = document.createElement('div');
+          table.style.cssText = 'display:flex;flex-direction:column;gap:.35rem;margin:.6rem 0;';
+          let selectedKeep = g.videos[0].id;
+
+          g.videos.forEach((v, i) => {
+            const row = document.createElement('label');
+            row.style.cssText = 'display:flex;align-items:center;gap:.6rem;cursor:pointer;padding:.35rem .5rem;border-radius:6px;border:1px solid var(--border);font-size:.8rem;';
+            row.innerHTML = `
+              <input type="radio" name="keep-${g.title_key.replace(/\W/g,'')}" value="${v.id}" ${i===0?'checked':''} style="accent-color:var(--brand);flex-shrink:0">
+              ${v.thumb ? `<img src="/api/thumb?url=${encodeURIComponent(v.thumb)}" style="width:56px;height:36px;object-fit:cover;border-radius:4px;flex-shrink:0" onerror="this.style.display='none'">` : ''}
+              <div style="min-width:0">
+                <div style="color:var(--muted);font-size:.72rem;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${shortUrl(v.url)}</div>
+                <div style="color:var(--muted);font-size:.7rem">found ${new Date(v.found_at).toLocaleDateString()}</div>
+              </div>
+              ${i===0 ? '<span style="margin-left:auto;font-size:.7rem;color:var(--brand);font-weight:700">oldest</span>' : ''}
+            `;
+            row.querySelector('input').addEventListener('change', e => { if (e.target.checked) selectedKeep = v.id; });
+            table.appendChild(row);
+          });
+          block.appendChild(table);
+
+          // Actions
+          const actions = document.createElement('div');
+          actions.className = 'dupe-actions';
+          const msg = document.createElement('span');
+          msg.className = 'meta';
+
+          const mergeBtn = document.createElement('button');
+          mergeBtn.className = 'btn btn-sm btn-outline-secondary';
+          mergeBtn.innerHTML = '<i class="bi bi-intersect me-1"></i>Merge';
+          mergeBtn.onclick = async () => {
+            const removeIds = g.videos.filter(v => v.id !== selectedKeep).map(v => v.id);
+            try {
+              for (const remove_id of removeIds) {
+                await api('/videos/duplicates/merge', { method: 'POST', body: JSON.stringify({ keep_id: selectedKeep, remove_id }) });
+              }
+              block.remove();
+              if (!document.querySelector('.dupe')) root.innerHTML = '<div class="meta">No duplicate candidates found.</div>';
+            } catch (e) { msg.textContent = e.message; }
+          };
+
+          const dismissBtn = document.createElement('button');
+          dismissBtn.className = 'btn btn-sm btn-outline-secondary';
+          dismissBtn.innerHTML = '<i class="bi bi-eye-slash me-1"></i>Dismiss';
+          dismissBtn.title = 'Ignore all but the oldest copy';
+          dismissBtn.onclick = async () => {
+            const removeIds = g.videos.filter(v => v.id !== g.videos[0].id).map(v => v.id);
+            try {
+              await api('/videos/bulk', { method: 'POST', body: JSON.stringify({ video_ids: removeIds, action: 'ignore' }) });
+              block.remove();
+              if (!document.querySelector('.dupe')) root.innerHTML = '<div class="meta">No duplicate candidates found.</div>';
+            } catch (e) { msg.textContent = e.message; }
+          };
+
+          actions.appendChild(mergeBtn);
+          actions.appendChild(dismissBtn);
+          actions.appendChild(msg);
+          block.appendChild(actions);
+          root.appendChild(block);
+        });
+      } catch (e) {
+        root.innerHTML = `<p class="err">Failed to load: ${e.message}</p>`;
+      }
     }
+
+    document.getElementById('btn-dupe-refresh').onclick = () => loadDuplicates();
+
+    document.getElementById('btn-merge-all').onclick = async () => {
+      if (!confirm('Auto-merge all duplicate groups? Oldest copy of each is kept.')) return;
+      try {
+        const r = await api('/videos/duplicates/merge-all', { method: 'POST' });
+        showToast(`Merged ${r.merged} duplicate(s)`, 'success');
+        await loadDuplicates();
+      } catch (e) { showToast(e.message, 'danger'); }
+    };
 
     document.getElementById('btn-toggle-autoscan').onclick = async () => {
       const st = await api('/scan/automation');

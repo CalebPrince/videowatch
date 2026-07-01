@@ -2424,7 +2424,7 @@ def list_duplicate_candidates(limit: int = 50):
             "SELECT site_id, LOWER(TRIM(title)) as title_key, COALESCE(released_at,'') as rel_key, "
             "COUNT(*) as count "
             "FROM videos "
-            "WHERE title IS NOT NULL AND TRIM(title) != '' "
+            "WHERE title IS NOT NULL AND TRIM(title) != '' AND is_ignored=0 "
             "GROUP BY site_id, title_key, rel_key HAVING COUNT(*) > 1 "
             "ORDER BY count DESC LIMIT ?",
             (limit,),
@@ -2433,11 +2433,14 @@ def list_duplicate_candidates(limit: int = 50):
         result = []
         for g in rows:
             vids = [dict(v) for v in db.execute(
-                "SELECT id, site_id, title, url, found_at, released_at, is_new "
+                "SELECT id, site_id, title, url, thumb, found_at, released_at, is_new "
                 "FROM videos WHERE site_id=? AND LOWER(TRIM(title))=? AND COALESCE(released_at,'')=? "
-                "ORDER BY found_at DESC",
+                "AND is_ignored=0 "
+                "ORDER BY found_at ASC",
                 (g["site_id"], g["title_key"], g["rel_key"]),
             ).fetchall()]
+            if len(vids) < 2:
+                continue
             result.append({
                 "site_id": g["site_id"],
                 "title_key": g["title_key"],
@@ -2446,6 +2449,46 @@ def list_duplicate_candidates(limit: int = 50):
                 "videos": vids,
             })
     return result
+
+
+@router.post("/api/videos/duplicates/merge-all")
+def merge_all_duplicates(request: Request):
+    """Auto-merge all duplicate groups: keep oldest, remove newer copies."""
+    require_admin(request)
+    merged = 0
+    with get_db() as db:
+        rows = [dict(r) for r in db.execute(
+            "SELECT site_id, LOWER(TRIM(title)) as title_key, COALESCE(released_at,'') as rel_key "
+            "FROM videos WHERE title IS NOT NULL AND TRIM(title) != '' AND is_ignored=0 "
+            "GROUP BY site_id, title_key, rel_key HAVING COUNT(*) > 1"
+        ).fetchall()]
+        for g in rows:
+            vids = [dict(v) for v in db.execute(
+                "SELECT id, thumb, embed_url, cast_names, duration, is_favorite, is_archived, is_ignored "
+                "FROM videos WHERE site_id=? AND LOWER(TRIM(title))=? AND COALESCE(released_at,'')=? "
+                "AND is_ignored=0 ORDER BY found_at ASC",
+                (g["site_id"], g["title_key"], g["rel_key"]),
+            ).fetchall()]
+            if len(vids) < 2:
+                continue
+            keep = vids[0]
+            for rem in vids[1:]:
+                with write_lock:
+                    with get_db() as wdb:
+                        wdb.execute(
+                            "UPDATE videos SET "
+                            "thumb=COALESCE(thumb,?), embed_url=COALESCE(embed_url,?), "
+                            "cast_names=COALESCE(cast_names,?), duration=COALESCE(duration,?), "
+                            "is_favorite=MAX(is_favorite,?), is_archived=MIN(is_archived,?), "
+                            "is_ignored=MIN(is_ignored,?) WHERE id=?",
+                            (rem["thumb"], rem["embed_url"], rem["cast_names"], rem["duration"],
+                             rem["is_favorite"], rem["is_archived"], rem["is_ignored"], keep["id"]),
+                        )
+                        _delete_thumb(rem.get("thumb"))
+                        wdb.execute("DELETE FROM videos WHERE id=?", (rem["id"],))
+                        wdb.commit()
+                merged += 1
+    return {"ok": True, "merged": merged}
 
 
 @router.post("/api/videos/duplicates/merge")
