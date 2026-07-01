@@ -331,11 +331,29 @@
       <section id="account" class="cardx pane hidden">
         <h6><i class="bi bi-person-circle me-2" style="color:var(--brand)"></i>My Account</h6>
 
-        <div class="mb-4">
-          <div class="meta mb-1">Signed in as</div>
+        <div class="mb-3">
+          <div class="meta mb-1" style="font-size:.78rem;">Signed in as</div>
           <div id="account-username" style="font-weight:700;font-size:1rem;"></div>
           <div id="account-email" class="meta" style="font-size:.82rem;"></div>
-          <div id="account-plan" class="meta" style="font-size:.82rem;margin-top:.2rem;"></div>
+        </div>
+
+        <!-- Plan card -->
+        <div id="account-plan-card" style="border:1.5px solid var(--border);border-radius:12px;padding:1rem 1.25rem;margin-bottom:1.25rem;">
+          <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:.5rem;margin-bottom:.75rem;">
+            <div>
+              <div style="font-size:.72rem;font-weight:600;color:var(--text-muted);text-transform:uppercase;letter-spacing:.05em;">Current plan</div>
+              <div id="account-plan-badge" style="margin-top:.2rem;"></div>
+            </div>
+            <div id="account-plan-upgrade" style="display:none;">
+              <a href="#pricing" style="font-size:.78rem;font-weight:600;color:var(--brand);text-decoration:none;border:1px solid var(--brand);border-radius:6px;padding:.25rem .65rem;">
+                <i class="bi bi-arrow-up-circle me-1"></i>Upgrade
+              </a>
+            </div>
+          </div>
+          <div id="account-plan-limits" style="display:grid;grid-template-columns:1fr 1fr;gap:.5rem;font-size:.8rem;"></div>
+          <div id="account-plan-billing" style="margin-top:.75rem;padding-top:.75rem;border-top:1px solid var(--border);font-size:.78rem;color:var(--text-muted);">
+            <i class="bi bi-stripe me-1" style="color:#635bff;"></i>Billing managed via Stripe — <span id="account-sub-status">not connected yet</span>
+          </div>
         </div>
 
         <hr style="border-color:var(--border);">
@@ -1068,13 +1086,67 @@
     };
 
     // ── My Account ────────────────────────────────────────────────────────────
+    const _PLAN_META = {
+      free:      { label: 'Free',      color: '#64748b', sites: 3,    videos: 200,  interval: '6 hours min' },
+      pro:       { label: 'Pro',       color: '#0f766e', sites: 25,   videos: 5000, interval: '5 min min'   },
+      unlimited: { label: 'Unlimited', color: '#7c3aed', sites: '∞',  videos: '∞',  interval: '5 min min'   },
+    };
+
     async function loadAccount() {
       try {
-        const st = await api('/auth/status');
+        const [st, row, sitesRes, videosRes] = await Promise.all([
+          api('/auth/status'),
+          api('/user/notifications'),
+          api('/sites').catch(() => ({ sites: [] })),
+          api('/videos?per_page=1').catch(() => ({ total: 0 })),
+        ]);
+
         document.getElementById('account-username').textContent = st.user || '—';
-        const row = await api('/user/notifications');
-        document.getElementById('account-email').textContent = row.email ? `${row.email}${row.email_verified ? ' ✓' : ' (unverified)'}` : 'No email set';
-        document.getElementById('account-plan').textContent = `Plan: ${(row.plan || 'free').charAt(0).toUpperCase() + (row.plan || 'free').slice(1)}`;
+        document.getElementById('account-email').textContent = row.email
+          ? `${row.email}${row.email_verified ? ' ✓' : ' (unverified)'}`
+          : 'No email set';
+
+        const plan = (row.plan || 'free').toLowerCase();
+        const meta = _PLAN_META[plan] || _PLAN_META.free;
+
+        // Badge
+        document.getElementById('account-plan-badge').innerHTML =
+          `<span style="display:inline-block;padding:.2rem .75rem;border-radius:999px;font-size:.82rem;font-weight:700;
+            background:${meta.color}22;color:${meta.color};border:1px solid ${meta.color}44;">${meta.label}</span>`;
+
+        // Upgrade prompt for free users
+        if (plan === 'free') document.getElementById('account-plan-upgrade').style.display = '';
+
+        // Usage vs limits
+        const siteCount  = (sitesRes.sites || sitesRes || []).length;
+        const videoCount = videosRes.total || 0;
+        const sitesMax   = typeof meta.sites  === 'number' ? meta.sites  : null;
+        const videosMax  = typeof meta.videos === 'number' ? meta.videos : null;
+
+        const limitBar = (used, max) => {
+          if (max === null) return `<div style="font-size:.72rem;color:#16a34a;font-weight:600;">Unlimited</div>`;
+          const pct = Math.min(100, Math.round((used / max) * 100));
+          const col = pct >= 90 ? '#dc2626' : pct >= 70 ? '#d97706' : '#0f766e';
+          return `<div style="font-size:.72rem;color:var(--text-muted);margin-bottom:.2rem;">${used} / ${max} (${pct}%)</div>
+            <div style="height:5px;background:var(--border);border-radius:3px;overflow:hidden;">
+              <div style="height:100%;width:${pct}%;background:${col};border-radius:3px;transition:width .4s;"></div>
+            </div>`;
+        };
+
+        document.getElementById('account-plan-limits').innerHTML = `
+          <div>
+            <div style="font-weight:600;margin-bottom:.25rem;">Sites</div>
+            ${limitBar(siteCount, sitesMax)}
+          </div>
+          <div>
+            <div style="font-weight:600;margin-bottom:.25rem;">Videos</div>
+            ${limitBar(videoCount, videosMax)}
+          </div>
+          <div style="grid-column:1/-1;margin-top:.25rem;">
+            <span style="font-weight:600;">Scan interval:</span>
+            <span style="color:var(--text-muted);"> ${meta.interval}</span>
+          </div>`;
+
       } catch (e) { /* non-fatal */ }
     }
 
