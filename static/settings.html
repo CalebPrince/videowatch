@@ -137,10 +137,49 @@
     .hidden { display: none !important; }
     .ok { color: #047857; font-size: .78rem; }
     .err { color: #b91c1c; font-size: .78rem; }
+    /* ── Mobile nav toggle ── */
+    #nav-toggle {
+      display: none;
+      position: fixed;
+      top: .7rem; left: .7rem;
+      z-index: 1100;
+      background: #0d1b2a;
+      border: none;
+      color: #fff;
+      border-radius: 8px;
+      padding: .4rem .6rem;
+      font-size: 1.1rem;
+      cursor: pointer;
+      line-height: 1;
+    }
     @media (max-width: 980px) {
+      #nav-toggle { display: block; }
       .layout { grid-template-columns: 1fr; }
-      .navpane { position: static; height: auto; }
+      .navpane {
+        position: fixed;
+        top: 0; left: -280px;
+        width: 260px;
+        height: 100vh;
+        z-index: 1050;
+        transition: left .22s ease;
+        overflow-y: auto;
+      }
+      .navpane.open { left: 0; }
+      .nav-overlay {
+        display: none;
+        position: fixed; inset: 0;
+        background: rgba(0,0,0,.45);
+        z-index: 1040;
+      }
+      .nav-overlay.open { display: block; }
+      .main { padding: 3.5rem .75rem 2rem; }
+      .site-controls { grid-template-columns: 1fr 1fr; }
+      .top { flex-direction: column; align-items: flex-start; }
+    }
+    @media (max-width: 480px) {
       .site-controls { grid-template-columns: 1fr; }
+      .cardx { padding: .75rem .75rem; border-radius: 10px; }
+      .users-table { font-size: .76rem; }
     }
 
     /* ── Dark mode ── */
@@ -254,6 +293,8 @@
   </style>
 </head>
 <body>
+  <button id="nav-toggle" aria-label="Open menu"><i class="bi bi-list"></i></button>
+  <div class="nav-overlay" id="nav-overlay"></div>
   <div class="layout">
     <aside class="navpane">
       <div class="d-flex align-items-center justify-content-between mb-2" style="padding:0 .5rem;">
@@ -798,6 +839,21 @@
   </div>
 
   <script>
+    // ── Mobile nav ────────────────────────────────────────────────────────────
+    (function() {
+      const toggle = document.getElementById('nav-toggle');
+      const nav = document.querySelector('.navpane');
+      const overlay = document.getElementById('nav-overlay');
+      function openNav()  { nav.classList.add('open'); overlay.classList.add('open'); }
+      function closeNav() { nav.classList.remove('open'); overlay.classList.remove('open'); }
+      toggle?.addEventListener('click', () => nav.classList.contains('open') ? closeNav() : openNav());
+      overlay?.addEventListener('click', closeNav);
+      // Close nav when a pane button is tapped on mobile
+      document.querySelectorAll('.navbtn').forEach(btn => btn.addEventListener('click', () => {
+        if (window.innerWidth <= 980) closeNav();
+      }));
+    })();
+
     const API = `${window.location.origin}/api`;
 
     async function api(path, opts = {}) {

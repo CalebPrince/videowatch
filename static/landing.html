@@ -420,6 +420,23 @@
     /* ── NAV SCROLL SHADOW ── */
     nav.scrolled { box-shadow: 0 4px 24px rgba(0,0,0,.1); }
     [data-theme="dark"] nav.scrolled { box-shadow: 0 4px 24px rgba(0,0,0,.4); }
+
+    /* ── MOBILE ── */
+    @media (max-width: 600px) {
+      nav { padding: .7rem 1rem; }
+      .nav-actions .btn-nav-login:not(:last-child) { display: none; } /* hide Sign In, keep Get Started */
+      .hero { padding: 5rem 1rem 3rem; }
+      .hero-content h1 { font-size: clamp(2rem, 9vw, 3rem); }
+      .hero-content p { font-size: .95rem; }
+      .hero-cta { flex-direction: column; align-items: stretch; gap: .75rem; }
+      .hero-cta a, .hero-cta button { width: 100%; text-align: center; }
+      .features-section, .plans-section, .platforms-section { padding: 3rem 1rem; }
+      .features-grid { grid-template-columns: 1fr; }
+      .plans-grid { grid-template-columns: 1fr; }
+      .step { flex-direction: column; gap: .75rem; }
+      .cta-banner { border-radius: 16px; padding: 2rem 1.25rem; }
+      .cta-banner h2 { font-size: 1.5rem; }
+    }
   </style>
 </head>
 <body>
