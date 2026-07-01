@@ -1680,19 +1680,7 @@ function normalizeVideoUrl(rawUrl) {
 }
 
 function normalizeNavigablePageUrl(rawUrl) {
-  const url = normalizeVideoUrl(rawUrl);
-  if (!url) return null;
-  try {
-    const u = new URL(url);
-    const path = u.pathname || '/';
-    const hasFileExt = /\.[a-z0-9]{2,6}$/i.test(path);
-    if (path !== '/' && !path.endsWith('/') && !u.search && !u.hash && !hasFileExt) {
-      u.pathname = `${path}/`;
-    }
-    return u.href;
-  } catch (_) {
-    return url;
-  }
+  return normalizeVideoUrl(rawUrl);
 }
 
 function openVideoInNewTab(video) {
