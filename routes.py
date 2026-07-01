@@ -1550,7 +1550,8 @@ def list_videos(request: Request,
                 favorites_only: bool = False,
                 unwatched_only: bool = False,
                 archived_only: bool = False,
-                ignored_only: bool = False):
+                ignored_only: bool = False,
+                tag: str = ""):
     offset = (page - 1) * per_page
     with get_db() as db:
         filters = []
@@ -1594,6 +1595,11 @@ def list_videos(request: Request,
             filters.append("COALESCE(videos.is_archived, 0)=1")
         if ignored_only:
             filters.append("COALESCE(videos.is_ignored, 0)=1")
+        if tag:
+            filters.append(
+                "EXISTS (SELECT 1 FROM video_tags vt WHERE vt.video_id=videos.id AND vt.tag=? AND vt.owner=?)"
+            )
+            params.extend([tag.strip().lower(), current_user(request) or ""])
 
         where = ("WHERE " + " AND ".join(filters)) if filters else ""
         order = """ORDER BY SUBSTR(COALESCE(videos.released_at, videos.found_at), 1, 19) DESC"""
@@ -1604,9 +1610,24 @@ def list_videos(request: Request,
         rows = db.execute(
             f"SELECT videos.* FROM videos LEFT JOIN sites ON videos.site_id = sites.id {where} {order} LIMIT ? OFFSET ?",
             params + [per_page, offset]).fetchall()
+        owner = current_user(request) or ""
+        video_ids = [r["id"] for r in rows]
+        tags_map: dict[str, list[str]] = {}
+        if video_ids:
+            placeholders = ",".join("?" * len(video_ids))
+            tag_rows = db.execute(
+                f"SELECT video_id, tag FROM video_tags WHERE video_id IN ({placeholders}) AND owner=? ORDER BY tag",
+                video_ids + [owner],
+            ).fetchall()
+            for tr in tag_rows:
+                tags_map.setdefault(tr["video_id"], []).append(tr["tag"])
+
+    videos_out = [dict(r) for r in rows]
+    for v in videos_out:
+        v["tags"] = tags_map.get(v["id"], [])
 
     return {
-        "videos":      [dict(r) for r in rows],
+        "videos":      videos_out,
         "total":       total,
         "page":        page,
         "per_page":    per_page,
@@ -1990,6 +2011,66 @@ def update_video_state(video_id: str, body: VideoStatePatch):
             set_clause = ", ".join(f"{k}=?" for k in updates)
             db.execute(f"UPDATE videos SET {set_clause} WHERE id=?", (*updates.values(), video_id))
             db.commit()
+    return {"ok": True}
+
+
+@router.get("/api/tags")
+def list_tags(request: Request):
+    """Return all unique tags for the current user."""
+    if not is_authenticated(request):
+        raise HTTPException(401)
+    owner = current_user(request)
+    with get_db() as db:
+        rows = db.execute(
+            "SELECT tag, COUNT(*) as count FROM video_tags WHERE owner=? GROUP BY tag ORDER BY tag",
+            (owner,),
+        ).fetchall()
+    return [{"tag": r["tag"], "count": r["count"]} for r in rows]
+
+
+@router.get("/api/videos/{video_id}/tags")
+def get_video_tags(video_id: str, request: Request):
+    if not is_authenticated(request):
+        raise HTTPException(401)
+    owner = current_user(request)
+    with get_db() as db:
+        rows = db.execute(
+            "SELECT tag FROM video_tags WHERE video_id=? AND owner=? ORDER BY tag",
+            (video_id, owner),
+        ).fetchall()
+    return [r["tag"] for r in rows]
+
+
+@router.post("/api/videos/{video_id}/tags")
+def add_video_tag(video_id: str, request: Request, body: dict):
+    if not is_authenticated(request):
+        raise HTTPException(401)
+    tag = (body.get("tag") or "").strip().lower()[:40]
+    if not tag:
+        raise HTTPException(400, "Tag cannot be empty")
+    owner = current_user(request)
+    with get_db() as db:
+        if not db.execute("SELECT 1 FROM videos WHERE id=?", (video_id,)).fetchone():
+            raise HTTPException(404, "Video not found")
+        db.execute(
+            "INSERT OR IGNORE INTO video_tags (video_id, tag, owner) VALUES (?,?,?)",
+            (video_id, tag, owner),
+        )
+        db.commit()
+    return {"ok": True, "tag": tag}
+
+
+@router.delete("/api/videos/{video_id}/tags/{tag}")
+def remove_video_tag(video_id: str, tag: str, request: Request):
+    if not is_authenticated(request):
+        raise HTTPException(401)
+    owner = current_user(request)
+    with get_db() as db:
+        db.execute(
+            "DELETE FROM video_tags WHERE video_id=? AND tag=? AND owner=?",
+            (video_id, tag, owner),
+        )
+        db.commit()
     return {"ok": True}
 
 

@@ -226,6 +226,15 @@ def init_db():
             add_column_if_missing(db, "users", "onboarding_done", "INTEGER DEFAULT 0")
             add_column_if_missing(db, "users", "notify_new_videos", "INTEGER DEFAULT 0")
             db.execute("""
+                CREATE TABLE IF NOT EXISTS video_tags (
+                    video_id TEXT NOT NULL,
+                    tag      TEXT NOT NULL,
+                    owner    TEXT NOT NULL,
+                    PRIMARY KEY (video_id, tag, owner)
+                )
+            """)
+            db.execute("CREATE INDEX IF NOT EXISTS idx_video_tags_owner ON video_tags(owner)")
+            db.execute("""
                 CREATE TABLE IF NOT EXISTS email_verifications (
                     token       TEXT PRIMARY KEY,
                     username    TEXT NOT NULL,

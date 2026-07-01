@@ -309,6 +309,36 @@
     .v-meta { font-size:.73rem; color:var(--muted); display:flex; align-items:center; gap:.4rem; flex-wrap:wrap; }
     .v-meta a { color:var(--brand-strong); text-decoration:none; }
     .v-meta a:hover { text-decoration:underline; }
+    /* ── Tag chips ── */
+    .tag-chip {
+      display: inline-flex; align-items: center; gap: 3px;
+      background: rgba(15,118,110,.1); color: var(--brand);
+      border-radius: 999px; padding: 1px 7px; font-size: .68rem; font-weight: 600;
+      cursor: default; white-space: nowrap;
+    }
+    .tag-chip .tag-rm {
+      background: none; border: none; padding: 0; line-height: 1;
+      color: inherit; cursor: pointer; font-size: .75rem; opacity: .6;
+    }
+    .tag-chip .tag-rm:hover { opacity: 1; }
+    .tag-chips-wrap { display: flex; flex-wrap: wrap; gap: 3px; margin-top: .3rem; min-height: 0; }
+    /* Tag popover */
+    .tag-popover {
+      position: absolute; z-index: 200; background: var(--card-bg);
+      border: 1px solid var(--border); border-radius: 10px;
+      box-shadow: 0 8px 24px rgba(15,23,42,.18); padding: .6rem;
+      width: 220px;
+    }
+    .tag-popover input {
+      width: 100%; border: 1px solid var(--border); border-radius: 6px;
+      padding: .3rem .5rem; font-size: .82rem; background: var(--card-bg); color: var(--ink);
+      outline: none;
+    }
+    .tag-popover input:focus { border-color: var(--brand); }
+    .tag-popover-list { display: flex; flex-wrap: wrap; gap: 4px; margin-top: .4rem; }
+    [data-theme="dark"] .tag-chip { background: rgba(15,118,110,.2); }
+    [data-theme="dark"] .tag-popover input { background: #1e293b; color: #e2e8f0; border-color: #334155; }
+
     .v-meta .btn-icon {
       color: #475569;
       padding: 2px 5px;
@@ -774,6 +804,9 @@
       </select>
       <select id="platform-filter" aria-label="Filter by platform">
         <option value="">All types</option>
+      </select>
+      <select id="tag-filter" aria-label="Filter by tag">
+        <option value="">All tags</option>
       </select>
     </div>
     </div>
@@ -1331,6 +1364,7 @@ const PER_PAGE    = 24;
 let searchTerm    = '';
 let platformFilt  = '';
 let statusFilt    = '';
+let tagFilt       = '';
 let releasedAfter = '';
 let durationMin   = '';
 let searchTimer   = null;
@@ -1789,6 +1823,106 @@ function addLog(msg, type = '') {
   el.scrollTop = el.scrollHeight;
 }
 
+function renderTagChips(wrap, videoId, tags) {
+  wrap.innerHTML = '';
+  tags.forEach(tag => {
+    const chip = document.createElement('span');
+    chip.className = 'tag-chip';
+    const rm = document.createElement('button');
+    rm.className = 'tag-rm';
+    rm.innerHTML = '&times;';
+    rm.title = `Remove tag "${tag}"`;
+    rm.onclick = async (e) => {
+      e.stopPropagation();
+      await api(`/videos/${encodeURIComponent(videoId)}/tags/${encodeURIComponent(tag)}`, { method: 'DELETE' });
+      tags = tags.filter(t => t !== tag);
+      renderTagChips(wrap, videoId, tags);
+      renderAll(); // refresh tag filter counts
+    };
+    chip.textContent = tag;
+    chip.appendChild(rm);
+    wrap.appendChild(chip);
+  });
+}
+
+let _tagPopover = null;
+function openTagPopover(anchor, v) {
+  // Close existing popover
+  if (_tagPopover) { _tagPopover.remove(); _tagPopover = null; }
+
+  const pop = document.createElement('div');
+  pop.className = 'tag-popover';
+  _tagPopover = pop;
+
+  const existingTags = [...(v.tags || [])];
+
+  const inp = document.createElement('input');
+  inp.type = 'text';
+  inp.placeholder = 'Add tag and press Enter…';
+  inp.maxLength = 40;
+  pop.appendChild(inp);
+
+  const list = document.createElement('div');
+  list.className = 'tag-popover-list';
+  pop.appendChild(list);
+
+  function refreshList(tags) {
+    list.innerHTML = '';
+    tags.forEach(tag => {
+      const chip = document.createElement('span');
+      chip.className = 'tag-chip';
+      const rm = document.createElement('button');
+      rm.className = 'tag-rm';
+      rm.innerHTML = '&times;';
+      rm.onclick = async (e) => {
+        e.stopPropagation();
+        await api(`/videos/${encodeURIComponent(v.id)}/tags/${encodeURIComponent(tag)}`, { method: 'DELETE' });
+        const i = existingTags.indexOf(tag);
+        if (i > -1) existingTags.splice(i, 1);
+        v.tags = [...existingTags];
+        refreshList(existingTags);
+        const chipsWrap = document.getElementById(`tags-${v.id}`);
+        if (chipsWrap) renderTagChips(chipsWrap, v.id, existingTags);
+        renderAll();
+      };
+      chip.textContent = tag;
+      chip.appendChild(rm);
+      list.appendChild(chip);
+    });
+  }
+  refreshList(existingTags);
+
+  inp.addEventListener('keydown', async (e) => {
+    if (e.key !== 'Enter') return;
+    const tag = inp.value.trim().toLowerCase();
+    if (!tag || existingTags.includes(tag)) { inp.value = ''; return; }
+    try {
+      await api(`/videos/${encodeURIComponent(v.id)}/tags`, { method: 'POST', body: JSON.stringify({ tag }) });
+      existingTags.push(tag);
+      v.tags = [...existingTags];
+      refreshList(existingTags);
+      const chipsWrap = document.getElementById(`tags-${v.id}`);
+      if (chipsWrap) renderTagChips(chipsWrap, v.id, existingTags);
+      inp.value = '';
+      renderAll();
+    } catch (err) { inp.style.borderColor = 'red'; setTimeout(() => inp.style.borderColor = '', 1000); }
+  });
+
+  // Position below anchor
+  document.body.appendChild(pop);
+  const rect = anchor.getBoundingClientRect();
+  pop.style.top  = `${rect.bottom + window.scrollY + 4}px`;
+  pop.style.left = `${Math.min(rect.left + window.scrollX, window.innerWidth - 230)}px`;
+  inp.focus();
+
+  // Close on outside click
+  setTimeout(() => {
+    document.addEventListener('click', function handler(e) {
+      if (!pop.contains(e.target)) { pop.remove(); _tagPopover = null; document.removeEventListener('click', handler); }
+    });
+  }, 0);
+}
+
 async function patchVideoState(videoId, patch) {
   await api(`/videos/${encodeURIComponent(videoId)}/state`, {
     method: 'PATCH',
@@ -2125,6 +2259,7 @@ async function renderVideos() {
   if (releasedAfter) params.set('released_after', releasedAfter);
   if (durationMin) params.set('duration_min', durationMin);
   if (platformFilt) params.set('platform', platformFilt);
+  if (tagFilt) params.set('tag', tagFilt);
   if (statusFilt === 'favorites') params.set('favorites_only', 'true');
   if (statusFilt === 'archived') { params.set('include_archived', 'true'); params.set('archived_only', 'true'); }
   if (statusFilt === 'ignored') { params.set('include_ignored', 'true'); params.set('ignored_only', 'true'); }
@@ -2341,6 +2476,21 @@ async function renderVideos() {
     };
     meta.appendChild(ignBtn);
 
+    // Tag button
+    const tagBtn = document.createElement('button');
+    tagBtn.className = 'btn-icon';
+    tagBtn.title = 'Tags';
+    tagBtn.innerHTML = '<i class="bi bi-tag"></i>';
+    tagBtn.onclick = (e) => { e.preventDefault(); e.stopPropagation(); openTagPopover(tagBtn, v); };
+    meta.appendChild(tagBtn);
+
+    // Tag chips
+    const chipsWrap = document.createElement('div');
+    chipsWrap.className = 'tag-chips-wrap';
+    chipsWrap.id = `tags-${v.id}`;
+    renderTagChips(chipsWrap, v.id, v.tags || []);
+    body.appendChild(chipsWrap);
+
     body.appendChild(meta);
 
     // Title row: checkbox + title
@@ -2463,6 +2613,23 @@ async function renderStats() {
     platSel.appendChild(o);
   });
   platSel.value = curPlat;
+
+  // Populate tag filter
+  try {
+    const tags = await api('/tags');
+    const tagSel = document.getElementById('tag-filter');
+    if (tagSel) {
+      const curTag = tagSel.value;
+      tagSel.innerHTML = '<option value="">All tags</option>';
+      tags.forEach(t => {
+        const o = document.createElement('option');
+        o.value = t.tag;
+        o.textContent = `${t.tag} (${t.count})`;
+        tagSel.appendChild(o);
+      });
+      tagSel.value = curTag;
+    }
+  } catch (_) {}
 }
 
 async function renderScanHealth() {
@@ -3089,6 +3256,12 @@ document.getElementById('site-filter').addEventListener('change', e => {
 document.getElementById('platform-filter').addEventListener('change', e => {
   platformFilt = e.target.value;
   currentPage  = 1;
+  renderVideos();
+});
+
+document.getElementById('tag-filter').addEventListener('change', e => {
+  tagFilt     = e.target.value;
+  currentPage = 1;
   renderVideos();
 });
 
