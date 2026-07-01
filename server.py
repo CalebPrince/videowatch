@@ -129,13 +129,9 @@ async def _scheduler():
                     except Exception:
                         due = True
                 if due:
-                    log.info(f"Scheduler: auto‑scanning {site['url']}")
-                    await push_progress(f"AUTO_SCAN|{site['id']}|{site.get('name') or site['url']}")
-                    try:
-                        await scan_site(site, push_progress)
-                    except Exception as e:
-                        log.error(f"Scheduler scan failed for {site['url']}: {e}", exc_info=True)
-                        await push_progress(f"SCHEDULER_ERROR|{site['id']}|{e}")
+                    log.info(f"Scheduler: queuing auto-scan for {site['url']}")
+                    from routes import _enqueue_scan
+                    _enqueue_scan(site)
         except Exception as e:
             log.error(f"Scheduler error: {e}", exc_info=True)
 

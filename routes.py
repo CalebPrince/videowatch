@@ -9,6 +9,8 @@ import hmac
 import secrets
 import re
 import shutil
+import threading
+import queue
 from datetime import datetime, timezone
 from pathlib import Path
 from urllib.parse import urlparse, parse_qs, urlunparse, urljoin
@@ -1733,6 +1735,62 @@ def clear_videos(site_id: str | None = None):
 
 # ── Background Sync Task Managers ─────────────────────────────────────────────
 
+# ── Scan queue (single worker thread) ─────────────────────────────────────────
+_scan_queue: queue.Queue = queue.Queue()
+_scan_queue_lock = threading.Lock()
+_scan_queue_items: list[dict] = []   # shadow list for status queries
+_scan_running: dict | None = None    # currently running job
+
+
+def _scan_worker():
+    global _scan_running
+    while True:
+        job = _scan_queue.get()
+        if job is None:
+            break
+        with _scan_queue_lock:
+            _scan_running = job
+            if job in _scan_queue_items:
+                _scan_queue_items.remove(job)
+        try:
+            _run_scan_one_sync(job["site"])
+        except Exception as e:
+            log.error(f"Scan queue worker error: {e}")
+        finally:
+            with _scan_queue_lock:
+                _scan_running = None
+            _scan_queue.task_done()
+
+
+_scan_worker_thread = threading.Thread(target=_scan_worker, daemon=True, name="scan-worker")
+_scan_worker_thread.start()
+
+
+def _enqueue_scan(site: dict, fresh: bool = False) -> bool:
+    """Add a site to the scan queue. Returns False if already queued/running."""
+    site_id = site.get("id")
+    with _scan_queue_lock:
+        if _scan_running and _scan_running.get("site", {}).get("id") == site_id:
+            return False
+        if any(j.get("site", {}).get("id") == site_id for j in _scan_queue_items):
+            return False
+        job = {"site": site, "fresh": fresh}
+        _scan_queue_items.append(job)
+    _scan_queue.put(job)
+    return True
+
+
+def _enqueue_scan_all(owner: str | None = None):
+    """Enqueue all sites for an owner (or all sites if owner is None)."""
+    with get_db() as db:
+        if owner:
+            sites = [dict(r) for r in db.execute("SELECT * FROM sites WHERE owner=?", (owner,))]
+        else:
+            sites = [dict(r) for r in db.execute("SELECT * FROM sites")]
+    for site in sites:
+        _enqueue_scan(site)
+
+
 def _run_scan_all_sync():
     if sys.platform.startswith("win"):
         try:
@@ -1760,19 +1818,15 @@ def _run_scan_one_sync(site: dict):
         loop.close()
 
 @router.post("/api/scan")
-async def scan_all(background_tasks: BackgroundTasks, request: Request):
-    if is_super_admin(request):
-        background_tasks.add_task(_run_scan_all_sync)
-    else:
-        user = current_user(request) or ""
-        with get_db() as db:
-            owned = [dict(r) for r in db.execute("SELECT * FROM sites WHERE owner=?", (user,))]
-        for site in owned:
-            background_tasks.add_task(_run_scan_one_sync, site)
-    return {"ok": True, "message": "Scan started"}
+async def scan_all(request: Request):
+    user = current_user(request) or ""
+    owner = None if is_super_admin(request) else user
+    _enqueue_scan_all(owner)
+    return {"ok": True, "message": "Scan queued"}
 
 @router.post("/api/scan/fresh")
-async def fresh_scan_all(background_tasks: BackgroundTasks, request: Request):
+async def fresh_scan_all(request: Request):
+    user = current_user(request) or ""
     with write_lock:
         with get_db() as db:
             if is_super_admin(request):
@@ -1780,7 +1834,6 @@ async def fresh_scan_all(background_tasks: BackgroundTasks, request: Request):
                 db.execute("DELETE FROM videos")
                 db.execute("UPDATE sites SET last_scan=NULL")
             else:
-                user = current_user(request) or ""
                 deleted = db.execute(
                     "SELECT COUNT(*) FROM videos WHERE site_id IN (SELECT id FROM sites WHERE owner=?)",
                     (user,),
@@ -1791,26 +1844,37 @@ async def fresh_scan_all(background_tasks: BackgroundTasks, request: Request):
                 )
                 db.execute("UPDATE sites SET last_scan=NULL WHERE owner=?", (user,))
             db.commit()
-    if is_super_admin(request):
-        background_tasks.add_task(_run_scan_all_sync)
-    else:
-        user = current_user(request) or ""
-        with get_db() as db:
-            owned = [dict(r) for r in db.execute("SELECT * FROM sites WHERE owner=?", (user,))]
-        for site in owned:
-            background_tasks.add_task(_run_scan_one_sync, site)
-    return {"ok": True, "message": "Fresh scan started", "deleted": deleted}
+    owner = None if is_super_admin(request) else user
+    _enqueue_scan_all(owner)
+    return {"ok": True, "message": "Fresh scan queued", "deleted": deleted}
 
 @router.post("/api/scan/{site_id}")
-async def scan_one(site_id: str, background_tasks: BackgroundTasks, request: Request):
+async def scan_one(site_id: str, request: Request):
     with get_db() as db:
         site = db.execute("SELECT * FROM sites WHERE id=?", (site_id,)).fetchone()
     if not site:
         raise HTTPException(404, "Site not found")
     if not is_super_admin(request) and site["owner"] != current_user(request):
         raise HTTPException(403, "Not authorised to scan this site")
-    background_tasks.add_task(_run_scan_one_sync, dict(site))
-    return {"ok": True, "message": f"Scanning {site['url']}"}
+    queued = _enqueue_scan(dict(site))
+    msg = f"Queued {site['url']}" if queued else f"{site['url']} is already queued or running"
+    return {"ok": True, "queued": queued, "message": msg}
+
+@router.get("/api/scan/queue")
+def get_scan_queue(request: Request):
+    """Return current queue state."""
+    if not is_authenticated(request):
+        raise HTTPException(401)
+    with _scan_queue_lock:
+        running = None
+        if _scan_running:
+            s = _scan_running.get("site", {})
+            running = {"site_id": s.get("id"), "name": s.get("name") or s.get("url"), "url": s.get("url")}
+        pending = [
+            {"site_id": j["site"].get("id"), "name": j["site"].get("name") or j["site"].get("url"), "url": j["site"].get("url")}
+            for j in _scan_queue_items
+        ]
+    return {"running": running, "pending": pending, "total": len(pending) + (1 if running else 0)}
 
 @router.get("/api/scan/automation")
 def get_scan_automation_status():
