@@ -69,7 +69,7 @@ async def auth_gate(request, call_next):
         "/api/auth/status",
         "/api/health",
     }
-    public_pages = {"/", "/login", "/register", "/verify-email", "/forgot-password", "/reset-password", "/terms", "/static/login.html", "/favicon.ico"}
+    public_pages = {"/", "/login", "/register", "/verify-email", "/forgot-password", "/reset-password", "/terms", "/sitemap.xml", "/robots.txt", "/static/login.html", "/favicon.ico"}
 
     # Expire sessions that have passed their TTL
     expires_at = request.session.get("session_expires_at")
@@ -232,6 +232,32 @@ def reset_password_page():
     if page.exists():
         return FileResponse(str(page))
     raise HTTPException(404, "reset-password.html not found in static/")
+
+
+@app.get("/sitemap.xml")
+def sitemap():
+    from fastapi.responses import Response as FastResponse
+    base = "https://videowatch.duckdns.org"
+    today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+    urls = [
+        (base + "/",        "weekly",  "1.0"),
+        (base + "/register","monthly", "0.8"),
+        (base + "/terms",   "yearly",  "0.3"),
+    ]
+    xml = '<?xml version="1.0" encoding="UTF-8"?>\n'
+    xml += '<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n'
+    for loc, freq, pri in urls:
+        xml += f"  <url><loc>{loc}</loc><lastmod>{today}</lastmod><changefreq>{freq}</changefreq><priority>{pri}</priority></url>\n"
+    xml += "</urlset>"
+    return FastResponse(content=xml, media_type="application/xml")
+
+
+@app.get("/robots.txt")
+def robots():
+    from fastapi.responses import PlainTextResponse
+    return PlainTextResponse(
+        "User-agent: *\nAllow: /\nDisallow: /api/\nSitemap: https://videowatch.duckdns.org/sitemap.xml\n"
+    )
 
 
 @app.get("/terms")
