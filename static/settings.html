@@ -266,6 +266,7 @@
       <button class="navbtn" data-target="health" title="Scan health metrics"><i class="bi bi-activity me-1"></i>Scan Health</button>
       <button class="navbtn" data-target="notifications" title="Webhook notifications"><i class="bi bi-bell me-1"></i>Notifications</button>
       <button class="navbtn" data-target="users" title="User accounts and roles"><i class="bi bi-people me-1"></i>Users and Roles</button>
+      <button class="navbtn" id="navbtn-allsites" data-target="allsites" title="All monitored sites across all users"><i class="bi bi-diagram-3-fill me-1"></i>All Users' Sites</button>
       <button class="navbtn" data-target="duplicates" title="Duplicate video candidates"><i class="bi bi-files me-1"></i>Duplicates</button>
       <button class="navbtn" data-target="maintenance" title="Maintenance actions"><i class="bi bi-tools me-1"></i>Maintenance</button>
     </aside>
@@ -374,6 +375,11 @@
           </table>
           <div id="users-empty" class="meta" style="display:none;padding:.75rem 0;">No users found.</div>
         </div>
+      </section>
+
+      <section id="allsites" class="cardx pane hidden">
+        <h6 class="mb-3"><i class="bi bi-diagram-3-fill me-2" style="color:var(--brand)"></i>All Users' Sites</h6>
+        <div id="allsites-list"></div>
       </section>
 
       <section id="duplicates" class="cardx pane hidden">
@@ -621,6 +627,54 @@
       });
     }
 
+    async function loadAllSites() {
+      const root = document.getElementById('allsites-list');
+      if (!root) return;
+      try {
+        const sites = await api('/admin/sites');
+        if (!sites.length) { root.innerHTML = '<p class="meta">No sites found.</p>'; return; }
+
+        // Group by owner
+        const byOwner = {};
+        for (const s of sites) {
+          const o = s.owner || '(unknown)';
+          if (!byOwner[o]) byOwner[o] = [];
+          byOwner[o].push(s);
+        }
+
+        root.innerHTML = Object.entries(byOwner).map(([owner, list]) => `
+          <div style="margin-bottom:1.5rem">
+            <div style="font-size:.78rem;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:var(--muted);margin-bottom:.5rem">
+              <i class="bi bi-person-fill me-1"></i>${owner}
+            </div>
+            <table style="width:100%;border-collapse:collapse;font-size:.84rem">
+              <thead>
+                <tr style="border-bottom:2px solid var(--border)">
+                  <th style="padding:.4rem .6rem;font-size:.72rem;color:var(--muted);font-weight:700;text-transform:uppercase">Name / Group</th>
+                  <th style="padding:.4rem .6rem;font-size:.72rem;color:var(--muted);font-weight:700;text-transform:uppercase">URL</th>
+                  <th style="padding:.4rem .6rem;font-size:.72rem;color:var(--muted);font-weight:700;text-transform:uppercase;text-align:right">Videos</th>
+                </tr>
+              </thead>
+              <tbody>
+                ${list.map(s => `
+                  <tr style="border-bottom:1px solid var(--border)">
+                    <td style="padding:.5rem .6rem">
+                      <div style="font-weight:600">${s.name || '<span style="color:var(--muted)">—</span>'}</div>
+                      ${s.group_name ? `<div style="font-size:.75rem;color:var(--muted)">${s.group_name}</div>` : ''}
+                    </td>
+                    <td style="padding:.5rem .6rem">
+                      <a href="${s.url}" target="_blank" rel="noopener" style="color:var(--brand);word-break:break-all;font-size:.82rem">${s.url}</a>
+                    </td>
+                    <td style="padding:.5rem .6rem;text-align:right;font-weight:600">${s.total_videos ?? 0}</td>
+                  </tr>`).join('')}
+              </tbody>
+            </table>
+          </div>`).join('');
+      } catch (e) {
+        root.innerHTML = `<p class="err">Failed to load: ${e.message}</p>`;
+      }
+    }
+
     async function loadDuplicates() {
       const root = document.getElementById('dupe-list');
       root.innerHTML = '';
@@ -811,14 +865,16 @@
         document.getElementById('users')?.remove();
       }
 
-      // Duplicates & Maintenance — super_admin only
+      // Duplicates, Maintenance, All Users' Sites — super_admin only
       if (isSuperAdmin) {
-        await loadDuplicates();
+        await Promise.allSettled([loadDuplicates(), loadAllSites()]);
       } else {
         document.querySelector('.navbtn[data-target="duplicates"]')?.remove();
         document.getElementById('duplicates')?.remove();
         document.querySelector('.navbtn[data-target="maintenance"]')?.remove();
         document.getElementById('maintenance')?.remove();
+        document.getElementById('navbtn-allsites')?.remove();
+        document.getElementById('allsites')?.remove();
       }
     })();
   </script>

@@ -1010,16 +1010,28 @@ def is_url_allowed(url: str, allowed_hosts: set[str]) -> bool:
 
 # ── API Endpoints ─────────────────────────────────────────────────────────────
 
+@router.get("/api/admin/sites")
+def admin_list_all_sites(request: Request):
+    """Super-admin view: all sites across all users, grouped by owner."""
+    if not is_super_admin(request):
+        raise HTTPException(403, "Super admin required")
+    with get_db() as db:
+        rows = db.execute(
+            "SELECT s.id, s.url, s.name, s.group_name, s.owner, s.added_at, "
+            "COUNT(v.id) as total_videos "
+            "FROM sites s LEFT JOIN videos v ON v.site_id=s.id "
+            "GROUP BY s.id ORDER BY s.owner, s.added_at DESC"
+        ).fetchall()
+    return [dict(r) for r in rows]
+
+
 @router.get("/api/sites")
 def list_sites(request: Request):
     with get_db() as db:
-        if is_super_admin(request):
-            sites = [dict(r) for r in db.execute("SELECT * FROM sites ORDER BY added_at DESC")]
-        else:
-            user = current_user(request) or ""
-            sites = [dict(r) for r in db.execute(
-                "SELECT * FROM sites WHERE owner=? ORDER BY added_at DESC", (user,)
-            )]
+        user = current_user(request) or ""
+        sites = [dict(r) for r in db.execute(
+            "SELECT * FROM sites WHERE owner=? ORDER BY added_at DESC", (user,)
+        )]
         for s in sites:
             s["new_count"] = db.execute(
                 "SELECT COUNT(*) FROM videos WHERE site_id=? AND is_new=1",
