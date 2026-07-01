@@ -1957,6 +1957,73 @@ function openTagPopover(anchor, v) {
   }, 0);
 }
 
+let _collectionPopover = null;
+async function openCollectionPopover(anchor, v) {
+  if (_collectionPopover) { _collectionPopover.remove(); _collectionPopover = null; }
+
+  const pop = document.createElement('div');
+  pop.className = 'tag-popover';
+  pop.style.cssText = 'width:230px;max-height:280px;overflow-y:auto;';
+  _collectionPopover = pop;
+
+  const hdr = document.createElement('div');
+  hdr.style.cssText = 'font-size:.75rem;font-weight:700;margin-bottom:.5rem;color:var(--muted);';
+  hdr.textContent = 'Collections';
+  pop.appendChild(hdr);
+
+  const loading = document.createElement('div');
+  loading.style.cssText = 'font-size:.78rem;color:var(--muted);';
+  loading.textContent = 'Loading…';
+  pop.appendChild(loading);
+
+  anchor.appendChild(pop);
+
+  // Fetch collections and membership
+  const [cols, membership] = await Promise.all([
+    api('/collections').catch(() => []),
+    api(`/videos/${encodeURIComponent(v.id)}/collections`).catch(() => []),
+  ]);
+  const memberIds = new Set((membership || []).map(c => c.id));
+
+  pop.removeChild(loading);
+
+  if (!cols.length) {
+    const empty = document.createElement('div');
+    empty.style.cssText = 'font-size:.78rem;color:var(--muted);';
+    empty.textContent = 'No collections yet. Create one in Settings.';
+    pop.appendChild(empty);
+  } else {
+    cols.forEach(col => {
+      const row = document.createElement('label');
+      row.style.cssText = 'display:flex;align-items:center;gap:.5rem;padding:.3rem .1rem;font-size:.82rem;cursor:pointer;';
+      const chk = document.createElement('input');
+      chk.type = 'checkbox';
+      chk.checked = memberIds.has(col.id);
+      chk.style.cssText = 'accent-color:var(--brand);cursor:pointer;';
+      chk.onchange = async () => {
+        if (chk.checked) {
+          await api(`/collections/${col.id}/videos`, { method: 'POST', body: JSON.stringify({ video_id: v.id }) });
+        } else {
+          await api(`/collections/${col.id}/videos/${encodeURIComponent(v.id)}`, { method: 'DELETE' });
+        }
+      };
+      row.appendChild(chk);
+      row.appendChild(document.createTextNode(col.name));
+      pop.appendChild(row);
+    });
+  }
+
+  setTimeout(() => {
+    function handler(e) {
+      if (!pop.contains(e.target) && e.target !== anchor) {
+        pop.remove(); _collectionPopover = null;
+        document.removeEventListener('click', handler);
+      }
+    }
+    document.addEventListener('click', handler);
+  }, 0);
+}
+
 let _notePopover = null;
 function openNotePopover(anchor, v) {
   if (_notePopover) { _notePopover.remove(); _notePopover = null; }
@@ -2652,6 +2719,14 @@ async function renderVideos() {
     noteBtn.innerHTML = `<i class="bi ${v.note ? 'bi-sticky-fill' : 'bi-sticky'}"></i>`;
     noteBtn.onclick = (e) => { e.preventDefault(); e.stopPropagation(); openNotePopover(noteBtn, v); };
     meta.appendChild(noteBtn);
+
+    // Collection button
+    const colBtn = document.createElement('button');
+    colBtn.className = 'btn-icon';
+    colBtn.title = 'Add / remove from collection';
+    colBtn.innerHTML = '<i class="bi bi-collection"></i>';
+    colBtn.onclick = (e) => { e.preventDefault(); e.stopPropagation(); openCollectionPopover(colBtn, v); };
+    meta.appendChild(colBtn);
 
     // Tag chips
     const chipsWrap = document.createElement('div');

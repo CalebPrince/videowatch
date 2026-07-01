@@ -3519,6 +3519,20 @@ def admin_delete_roadmap(item_id: str, request: Request):
     return {"ok": True}
 
 
+@router.get("/api/videos/{video_id}/collections")
+def video_collections(video_id: str, request: Request):
+    """Return which collections this video belongs to (for the current user)."""
+    username = _api_auth(request)
+    with get_db() as db:
+        rows = db.execute(
+            """SELECT c.id, c.name FROM collections c
+               JOIN collection_videos cv ON cv.collection_id=c.id
+               WHERE cv.video_id=? AND c.owner=?""",
+            (video_id, username)
+        ).fetchall()
+    return [dict(r) for r in rows]
+
+
 @router.get("/api/collections")
 def list_collections(request: Request):
     username = _api_auth(request)
