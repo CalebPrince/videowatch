@@ -1012,6 +1012,33 @@ def is_url_allowed(url: str, allowed_hosts: set[str]) -> bool:
 
 # ── API Endpoints ─────────────────────────────────────────────────────────────
 
+@router.get("/api/admin/backup")
+def download_backup(request: Request):
+    """Stream a safe SQLite backup to the client (super_admin only)."""
+    if not is_super_admin(request):
+        raise HTTPException(403, "Super admin required")
+    import io, sqlite3 as _sqlite3
+    buf = io.BytesIO()
+    src = _sqlite3.connect(str(DB_PATH))
+    dst = _sqlite3.connect(":memory:")
+    try:
+        src.backup(dst)
+        for line in dst.iterdump():
+            buf.write((line + "\n").encode())
+    finally:
+        src.close()
+        dst.close()
+    buf.seek(0)
+    from datetime import datetime as _dt
+    stamp = _dt.now().strftime("%Y%m%d_%H%M%S")
+    filename = f"videowatch_backup_{stamp}.sql"
+    return Response(
+        content=buf.read(),
+        media_type="application/sql",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
+
+
 @router.get("/api/admin/sites")
 def admin_list_all_sites(request: Request):
     """Super-admin view: all sites across all users, grouped by owner."""
