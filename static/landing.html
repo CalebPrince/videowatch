@@ -296,6 +296,107 @@
     /* ── SCROLL REVEAL ── */
     .reveal { opacity: 0; transform: translateY(24px); transition: opacity .55s ease, transform .55s ease; }
     .reveal.visible { opacity: 1; transform: none; }
+    .reveal-delay-1 { transition-delay: .08s; }
+    .reveal-delay-2 { transition-delay: .16s; }
+    .reveal-delay-3 { transition-delay: .24s; }
+    .reveal-delay-4 { transition-delay: .32s; }
+    .reveal-delay-5 { transition-delay: .40s; }
+    .reveal-delay-6 { transition-delay: .48s; }
+
+    /* ── KEYFRAMES ── */
+    @keyframes float-orb {
+      0%, 100% { transform: translate(0, 0) scale(1); }
+      33%       { transform: translate(30px, -40px) scale(1.05); }
+      66%       { transform: translate(-20px, 20px) scale(.97); }
+    }
+    @keyframes badge-pulse {
+      0%, 100% { box-shadow: 0 0 0 0 rgba(15,118,110,.35); }
+      50%       { box-shadow: 0 0 0 8px rgba(15,118,110,0); }
+    }
+    @keyframes count-up-fade { from { opacity:0; transform: translateY(10px); } to { opacity:1; transform:none; } }
+    @keyframes shimmer {
+      0%   { background-position: -400px 0; }
+      100% { background-position: 400px 0; }
+    }
+    @keyframes btn-pulse {
+      0%, 100% { box-shadow: 0 12px 28px rgba(15,118,110,.3); }
+      50%       { box-shadow: 0 12px 28px rgba(15,118,110,.6); }
+    }
+    @keyframes icon-pop {
+      0%   { transform: scale(1); }
+      40%  { transform: scale(1.22) rotate(-6deg); }
+      70%  { transform: scale(.95) rotate(4deg); }
+      100% { transform: scale(1) rotate(0); }
+    }
+    @keyframes slide-in-up {
+      from { opacity:0; transform: translateY(16px); }
+      to   { opacity:1; transform: none; }
+    }
+
+    /* ── FLOATING ORBS ── */
+    .hero-orb {
+      position: absolute; border-radius: 50%; pointer-events: none; z-index: 0;
+      filter: blur(60px); opacity: .18;
+    }
+    .hero-orb-1 {
+      width: 420px; height: 420px; background: var(--brand);
+      top: -80px; left: -60px;
+      animation: float-orb 14s ease-in-out infinite;
+    }
+    .hero-orb-2 {
+      width: 320px; height: 320px; background: var(--accent);
+      bottom: 0; right: -40px;
+      animation: float-orb 18s ease-in-out infinite reverse;
+    }
+    .hero-orb-3 {
+      width: 220px; height: 220px; background: var(--brand2);
+      top: 40%; left: 55%;
+      animation: float-orb 22s ease-in-out infinite 4s;
+    }
+    [data-theme="dark"] .hero-orb { opacity: .28; }
+
+    /* ── BADGE PULSE ── */
+    .hero-badge { animation: badge-pulse 2.8s ease-in-out infinite; }
+
+    /* ── HERO CTA BUTTON PULSE ── */
+    .btn-primary-hero { animation: btn-pulse 2.5s ease-in-out infinite; }
+    .btn-primary-hero:hover { animation: none; }
+
+    /* ── FEATURE ICON HOVER ── */
+    .feature-card:hover .feature-icon { animation: icon-pop .45s ease forwards; }
+
+    /* ── POPULAR PRICING SHIMMER BORDER ── */
+    .price-card.popular::after {
+      content: '';
+      position: absolute; inset: -2px; border-radius: 22px; z-index: -1;
+      background: linear-gradient(90deg,
+        var(--brand) 0%, var(--brand2) 25%, var(--accent) 50%, var(--brand2) 75%, var(--brand) 100%);
+      background-size: 400px 100%;
+      animation: shimmer 3s linear infinite;
+    }
+    .price-card.popular { overflow: visible; }
+
+    /* ── PLATFORM PILLS STAGGER ── */
+    .platform-pill {
+      animation: slide-in-up .4s ease both;
+    }
+    .platforms-grid .platform-pill:nth-child(1) { animation-delay: .05s; }
+    .platforms-grid .platform-pill:nth-child(2) { animation-delay: .10s; }
+    .platforms-grid .platform-pill:nth-child(3) { animation-delay: .15s; }
+    .platforms-grid .platform-pill:nth-child(4) { animation-delay: .20s; }
+    .platforms-grid .platform-pill:nth-child(5) { animation-delay: .25s; }
+    .platforms-grid .platform-pill:nth-child(6) { animation-delay: .30s; }
+    .platforms-grid .platform-pill { opacity: 0; animation-fill-mode: forwards; }
+    .platforms-grid.visible .platform-pill { animation-play-state: running; }
+    .platforms-grid:not(.visible) .platform-pill { animation-play-state: paused; }
+
+    /* ── STEP NUMBER HOVER ── */
+    .step-num { transition: transform .2s, box-shadow .2s; }
+    .step:hover .step-num { transform: scale(1.15); box-shadow: 0 6px 18px rgba(15,118,110,.4); }
+
+    /* ── NAV SCROLL SHADOW ── */
+    nav.scrolled { box-shadow: 0 4px 24px rgba(0,0,0,.1); }
+    [data-theme="dark"] nav.scrolled { box-shadow: 0 4px 24px rgba(0,0,0,.4); }
   </style>
 </head>
 <body>
@@ -317,6 +418,9 @@
 <!-- HERO -->
 <section class="hero">
   <div class="hero-glow"></div>
+  <div class="hero-orb hero-orb-1"></div>
+  <div class="hero-orb hero-orb-2"></div>
+  <div class="hero-orb hero-orb-3"></div>
   <div class="hero-content">
     <div class="hero-badge"><i class="bi bi-stars"></i> Automated Video Monitoring</div>
     <h1>Never Miss a<br><span>New Video Again</span></h1>
@@ -330,10 +434,10 @@
 
 <!-- STATS -->
 <div class="stats-bar reveal">
-  <div class="stat-item"><div class="stat-num">∞</div><div class="stat-label">Sites monitored</div></div>
-  <div class="stat-item"><div class="stat-num">Auto</div><div class="stat-label">Background scanning</div></div>
-  <div class="stat-item"><div class="stat-num">6+</div><div class="stat-label">Platforms supported</div></div>
-  <div class="stat-item"><div class="stat-num">instant</div><div class="stat-label">Webhook alerts</div></div>
+  <div class="stat-item"><div class="stat-num" data-count="100" data-suffix="%">0%</div><div class="stat-label">Automated scanning</div></div>
+  <div class="stat-item"><div class="stat-num" data-count="6" data-suffix="+">0+</div><div class="stat-label">Platforms supported</div></div>
+  <div class="stat-item"><div class="stat-num" data-count="5" data-suffix="min">0min</div><div class="stat-label">Fastest scan interval</div></div>
+  <div class="stat-item"><div class="stat-num" data-count="24" data-suffix="/7">0/7</div><div class="stat-label">Always watching</div></div>
 </div>
 
 <!-- FEATURES -->
@@ -343,47 +447,47 @@
   <p class="section-sub">A complete toolkit for tracking video content — from scanning to notifications to watch history.</p>
 
   <div class="features-grid">
-    <div class="feature-card reveal">
+    <div class="feature-card reveal reveal-delay-1">
       <div class="feature-icon" style="background:rgba(15,118,110,.1);color:var(--brand)"><i class="bi bi-arrow-repeat"></i></div>
       <h3>Automatic Scanning</h3>
       <p>Set it and forget it. VideoWatch scans your sites on a schedule you control — hourly, daily, or on demand.</p>
     </div>
-    <div class="feature-card reveal">
+    <div class="feature-card reveal reveal-delay-2">
       <div class="feature-icon" style="background:rgba(245,158,11,.1);color:#d97706"><i class="bi bi-bell-fill"></i></div>
       <h3>Instant Notifications</h3>
       <p>Get webhook alerts (Discord, Slack, etc.) the moment a new video is detected. Per-site toggle so you only hear about what matters.</p>
     </div>
-    <div class="feature-card reveal">
+    <div class="feature-card reveal reveal-delay-3">
       <div class="feature-icon" style="background:rgba(99,102,241,.1);color:#6366f1"><i class="bi bi-collection-play-fill"></i></div>
       <h3>Multi-Platform Support</h3>
       <p>Monitor YouTube channels, VK Video, and custom websites all from one dashboard. Automatic platform detection.</p>
     </div>
-    <div class="feature-card reveal">
+    <div class="feature-card reveal reveal-delay-4">
       <div class="feature-icon" style="background:rgba(16,185,129,.1);color:#059669"><i class="bi bi-eye-fill"></i></div>
       <h3>Watch History</h3>
       <p>Track what you've watched. Videos are automatically marked as watched when you open them, with visual dimming for viewed content.</p>
     </div>
-    <div class="feature-card reveal">
+    <div class="feature-card reveal reveal-delay-5">
       <div class="feature-icon" style="background:rgba(239,68,68,.1);color:#dc2626"><i class="bi bi-heart-fill"></i></div>
       <h3>Favourites & Archive</h3>
       <p>Star videos to find them later, archive ones you're done with, or ignore content you never want to see again.</p>
     </div>
-    <div class="feature-card reveal">
+    <div class="feature-card reveal reveal-delay-6">
       <div class="feature-icon" style="background:rgba(168,85,247,.1);color:#a855f7"><i class="bi bi-lightning-fill"></i></div>
       <h3>Bulk Actions</h3>
       <p>Select multiple videos at once to mark them seen, watched, archived, or ignored — perfect for catching up after a long absence.</p>
     </div>
-    <div class="feature-card reveal">
+    <div class="feature-card reveal reveal-delay-1">
       <div class="feature-icon" style="background:rgba(20,184,166,.1);color:var(--brand2)"><i class="bi bi-phone-fill"></i></div>
       <h3>Mobile Friendly</h3>
       <p>Clean 2-column grid on small screens, compact controls, and a responsive layout that works on any device.</p>
     </div>
-    <div class="feature-card reveal">
+    <div class="feature-card reveal reveal-delay-2">
       <div class="feature-icon" style="background:rgba(245,158,11,.1);color:#d97706"><i class="bi bi-funnel-fill"></i></div>
       <h3>Smart Filtering</h3>
       <p>Filter by platform, site, new/unwatched/favourites status. Keyword-based scan filtering skips irrelevant listing pages automatically.</p>
     </div>
-    <div class="feature-card reveal">
+    <div class="feature-card reveal reveal-delay-3">
       <div class="feature-icon" style="background:rgba(15,118,110,.1);color:var(--brand)"><i class="bi bi-download"></i></div>
       <h3>Video Downloads</h3>
       <p>Download videos directly through the app using yt-dlp integration. Queue multiple downloads and track progress in real time.</p>
@@ -552,11 +656,45 @@
     applyTheme(html.getAttribute('data-theme') !== 'dark');
   });
 
-  // Scroll reveal
+  // Nav scroll shadow
+  window.addEventListener('scroll', () => {
+    document.querySelector('nav').classList.toggle('scrolled', window.scrollY > 20);
+  }, { passive: true });
+
+  // Scroll reveal + staggered platform pills trigger
   const observer = new IntersectionObserver(entries => {
-    entries.forEach(e => { if (e.isIntersecting) { e.target.classList.add('visible'); observer.unobserve(e.target); } });
+    entries.forEach(e => {
+      if (e.isIntersecting) {
+        e.target.classList.add('visible');
+        observer.unobserve(e.target);
+      }
+    });
   }, { threshold: 0.1 });
   document.querySelectorAll('.reveal').forEach(el => observer.observe(el));
+
+  // Stat counter animation
+  function animateCount(el, target, suffix = '', duration = 1200) {
+    const start = performance.now();
+    const isNum = typeof target === 'number';
+    const update = now => {
+      const p = Math.min((now - start) / duration, 1);
+      const ease = 1 - Math.pow(1 - p, 3);
+      el.textContent = isNum ? Math.round(target * ease).toLocaleString() + suffix : target;
+      if (p < 1) requestAnimationFrame(update);
+    };
+    requestAnimationFrame(update);
+  }
+  const statsObserver = new IntersectionObserver(entries => {
+    entries.forEach(e => {
+      if (!e.isIntersecting) return;
+      statsObserver.unobserve(e.target);
+      e.target.querySelectorAll('.stat-num[data-count]').forEach(el => {
+        animateCount(el, parseInt(el.dataset.count), el.dataset.suffix || '');
+      });
+    });
+  }, { threshold: 0.5 });
+  const statsBar = document.querySelector('.stats-bar');
+  if (statsBar) statsObserver.observe(statsBar);
 
   // Smooth scroll for anchor links
   document.querySelectorAll('a[href^="#"]').forEach(a => {
