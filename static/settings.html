@@ -1106,6 +1106,22 @@
           ? `${row.email}${row.email_verified ? ' ✓' : ' (unverified)'}`
           : 'No email set';
 
+        const role = st.role || 'viewer';
+        const planCard = document.getElementById('account-plan-card');
+
+        // Admins are operators, not subscribers — show a simple badge and hide limits
+        if (role === 'super_admin' || role === 'admin') {
+          const roleLabel = role === 'super_admin' ? 'Super Admin' : 'Admin';
+          const roleColor = '#7c3aed';
+          document.getElementById('account-plan-badge').innerHTML =
+            `<span style="display:inline-block;padding:.2rem .75rem;border-radius:999px;font-size:.82rem;font-weight:700;
+              background:${roleColor}22;color:${roleColor};border:1px solid ${roleColor}44;">${roleLabel}</span>`;
+          document.getElementById('account-plan-limits').innerHTML =
+            `<div style="grid-column:1/-1;font-size:.8rem;color:var(--text-muted);">No plan limits apply to administrator accounts.</div>`;
+          document.getElementById('account-plan-billing').style.display = 'none';
+          return;
+        }
+
         const plan = (row.plan || 'free').toLowerCase();
         const meta = _PLAN_META[plan] || _PLAN_META.free;
 
