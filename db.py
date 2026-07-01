@@ -227,6 +227,7 @@ def init_db():
             add_column_if_missing(db, "users", "email_verified", "INTEGER DEFAULT 0")
             add_column_if_missing(db, "users", "onboarding_done", "INTEGER DEFAULT 0")
             add_column_if_missing(db, "users", "notify_new_videos", "INTEGER DEFAULT 0")
+            add_column_if_missing(db, "users", "ui_theme", "TEXT DEFAULT 'light'")
             db.execute("""
                 CREATE TABLE IF NOT EXISTS video_tags (
                     video_id TEXT NOT NULL,

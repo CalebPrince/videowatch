@@ -2081,11 +2081,15 @@ function toggleFieldPwd(inputId, btn) {
   icon.className = hidden ? 'bi bi-eye-slash' : 'bi bi-eye';
 }
 
-function applyTheme(dark) {
+function applyTheme(dark, persist = true) {
   document.documentElement.setAttribute('data-theme', dark ? 'dark' : 'light');
   const icon = document.getElementById('darkmode-icon');
   if (icon) icon.className = dark ? 'bi bi-sun-fill' : 'bi bi-moon-stars-fill';
   localStorage.setItem('vw_theme', dark ? 'dark' : 'light');
+  if (persist) {
+    api('/user/prefs', { method: 'PATCH', body: JSON.stringify({ ui_theme: dark ? 'dark' : 'light' }) })
+      .catch(() => {});
+  }
 }
 
 function isVideoMarkedNew(video) {
@@ -3401,6 +3405,8 @@ async function maybeShowOnboarding(st) {
     const el = document.getElementById('topbar-username');
     if (el && st.user) el.textContent = st.user;
     maybeShowOnboarding(st);
+    // Apply DB theme, overriding localStorage if they differ
+    if (st.ui_theme) applyTheme(st.ui_theme === 'dark', false);
   }).catch(() => {});
   // Normalise any saved site URLs (adds trailing slashes etc)
   await api('/sites/fix-urls', { method: 'POST' }).catch(() => {});

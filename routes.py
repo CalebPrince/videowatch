@@ -1530,17 +1530,20 @@ def auth_status(request: Request):
     enabled = auth_enabled()
     authenticated = is_authenticated(request)
     onboarding_done = True
+    ui_theme = "light"
     if authenticated:
         username = request.session.get("auth_user")
         if username:
             row = _get_user(username)
             onboarding_done = bool(row.get("onboarding_done")) if row else True
+            ui_theme = (row.get("ui_theme") or "light") if row else "light"
     return {
         "enabled": enabled,
         "authenticated": authenticated,
         "user": request.session.get("auth_user") if authenticated else None,
         "role": current_role(request) if authenticated else None,
         "onboarding_done": onboarding_done,
+        "ui_theme": ui_theme,
     }
 
 
@@ -2259,6 +2262,21 @@ def set_user_notifications(request: Request, body: dict):
             (1 if notify else 0, username),
         )
     return {"ok": True, "notify_new_videos": notify}
+
+
+@router.patch("/api/user/prefs")
+def set_user_prefs(request: Request, body: dict):
+    if not is_authenticated(request):
+        raise HTTPException(401)
+    username = current_user(request)
+    theme = body.get("ui_theme")
+    if theme not in ("light", "dark"):
+        raise HTTPException(400, "Invalid theme")
+    with write_lock:
+        with get_db() as db:
+            db.execute("UPDATE users SET ui_theme=? WHERE username=?", (theme, username))
+            db.commit()
+    return {"ok": True, "ui_theme": theme}
 
 
 @router.get("/api/notifications")
