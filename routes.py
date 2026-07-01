@@ -28,6 +28,11 @@ from playwright_stealth import Stealth
 # Directory to store video files inside the current project workspace
 VIDEOS_DIR = Path(__file__).resolve().parent / "videos"
 VIDEOS_DIR.mkdir(exist_ok=True)
+
+# Directory for automated DB backups
+BACKUPS_DIR = Path(__file__).resolve().parent / "backups"
+BACKUPS_DIR.mkdir(exist_ok=True)
+_BACKUP_KEEP = 7  # number of daily backups to retain
 LEGACY_VIDEOS_DIR = Path(__file__).resolve().parent.parent / "videos"
 import ipaddress
 import time
@@ -3232,6 +3237,63 @@ def admin_broadcast(request: Request, body: dict):
 
     threading.Thread(target=_blast, daemon=True).start()
     return {"ok": True, "queued": len(recipients)}
+
+
+def _run_backup() -> dict:
+    """Copy the SQLite DB to backups/ with a timestamp name; prune old copies."""
+    from db import DB_PATH
+    import sqlite3
+    ts = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+    dest = BACKUPS_DIR / f"videowatch_{ts}.db"
+    # Use SQLite's online backup API so the copy is consistent even under writes
+    src_conn = sqlite3.connect(DB_PATH, timeout=30)
+    dst_conn = sqlite3.connect(str(dest))
+    try:
+        src_conn.backup(dst_conn)
+    finally:
+        dst_conn.close()
+        src_conn.close()
+    size = dest.stat().st_size
+    # Prune oldest beyond keep limit
+    backups = sorted(BACKUPS_DIR.glob("videowatch_*.db"), key=lambda p: p.stat().st_mtime)
+    for old in backups[:-_BACKUP_KEEP]:
+        old.unlink(missing_ok=True)
+    log.info(f"DB backup created: {dest.name} ({size} bytes)")
+    return {"filename": dest.name, "size": size, "created_at": ts}
+
+
+@router.post("/api/admin/backup")
+def trigger_backup(request: Request):
+    if not is_super_admin(request):
+        raise HTTPException(403, "Super admin only")
+    result = _run_backup()
+    return {"ok": True, **result}
+
+
+@router.get("/api/admin/backups")
+def list_backups(request: Request):
+    if not is_super_admin(request):
+        raise HTTPException(403, "Super admin only")
+    files = sorted(BACKUPS_DIR.glob("videowatch_*.db"), key=lambda p: p.stat().st_mtime, reverse=True)
+    return [
+        {"filename": p.name, "size": p.stat().st_size, "created_at": p.stem.replace("videowatch_", "")}
+        for p in files
+    ]
+
+
+@router.get("/api/admin/backups/{filename}")
+def download_backup(filename: str, request: Request):
+    if not is_super_admin(request):
+        raise HTTPException(403, "Super admin only")
+    # Sanitise to prevent path traversal
+    safe = Path(filename).name
+    if not safe.startswith("videowatch_") or not safe.endswith(".db"):
+        raise HTTPException(400, "Invalid filename")
+    path = BACKUPS_DIR / safe
+    if not path.exists():
+        raise HTTPException(404, "Backup not found")
+    from fastapi.responses import FileResponse as FR
+    return FR(str(path), filename=safe, media_type="application/octet-stream")
 
 
 @router.get("/api/health")

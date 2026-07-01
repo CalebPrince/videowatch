@@ -548,14 +548,21 @@
         <div class="d-flex gap-2 flex-wrap">
           <button class="btn btn-sm btn-outline-secondary" id="btn-mark-seen-all">Mark all seen</button>
           <button class="btn btn-sm btn-outline-danger" id="btn-fresh-scan-all">Fresh scan all</button>
-          <a class="btn btn-sm btn-outline-secondary" id="btn-db-backup" href="/api/admin/backup" download>
-            <i class="bi bi-download me-1"></i>Download DB backup
-          </a>
           <button class="btn btn-sm btn-outline-warning" id="btn-thumb-cleanup">
             <i class="bi bi-images me-1"></i>Clean thumbnail cache
           </button>
         </div>
         <div id="maint-msg" class="meta mt-2"></div>
+
+        <!-- DB Backups -->
+        <div style="margin-top:1.25rem;border-top:1px solid var(--border);padding-top:1rem;">
+          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:.6rem;">
+            <div style="font-weight:700;font-size:.85rem;"><i class="bi bi-database me-1" style="color:var(--brand)"></i>Database Backups</div>
+            <button class="btn btn-sm btn-primary" id="btn-run-backup"><i class="bi bi-cloud-download me-1"></i>Back Up Now</button>
+          </div>
+          <div style="font-size:.75rem;color:var(--text-muted);margin-bottom:.6rem;">A backup runs automatically every night. The last 7 are kept.</div>
+          <div id="backup-list" style="border:1px solid var(--border);border-radius:8px;overflow:hidden;"></div>
+        </div>
       </section>
 
       <!-- ── Analytics ── -->
@@ -1590,6 +1597,28 @@
     // ── Payments ─────────────────────────────────────────────────────────────
     const PLAN_COLORS = { free: '#64748b', pro: '#0f766e', unlimited: '#7c3aed' };
     const PLAN_LABELS = { free: 'Free', pro: 'Pro', unlimited: 'Unlimited' };
+    // ── Backups ───────────────────────────────────────────────────────────────
+    async function loadBackups() {
+      const list = document.getElementById('backup-list');
+      if (!list) return;
+      const rows = await api('/admin/backups').catch(() => []);
+      if (!rows.length) {
+        list.innerHTML = '<div style="padding:.75rem 1rem;color:var(--text-muted);font-size:.8rem;">No backups yet.</div>';
+        return;
+      }
+      list.innerHTML = rows.map((b, i) => {
+        const kb = (b.size / 1024).toFixed(1);
+        const ts = b.created_at.replace('T', ' ').replace('Z', ' UTC');
+        return `<div style="display:flex;align-items:center;gap:.75rem;padding:.5rem .9rem;${i ? 'border-top:1px solid var(--border)' : ''};">
+          <i class="bi bi-file-earmark-binary" style="color:var(--brand);flex-shrink:0;"></i>
+          <span style="font-size:.8rem;flex:1;word-break:break-all;">${b.filename}</span>
+          <span style="font-size:.75rem;color:var(--text-muted);white-space:nowrap;">${kb} KB</span>
+          <span style="font-size:.75rem;color:var(--text-muted);white-space:nowrap;">${ts}</span>
+          <a href="/api/admin/backups/${encodeURIComponent(b.filename)}" download class="btn btn-sm btn-outline-secondary" style="padding:.15rem .5rem;font-size:.75rem;"><i class="bi bi-download"></i></a>
+        </div>`;
+      }).join('');
+    }
+
     // ── Broadcast ─────────────────────────────────────────────────────────────
     async function sendBroadcast() {
       const subject = document.getElementById('bc-subject').value.trim();
@@ -1805,6 +1834,17 @@
         document.getElementById('btn-audit-refresh')?.addEventListener('click', () => loadAuditLog(_auditOffset));
         document.querySelector('.navbtn[data-target="payments"]')?.addEventListener('click', loadPayments);
         document.querySelector('.navbtn[data-target="analytics"]')?.addEventListener('click', loadAnalytics);
+        document.querySelector('.navbtn[data-target="maintenance"]')?.addEventListener('click', loadBackups);
+        document.getElementById('btn-run-backup')?.addEventListener('click', async () => {
+          const btn = document.getElementById('btn-run-backup');
+          btn.disabled = true; btn.innerHTML = '<i class="bi bi-hourglass-split me-1"></i>Backing up…';
+          try {
+            const r = await api('/admin/backup', { method: 'POST' });
+            showToast(`Backup created: ${r.filename}`, 'success');
+            await loadBackups();
+          } catch(e) { showToast('Backup failed: ' + e.message, 'danger'); }
+          btn.disabled = false; btn.innerHTML = '<i class="bi bi-cloud-download me-1"></i>Back Up Now';
+        });
         document.getElementById('analytics-range')?.addEventListener('change', loadAnalytics);
       } else {
         document.querySelector('.navbtn[data-target="duplicates"]')?.remove();

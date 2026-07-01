@@ -121,11 +121,22 @@ async def _scheduler():
     """
     Runs forever while the server is up.
     Checks every 30 s which sites are due for a scan and fires them.
+    Also triggers a nightly DB backup once per UTC day.
     Each site has its own scan_interval (default 300 s = 5 min).
     """
     log.info("Scheduler started")
+    _last_backup_date: str | None = None
     while True:
         await asyncio.sleep(30)
+        # Nightly backup at the first scheduler tick after midnight UTC
+        try:
+            today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+            if today != _last_backup_date:
+                _last_backup_date = today
+                from routes import _run_backup
+                threading.Thread(target=_run_backup, daemon=True).start()
+        except Exception as e:
+            log.error(f"Nightly backup error: {e}")
         try:
             with get_db() as db_conn:
                 setting = db_conn.execute(
