@@ -859,7 +859,7 @@ def current_role(request: Request) -> str:
         row = _get_user(user)
         if row:
             return _sanitize_role(row.get("role"))
-    return _read_setting("auth_default_role") or "admin"
+    return _read_setting("auth_default_role") or "viewer"
 
 
 def require_admin(request: Request):
@@ -1130,7 +1130,7 @@ def auth_login(body: LoginIn, request: Request):
     if not auth_enabled():
         request.session["auth_user"] = body.username or "local"
         row = _get_user(request.session["auth_user"])
-        request.session["auth_role"] = _sanitize_role(row.get("role") if row else None) or "admin"
+        request.session["auth_role"] = _sanitize_role(row.get("role") if row else None) or "viewer"
         return {
             "ok": True,
             "authenticated": True,
@@ -1151,7 +1151,7 @@ def auth_login(body: LoginIn, request: Request):
     from datetime import timedelta
     ttl = timedelta(days=30) if body.remember_me else timedelta(hours=24)
     request.session["auth_user"] = body.username
-    request.session["auth_role"] = _sanitize_role(row.get("role") if row else None) or "admin"
+    request.session["auth_role"] = _sanitize_role(row.get("role") if row else None) or "viewer"
     request.session["session_expires_at"] = (datetime.now(timezone.utc) + ttl).isoformat()
     return {
         "ok": True,
