@@ -202,6 +202,89 @@
     }
     .btn-cta-white:hover { transform: translateY(-2px); box-shadow: 0 14px 32px rgba(0,0,0,.28); color: var(--brand); }
 
+    /* ── PRICING ── */
+    .pricing-toggle {
+      display: flex; align-items: center; justify-content: center; gap: .75rem;
+      margin-bottom: 2.5rem; font-size: .9rem; font-weight: 600;
+    }
+    .toggle-switch {
+      position: relative; width: 48px; height: 26px; cursor: pointer;
+    }
+    .toggle-switch input { opacity: 0; width: 0; height: 0; }
+    .toggle-slider {
+      position: absolute; inset: 0; border-radius: 99px;
+      background: var(--brand); transition: background .2s;
+    }
+    .toggle-slider::before {
+      content: ''; position: absolute;
+      width: 20px; height: 20px; border-radius: 50%; background: #fff;
+      left: 3px; top: 3px; transition: transform .2s;
+    }
+    .toggle-switch input:checked + .toggle-slider::before { transform: translateX(22px); }
+    .annual-badge {
+      background: rgba(245,158,11,.15); color: #d97706;
+      border: 1px solid rgba(245,158,11,.3); border-radius: 99px;
+      font-size: .72rem; font-weight: 700; padding: .15rem .55rem; letter-spacing: .3px;
+    }
+
+    .pricing-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+      gap: 1.5rem; max-width: 1000px; margin: 0 auto;
+      align-items: start;
+    }
+    .price-card {
+      background: var(--surface); border: 1px solid var(--border); border-radius: 20px;
+      padding: 2rem 1.75rem; position: relative; transition: transform .2s, box-shadow .2s;
+    }
+    .price-card:hover { transform: translateY(-4px); box-shadow: 0 16px 40px rgba(0,0,0,.1); }
+    [data-theme="dark"] .price-card:hover { box-shadow: 0 16px 40px rgba(0,0,0,.35); }
+    .price-card.popular {
+      border-color: var(--brand); border-width: 2px;
+      box-shadow: 0 8px 32px rgba(15,118,110,.18);
+    }
+    .popular-badge {
+      position: absolute; top: -13px; left: 50%; transform: translateX(-50%);
+      background: linear-gradient(135deg, var(--brand), var(--brand2));
+      color: #fff; font-size: .72rem; font-weight: 700; padding: .25rem .85rem;
+      border-radius: 99px; white-space: nowrap; letter-spacing: .4px;
+    }
+    .plan-name { font-size: .8rem; font-weight: 700; text-transform: uppercase; letter-spacing: 1.2px; color: var(--muted); margin-bottom: .6rem; }
+    .plan-price { display: flex; align-items: flex-end; gap: .25rem; margin-bottom: .3rem; }
+    .plan-price .amount { font-size: 2.8rem; font-weight: 800; line-height: 1; color: var(--ink); }
+    .plan-price .period { font-size: .88rem; color: var(--muted); margin-bottom: .4rem; }
+    .plan-price .free-label { font-size: 2rem; font-weight: 800; color: var(--ink); }
+    .plan-desc { font-size: .83rem; color: var(--muted); margin-bottom: 1.5rem; min-height: 2.5rem; line-height: 1.5; }
+    .plan-features { list-style: none; padding: 0; margin: 0 0 1.75rem; display: flex; flex-direction: column; gap: .6rem; }
+    .plan-features li { display: flex; align-items: center; gap: .55rem; font-size: .86rem; }
+    .plan-features li i { font-size: .95rem; flex-shrink: 0; }
+    .plan-features li.yes i { color: var(--brand); }
+    .plan-features li.no { color: var(--muted); }
+    .plan-features li.no i { color: var(--border); }
+    .btn-plan {
+      display: block; width: 100%; padding: .75rem; border-radius: 10px;
+      font-weight: 700; font-size: .92rem; text-align: center; text-decoration: none;
+      transition: all .2s; cursor: pointer; border: none;
+    }
+    .btn-plan-free {
+      background: transparent; border: 2px solid var(--border); color: var(--ink);
+    }
+    .btn-plan-free:hover { border-color: var(--brand); color: var(--brand); }
+    .btn-plan-pro {
+      background: linear-gradient(135deg, var(--brand), var(--brand2));
+      color: #fff; box-shadow: 0 6px 20px rgba(15,118,110,.28);
+    }
+    .btn-plan-pro:hover { box-shadow: 0 10px 28px rgba(15,118,110,.4); transform: translateY(-1px); color: #fff; }
+    .btn-plan-unlimited {
+      background: var(--ink); color: #fff;
+    }
+    [data-theme="dark"] .btn-plan-unlimited { background: #e2e8f0; color: #0f172a; }
+    .btn-plan-unlimited:hover { opacity: .85; color: #fff; }
+    [data-theme="dark"] .btn-plan-unlimited:hover { color: #0f172a; }
+
+    .pricing-note { text-align: center; margin-top: 1.75rem; font-size: .82rem; color: var(--muted); }
+    .pricing-note i { color: var(--brand); }
+
     /* ── FOOTER ── */
     footer {
       text-align: center; padding: 2rem 1.5rem;
@@ -223,6 +306,7 @@
     <i class="bi bi-play-circle-fill"></i> VideoWatch
   </a>
   <div class="nav-actions">
+    <a href="#pricing" style="font-size:.88rem;font-weight:600;color:var(--muted);text-decoration:none;padding:.3rem .6rem;" onmouseover="this.style.color='var(--brand)'" onmouseout="this.style.color='var(--muted)'">Pricing</a>
     <button class="btn-theme" id="btn-theme" title="Toggle theme" aria-label="Toggle theme">
       <i class="bi bi-moon-stars-fill" id="theme-icon"></i>
     </button>
@@ -359,6 +443,83 @@
   </div>
 </section>
 
+<!-- PRICING -->
+<section class="section" id="pricing">
+  <div class="section-label">Pricing</div>
+  <h2 class="section-title reveal">Simple, transparent pricing</h2>
+  <p class="section-sub reveal">Start free. Upgrade when you need more. No hidden fees.</p>
+
+  <div class="pricing-toggle reveal">
+    <span>Monthly</span>
+    <label class="toggle-switch">
+      <input type="checkbox" id="billing-toggle">
+      <span class="toggle-slider"></span>
+    </label>
+    <span>Annual <span class="annual-badge">Save 20%</span></span>
+  </div>
+
+  <div class="pricing-grid reveal">
+
+    <!-- Free -->
+    <div class="price-card">
+      <div class="plan-name">Free</div>
+      <div class="plan-price"><span class="free-label">$0</span></div>
+      <div class="plan-desc">Perfect for trying it out or light personal use.</div>
+      <ul class="plan-features">
+        <li class="yes"><i class="bi bi-check-circle-fill"></i> 3 monitored sites</li>
+        <li class="yes"><i class="bi bi-check-circle-fill"></i> 200 videos stored</li>
+        <li class="yes"><i class="bi bi-check-circle-fill"></i> Scans every 6 hours</li>
+        <li class="yes"><i class="bi bi-check-circle-fill"></i> Tags &amp; filtering</li>
+        <li class="no"><i class="bi bi-x-circle"></i> Email notifications</li>
+        <li class="no"><i class="bi bi-x-circle"></i> Webhook alerts</li>
+        <li class="no"><i class="bi bi-x-circle"></i> Bulk actions</li>
+      </ul>
+      <a href="/register" class="btn-plan btn-plan-free">Get started free</a>
+    </div>
+
+    <!-- Pro -->
+    <div class="price-card popular">
+      <div class="popular-badge">⭐ Most Popular</div>
+      <div class="plan-name">Pro</div>
+      <div class="plan-price">
+        <span class="amount" id="pro-price">$9</span>
+        <span class="period" id="pro-period">/month</span>
+      </div>
+      <div class="plan-desc" id="pro-desc">Billed monthly. Cancel any time.</div>
+      <ul class="plan-features">
+        <li class="yes"><i class="bi bi-check-circle-fill"></i> 25 monitored sites</li>
+        <li class="yes"><i class="bi bi-check-circle-fill"></i> 5,000 videos stored</li>
+        <li class="yes"><i class="bi bi-check-circle-fill"></i> Scans every 5 minutes</li>
+        <li class="yes"><i class="bi bi-check-circle-fill"></i> Email notifications</li>
+        <li class="yes"><i class="bi bi-check-circle-fill"></i> Webhook alerts</li>
+        <li class="yes"><i class="bi bi-check-circle-fill"></i> Bulk actions &amp; tags</li>
+      </ul>
+      <a href="/register" class="btn-plan btn-plan-pro">Start Pro</a>
+    </div>
+
+    <!-- Unlimited -->
+    <div class="price-card">
+      <div class="plan-name">Unlimited</div>
+      <div class="plan-price">
+        <span class="amount" id="unl-price">$19</span>
+        <span class="period" id="unl-period">/month</span>
+      </div>
+      <div class="plan-desc" id="unl-desc">Billed monthly. Cancel any time.</div>
+      <ul class="plan-features">
+        <li class="yes"><i class="bi bi-check-circle-fill"></i> Unlimited sites</li>
+        <li class="yes"><i class="bi bi-check-circle-fill"></i> Unlimited videos</li>
+        <li class="yes"><i class="bi bi-check-circle-fill"></i> Scans every 5 minutes</li>
+        <li class="yes"><i class="bi bi-check-circle-fill"></i> Everything in Pro</li>
+        <li class="yes"><i class="bi bi-check-circle-fill"></i> Priority support</li>
+        <li class="yes"><i class="bi bi-check-circle-fill"></i> Early access to new features</li>
+      </ul>
+      <a href="/register" class="btn-plan btn-plan-unlimited">Go Unlimited</a>
+    </div>
+
+  </div>
+  <p class="pricing-note reveal"><i class="bi bi-shield-check me-1"></i>No credit card required for the free plan. Upgrade or cancel any time.</p>
+</section>
+
 <!-- CTA BANNER -->
 <div class="cta-banner reveal" style="max-width:1100px;margin:0 auto 4rem;">
   <h2>Ready to take control of your feed?</h2>
@@ -400,6 +561,24 @@
       const t = document.querySelector(a.getAttribute('href'));
       if (t) t.scrollIntoView({ behavior: 'smooth' });
     });
+  });
+
+  // Billing toggle (monthly / annual)
+  const billingToggle = document.getElementById('billing-toggle');
+  const proPrice   = document.getElementById('pro-price');
+  const properiod  = document.getElementById('pro-period');
+  const proDesc    = document.getElementById('pro-desc');
+  const unlPrice   = document.getElementById('unl-price');
+  const unlPeriod  = document.getElementById('unl-period');
+  const unlDesc    = document.getElementById('unl-desc');
+  billingToggle.addEventListener('change', () => {
+    const annual = billingToggle.checked;
+    proPrice.textContent  = annual ? '$86' : '$9';
+    properiod.textContent = annual ? '/year' : '/month';
+    proDesc.textContent   = annual ? 'Billed annually — save $22/yr.' : 'Billed monthly. Cancel any time.';
+    unlPrice.textContent  = annual ? '$182' : '$19';
+    unlPeriod.textContent = annual ? '/year' : '/month';
+    unlDesc.textContent   = annual ? 'Billed annually — save $46/yr.' : 'Billed monthly. Cancel any time.';
   });
 
   // If already authenticated, redirect to dashboard
