@@ -1556,9 +1556,8 @@ def list_videos(request: Request,
     with get_db() as db:
         filters = []
         params = []
-        if not is_super_admin(request):
-            filters.append("sites.owner=?")
-            params.append(current_user(request) or "")
+        filters.append("sites.owner=?")
+        params.append(current_user(request) or "")
         if group_name is not None:
             if group_name == '__UNGROUPED__':
                 filters.append("(sites.group_name IS NULL OR sites.group_name = '')")
