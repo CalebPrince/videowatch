@@ -337,6 +337,35 @@
 
         <hr style="border-color:var(--border);">
 
+        <!-- API Tokens -->
+        <div class="mt-3 mb-4">
+          <div class="d-flex align-items-center justify-content-between mb-2">
+            <h6 style="font-size:.9rem;margin:0;"><i class="bi bi-key-fill me-1" style="color:var(--brand)"></i>API Tokens</h6>
+            <button class="btn btn-sm btn-brand-outline" id="btn-new-token"><i class="bi bi-plus me-1"></i>New token</button>
+          </div>
+          <p class="meta" style="font-size:.8rem;margin-bottom:.75rem;">Use tokens to access the public API from scripts or external tools. Tokens are shown once.</p>
+
+          <div id="new-token-form" style="display:none;" class="mb-3">
+            <div class="d-flex gap-2">
+              <input id="token-label-inp" class="form-control form-control-sm" placeholder="Label (e.g. Home script)" maxlength="60" style="max-width:260px;">
+              <button class="btn btn-sm btn-brand-solid" id="btn-token-create">Create</button>
+              <button class="btn btn-sm btn-outline-secondary" id="btn-token-cancel">Cancel</button>
+            </div>
+          </div>
+
+          <div id="new-token-reveal" style="display:none;" class="mb-3 p-2" style="background:var(--card-bg);border:1px solid var(--border);border-radius:6px;">
+            <div class="meta mb-1" style="font-size:.78rem;">Copy this token now — it won't be shown again.</div>
+            <div class="d-flex gap-2 align-items-center">
+              <code id="token-value-display" style="font-size:.8rem;word-break:break-all;flex:1;background:var(--input-bg,#f8fafc);padding:.3rem .5rem;border-radius:4px;border:1px solid var(--border);"></code>
+              <button class="btn btn-sm btn-outline-secondary" id="btn-copy-token" title="Copy"><i class="bi bi-clipboard"></i></button>
+            </div>
+          </div>
+
+          <div id="tokens-list"></div>
+        </div>
+
+        <hr style="border-color:var(--border);">
+
         <div class="mt-3">
           <h6 class="text-danger" style="font-size:.9rem;"><i class="bi bi-exclamation-triangle-fill me-1"></i>Danger Zone</h6>
           <p class="meta" style="font-size:.82rem;margin-bottom:1rem;">Permanently delete your account and all associated data — sites, videos, tags, and scan history. This cannot be undone.</p>
@@ -971,7 +1000,62 @@
       } catch (e) { /* non-fatal */ }
     }
 
-    document.querySelector('.navbtn[data-target="account"]').addEventListener('click', loadAccount);
+    // ── API Tokens ────────────────────────────────────────────────────────────
+    async function loadTokens() {
+      const list = document.getElementById('tokens-list');
+      try {
+        const tokens = await api('/user/tokens');
+        if (!tokens.length) { list.innerHTML = '<div class="meta" style="font-size:.82rem;">No tokens yet.</div>'; return; }
+        list.innerHTML = '';
+        tokens.forEach(t => {
+          const row = document.createElement('div');
+          row.style.cssText = 'display:flex;align-items:center;justify-content:space-between;gap:.5rem;padding:.4rem 0;border-bottom:1px solid var(--border);font-size:.82rem;';
+          const info = document.createElement('div');
+          info.innerHTML = `<strong>${escHtml(t.label)}</strong> <span class="meta">— created ${t.created_at.slice(0,10)}${t.last_used_at ? ', last used '+t.last_used_at.slice(0,10) : ''}</span>`;
+          const del = document.createElement('button');
+          del.className = 'btn btn-sm btn-outline-danger';
+          del.style.fontSize = '.75rem';
+          del.innerHTML = '<i class="bi bi-trash3"></i>';
+          del.title = 'Revoke token';
+          del.onclick = async () => {
+            if (!confirm('Revoke this token?')) return;
+            await api(`/user/tokens/${t.id}`, { method: 'DELETE' });
+            await loadTokens();
+          };
+          row.appendChild(info);
+          row.appendChild(del);
+          list.appendChild(row);
+        });
+      } catch (e) { list.innerHTML = `<div class="err">${e.message}</div>`; }
+    }
+
+    function escHtml(s) { return (s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+
+    document.getElementById('btn-new-token').onclick = () => {
+      document.getElementById('new-token-form').style.display = '';
+      document.getElementById('new-token-reveal').style.display = 'none';
+      document.getElementById('token-label-inp').value = '';
+      document.getElementById('token-label-inp').focus();
+    };
+    document.getElementById('btn-token-cancel').onclick = () => {
+      document.getElementById('new-token-form').style.display = 'none';
+    };
+    document.getElementById('btn-token-create').onclick = async () => {
+      const label = document.getElementById('token-label-inp').value.trim() || 'My token';
+      try {
+        const res = await api('/user/tokens', { method: 'POST', body: JSON.stringify({ label }) });
+        document.getElementById('new-token-form').style.display = 'none';
+        document.getElementById('token-value-display').textContent = res.token;
+        document.getElementById('new-token-reveal').style.display = '';
+        await loadTokens();
+      } catch (e) { showToast(e.message, 'danger'); }
+    };
+    document.getElementById('btn-copy-token').onclick = () => {
+      const val = document.getElementById('token-value-display').textContent;
+      navigator.clipboard.writeText(val).then(() => showToast('Token copied!', 'success'));
+    };
+
+    document.querySelector('.navbtn[data-target="account"]').addEventListener('click', () => { loadAccount(); loadTokens(); });
 
     document.getElementById('btn-delete-account').onclick = () => {
       document.getElementById('delete-account-modal').style.display = 'flex';

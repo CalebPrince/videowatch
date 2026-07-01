@@ -223,6 +223,7 @@ def init_db():
                 log.info("Sites table migration complete")
             add_column_if_missing(db, "videos", "is_watched", "INTEGER DEFAULT 0")
             add_column_if_missing(db, "videos", "last_watched_at", "TEXT")
+            add_column_if_missing(db, "videos", "note", "TEXT")
             add_column_if_missing(db, "users", "email", "TEXT")
             add_column_if_missing(db, "users", "email_verified", "INTEGER DEFAULT 0")
             add_column_if_missing(db, "users", "onboarding_done", "INTEGER DEFAULT 0")
@@ -264,6 +265,17 @@ def init_db():
                     expires_at  TEXT NOT NULL
                 )
             """)
+            db.execute("""
+                CREATE TABLE IF NOT EXISTS api_tokens (
+                    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+                    owner       TEXT NOT NULL,
+                    token_hash  TEXT NOT NULL UNIQUE,
+                    label       TEXT,
+                    created_at  TEXT NOT NULL,
+                    last_used_at TEXT
+                )
+            """)
+            db.execute("CREATE INDEX IF NOT EXISTS idx_api_tokens_owner ON api_tokens(owner)")
             db.execute(
                 "INSERT OR IGNORE INTO app_settings (key, value) VALUES (?, ?)",
                 ("autoscan_enabled", "0"),

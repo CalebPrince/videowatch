@@ -2504,6 +2504,144 @@ def set_video_note(video_id: str, request: Request, body: dict):
     return {"ok": True, "note": note}
 
 
+# ── API token helpers ─────────────────────────────────────────────────────────
+
+def _hash_token(raw: str) -> str:
+    return hashlib.sha256(raw.encode()).hexdigest()
+
+def _resolve_api_token(request: Request) -> str | None:
+    """Return username if a valid Bearer token is present, else None."""
+    auth = request.headers.get("Authorization", "")
+    if not auth.startswith("Bearer "):
+        return None
+    raw = auth[7:].strip()
+    h = _hash_token(raw)
+    with get_db() as db:
+        row = db.execute(
+            "SELECT owner FROM api_tokens WHERE token_hash=?", (h,)
+        ).fetchone()
+        if row:
+            db.execute(
+                "UPDATE api_tokens SET last_used_at=? WHERE token_hash=?",
+                (now_iso(), h),
+            )
+            db.commit()
+            return row["owner"]
+    return None
+
+def _api_auth(request: Request) -> str:
+    """Resolve session OR Bearer token; raise 401 if neither."""
+    if is_authenticated(request):
+        return current_user(request)
+    owner = _resolve_api_token(request)
+    if owner:
+        return owner
+    raise HTTPException(401, "Authentication required")
+
+
+# ── Token management endpoints ────────────────────────────────────────────────
+
+@router.get("/api/user/tokens")
+def list_tokens(request: Request):
+    if not is_authenticated(request):
+        raise HTTPException(401)
+    owner = current_user(request)
+    with get_db() as db:
+        rows = db.execute(
+            "SELECT id, label, created_at, last_used_at FROM api_tokens WHERE owner=? ORDER BY created_at DESC",
+            (owner,),
+        ).fetchall()
+    return [dict(r) for r in rows]
+
+
+@router.post("/api/user/tokens")
+def create_token(request: Request, body: dict):
+    if not is_authenticated(request):
+        raise HTTPException(401)
+    owner = current_user(request)
+    label = (body.get("label") or "").strip()[:60] or "My token"
+    with get_db() as db:
+        count = db.execute("SELECT COUNT(*) FROM api_tokens WHERE owner=?", (owner,)).fetchone()[0]
+        if count >= 10:
+            raise HTTPException(400, "Maximum 10 tokens per account")
+    raw = secrets.token_urlsafe(32)
+    h = _hash_token(raw)
+    with write_lock:
+        with get_db() as db:
+            db.execute(
+                "INSERT INTO api_tokens (owner, token_hash, label, created_at) VALUES (?,?,?,?)",
+                (owner, h, label, now_iso()),
+            )
+            db.commit()
+    return {"token": raw, "label": label}
+
+
+@router.delete("/api/user/tokens/{token_id}")
+def delete_token(token_id: int, request: Request):
+    if not is_authenticated(request):
+        raise HTTPException(401)
+    owner = current_user(request)
+    with write_lock:
+        with get_db() as db:
+            db.execute("DELETE FROM api_tokens WHERE id=? AND owner=?", (token_id, owner))
+            db.commit()
+    return {"ok": True}
+
+
+# ── Public API endpoints (session OR Bearer token) ────────────────────────────
+
+@router.get("/api/public/videos")
+def public_list_videos(
+    request: Request,
+    page: int = Query(1, ge=1),
+    per_page: int = Query(50, ge=1, le=200),
+    site_id: str | None = None,
+    q: str | None = None,
+):
+    owner = _api_auth(request)
+    conditions = ["s.owner=?"]
+    params: list = [owner]
+    if site_id:
+        conditions.append("v.site_id=?")
+        params.append(site_id)
+    if q:
+        conditions.append("(v.title LIKE ? OR v.cast_names LIKE ?)")
+        like = f"%{q}%"
+        params += [like, like]
+    where = "WHERE " + " AND ".join(conditions)
+    offset = (page - 1) * per_page
+    with get_db() as db:
+        total = db.execute(
+            f"SELECT COUNT(*) FROM videos v JOIN sites s ON v.site_id=s.id {where}", params
+        ).fetchone()[0]
+        rows = db.execute(
+            f"SELECT v.id, v.title, v.url, v.thumb, v.platform, v.duration, v.found_at, "
+            f"v.released_at, v.cast_names, v.is_favorite, v.is_watched, v.note, "
+            f"s.name AS site_name, s.url AS site_url "
+            f"FROM videos v JOIN sites s ON v.site_id=s.id {where} "
+            f"ORDER BY v.found_at DESC LIMIT ? OFFSET ?",
+            params + [per_page, offset],
+        ).fetchall()
+    return {
+        "videos": [dict(r) for r in rows],
+        "total": total,
+        "page": page,
+        "per_page": per_page,
+        "total_pages": max(1, -(-total // per_page)),
+    }
+
+
+@router.get("/api/public/sites")
+def public_list_sites(request: Request):
+    owner = _api_auth(request)
+    with get_db() as db:
+        rows = db.execute(
+            "SELECT id, name, url, group_name, last_scan, scan_interval FROM sites WHERE owner=? ORDER BY name",
+            (owner,),
+        ).fetchall()
+    return [dict(r) for r in rows]
+
+
 @router.get("/api/videos/export.csv")
 def export_videos_csv(request: Request):
     if not is_authenticated(request):

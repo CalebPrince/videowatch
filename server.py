@@ -82,6 +82,9 @@ async def auth_gate(request, call_next):
             pass
 
     if routes.auth_enabled() and not routes.is_authenticated(request):
+        # Bearer-token routes bypass session check
+        if path.startswith("/api/public/") and request.headers.get("Authorization", "").startswith("Bearer "):
+            return await call_next(request)
         if path.startswith("/api/") and path not in public_api:
             return JSONResponse({"detail": "Authentication required"}, status_code=401)
         if not path.startswith("/api/") and path not in public_pages and not path.startswith("/static/"):
