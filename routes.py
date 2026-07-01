@@ -37,6 +37,7 @@ from db import get_db, write_lock, DB_PATH
 
 # ── Rate limiting ─────────────────────────────────────────────────────────────
 _rate_limit_store: dict[str, list[float]] = {}
+_rate_limit_last_pruned: float = 0.0
 
 def _client_ip(request: Request) -> str:
     forwarded = request.headers.get("X-Forwarded-For")
@@ -45,7 +46,16 @@ def _client_ip(request: Request) -> str:
     return request.client.host if request.client else "unknown"
 
 def _check_rate_limit(ip: str, max_attempts: int = 5, window_seconds: int = 300) -> None:
+    global _rate_limit_last_pruned
     now = time.monotonic()
+    # Prune stale IPs every 5 minutes to prevent unbounded memory growth
+    if now - _rate_limit_last_pruned > 300:
+        cutoff = now - max(window_seconds, 3600)
+        _rate_limit_store.clear() if len(_rate_limit_store) > 5000 else None
+        stale = [k for k, v in _rate_limit_store.items() if not any(t > cutoff for t in v)]
+        for k in stale:
+            del _rate_limit_store[k]
+        _rate_limit_last_pruned = now
     hits = _rate_limit_store.get(ip, [])
     hits = [t for t in hits if now - t < window_seconds]
     hits.append(now)
@@ -54,7 +64,7 @@ def _check_rate_limit(ip: str, max_attempts: int = 5, window_seconds: int = 300)
         retry_after = int(window_seconds - (now - hits[0]))
         raise HTTPException(
             status_code=429,
-            detail=f"Too many attempts. Try again in {retry_after}s.",
+            detail=f"Too many attempts. Please wait {retry_after} seconds before trying again.",
             headers={"Retry-After": str(retry_after)},
         )
 
@@ -1454,7 +1464,8 @@ def verify_email(token: str):
 
 
 @router.post("/api/auth/forgot-password")
-def forgot_password(body: ForgotPasswordIn):
+def forgot_password(body: ForgotPasswordIn, request: Request):
+    _check_rate_limit(_client_ip(request), max_attempts=3, window_seconds=600)
     email = (body.email or "").strip().lower()
     if not email:
         raise HTTPException(400, "Email address is required")
@@ -1481,7 +1492,8 @@ def forgot_password(body: ForgotPasswordIn):
 
 
 @router.post("/api/auth/reset-password")
-def reset_password(body: ResetPasswordIn):
+def reset_password(body: ResetPasswordIn, request: Request):
+    _check_rate_limit(_client_ip(request), max_attempts=5, window_seconds=300)
     if not body.new_password or len(body.new_password) < 8:
         raise HTTPException(400, "Password must be at least 8 characters")
     if body.new_password != body.confirm_password:
@@ -2083,6 +2095,7 @@ def _run_scan_one_sync(site: dict):
 
 @router.post("/api/scan")
 async def scan_all(request: Request):
+    _check_rate_limit(_client_ip(request), max_attempts=10, window_seconds=60)
     user = current_user(request) or ""
     owner = None if is_super_admin(request) else user
     _enqueue_scan_all(owner)
@@ -2115,6 +2128,7 @@ async def fresh_scan_all(request: Request):
 
 @router.post("/api/scan/{site_id}")
 async def scan_one(site_id: str, request: Request):
+    _check_rate_limit(_client_ip(request), max_attempts=10, window_seconds=60)
     with get_db() as db:
         site = db.execute("SELECT * FROM sites WHERE id=?", (site_id,)).fetchone()
     if not site:
