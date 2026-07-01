@@ -324,6 +324,13 @@
             autocomplete="new-password" required />
         </div>
 
+        <div class="field-wrap">
+          <label class="field-label" for="referral-code">Referral code <span style="font-weight:400;color:var(--muted);">(optional)</span></label>
+          <input id="referral-code" class="form-control" type="text"
+            placeholder="Enter a referral code if you have one"
+            autocomplete="off" maxlength="20" />
+        </div>
+
         <div class="field-wrap" style="display:flex;flex-direction:row;align-items:flex-start;gap:.6rem;">
           <input type="checkbox" id="tos" style="margin-top:.2rem;flex-shrink:0;accent-color:#0f766e;width:1rem;height:1rem;cursor:pointer;" />
           <label for="tos" style="font-size:.84rem;color:var(--muted);cursor:pointer;line-height:1.5;">
@@ -350,6 +357,13 @@
   </div>
 
   <script>
+    // Pre-fill referral code from URL ?ref=
+    const _urlRef = new URLSearchParams(window.location.search).get('ref');
+    if (_urlRef) {
+      const inp = document.getElementById('referral-code');
+      if (inp) inp.value = _urlRef;
+    }
+
     const API = (() => {
       const configured = window.localStorage.getItem('videowatch_api_base');
       if (configured) {
@@ -458,7 +472,7 @@
       btn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span>Creating account…';
 
       try {
-        const _refCode = new URLSearchParams(window.location.search).get('ref') || undefined;
+        const _refCode = document.getElementById('referral-code').value.trim() || new URLSearchParams(window.location.search).get('ref') || undefined;
         const res = await api('/auth/register', {
           method: 'POST',
           body: JSON.stringify({ username, email, password, confirm_password: confirm, tos_accepted, referral_code: _refCode }),
