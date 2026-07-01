@@ -164,6 +164,66 @@ def _send_reset_email(to_address: str, username: str, token: str) -> None:
         smtp.login(_SMTP_USER, _SMTP_PASSWORD)
         smtp.sendmail(_SMTP_USER, to_address, msg.as_string())
 
+def send_weekly_digest():
+    """Send each user a summary of new videos found in the last 7 days. Call on Monday."""
+    if not _email_configured():
+        return
+    from datetime import timedelta
+    since = (datetime.now(timezone.utc) - timedelta(days=7)).isoformat()
+    with get_db() as db:
+        users = db.execute(
+            "SELECT username, email FROM users WHERE email IS NOT NULL AND email_verified=1 AND notify_new_videos=1"
+        ).fetchall()
+        for user in users:
+            username = user["email"] if user["email"] else None
+            if not username:
+                continue
+            rows = db.execute(
+                """SELECT v.title, v.url, v.thumb, s.name AS site_name
+                   FROM videos v JOIN sites s ON s.id=v.site_id
+                   WHERE s.owner=? AND v.found_at >= ? AND v.is_ignored=0
+                   ORDER BY v.found_at DESC LIMIT 20""",
+                (user["username"], since)
+            ).fetchall()
+            if not rows:
+                continue
+            count = db.execute(
+                "SELECT COUNT(*) FROM videos v JOIN sites s ON s.id=v.site_id WHERE s.owner=? AND v.found_at >= ?",
+                (user["username"], since)
+            ).fetchone()[0]
+            items_html = "".join(
+                f'<tr><td style="padding:6px 0;border-bottom:1px solid #e2e8f0;">'
+                f'<a href="{r["url"]}" style="color:#0f766e;font-weight:600;text-decoration:none;">{r["title"] or r["url"]}</a>'
+                f'<span style="color:#94a3b8;font-size:.8em;margin-left:.5rem;">{r["site_name"] or ""}</span>'
+                f'</td></tr>'
+                for r in rows
+            )
+            more = f'<p style="color:#64748b;font-size:.85rem;">…and {count - len(rows)} more.</p>' if count > len(rows) else ""
+            html = f"""
+            <div style="font-family:sans-serif;max-width:560px;margin:0 auto;">
+              <h2 style="color:#0f766e;">VideoWatch Weekly Digest</h2>
+              <p>Here's what's new since last week, <strong>{user["username"]}</strong>:</p>
+              <p style="font-size:1.1rem;font-weight:700;">{count} new video{"s" if count!=1 else ""} found</p>
+              <table style="width:100%;border-collapse:collapse;">{items_html}</table>
+              {more}
+              <p style="margin-top:1.5rem;">
+                <a href="{_APP_BASE_URL}" style="background:#0f766e;color:#fff;padding:10px 22px;border-radius:8px;text-decoration:none;font-weight:700;">
+                  Open VideoWatch
+                </a>
+              </p>
+              <p style="color:#94a3b8;font-size:.8rem;margin-top:2rem;">
+                You're receiving this weekly digest because you have email notifications enabled.<br>
+                <a href="{_APP_BASE_URL}/settings?tab=notifications" style="color:#94a3b8;">Unsubscribe</a>
+              </p>
+            </div>"""
+            text = f"VideoWatch Weekly Digest\n\n{count} new video(s) found this week.\n\nOpen VideoWatch: {_APP_BASE_URL}\n"
+            try:
+                _send_email_simple(user["email"], "Your VideoWatch Weekly Digest", html, text)
+                log.info(f"Weekly digest sent to {user['username']}")
+            except Exception as e:
+                log.warning(f"Weekly digest failed for {user['username']}: {e}")
+
+
 def _send_email_simple(to_address: str, subject: str, html: str, text: str) -> None:
     """Fire-and-forget helper — call in a daemon thread."""
     if not _email_configured() or not to_address:
@@ -3265,6 +3325,14 @@ def delete_waitlist_entry(entry_id: int, request: Request):
             db.execute("DELETE FROM waitlist WHERE id=?", (entry_id,))
             db.commit()
     return {"ok": True}
+
+
+@router.post("/api/admin/send-digest")
+def trigger_digest(request: Request):
+    if not is_super_admin(request):
+        raise HTTPException(403, "Super admin only")
+    threading.Thread(target=send_weekly_digest, daemon=True).start()
+    return {"ok": True, "message": "Weekly digest queued"}
 
 
 @router.post("/api/admin/broadcast")

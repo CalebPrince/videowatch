@@ -131,11 +131,16 @@ async def _scheduler():
         await asyncio.sleep(30)
         # Nightly backup at the first scheduler tick after midnight UTC
         try:
-            today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+            now_utc = datetime.now(timezone.utc)
+            today = now_utc.strftime("%Y-%m-%d")
             if today != _last_backup_date:
                 _last_backup_date = today
                 from routes import _run_backup
                 threading.Thread(target=_run_backup, daemon=True).start()
+                # Weekly digest — send every Monday
+                if now_utc.weekday() == 0:
+                    from routes import send_weekly_digest
+                    threading.Thread(target=send_weekly_digest, daemon=True).start()
         except Exception as e:
             log.error(f"Nightly backup error: {e}")
         try:
