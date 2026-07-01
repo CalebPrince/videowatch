@@ -1754,6 +1754,51 @@ def update_user_role(username: str, body: UserRolePatchIn, request: Request):
     _audit(request, "user_update", f"username={username} role={role} active={active}")
     return {"ok": True, "username": username, "role": role, "active": bool(active)}
 
+@router.patch("/api/admin/users/{username}/plan")
+def admin_set_user_plan(username: str, body: dict, request: Request):
+    if not is_super_admin(request):
+        raise HTTPException(403, "Super admin only")
+    plan = (body.get("plan") or "free").strip().lower()
+    if plan not in PLAN_LIMITS:
+        raise HTTPException(400, f"Invalid plan. Must be one of: {', '.join(PLAN_LIMITS)}")
+    with write_lock:
+        with get_db() as db:
+            if not db.execute("SELECT 1 FROM users WHERE username=?", (username,)).fetchone():
+                raise HTTPException(404, "User not found")
+            db.execute("UPDATE users SET plan=?, updated_at=? WHERE username=?", (plan, now_iso(), username))
+            db.commit()
+    _audit(request, "admin_plan_change", f"username={username} plan={plan}")
+    return {"ok": True, "username": username, "plan": plan}
+
+
+@router.get("/api/admin/billing/stats")
+def admin_billing_stats(request: Request):
+    if not is_super_admin(request):
+        raise HTTPException(403, "Super admin only")
+    with get_db() as db:
+        plan_rows = db.execute(
+            "SELECT COALESCE(plan,'free') as plan, COUNT(*) as count FROM users WHERE active=1 GROUP BY plan"
+        ).fetchall()
+        total_users = db.execute("SELECT COUNT(*) FROM users WHERE active=1").fetchone()[0]
+        total_sites = db.execute("SELECT COUNT(*) FROM sites").fetchone()[0]
+        total_videos = db.execute("SELECT COUNT(*) FROM videos").fetchone()[0]
+        recent_users = db.execute(
+            """SELECT username, email, COALESCE(plan,'free') as plan, created_at, active,
+                      (SELECT COUNT(*) FROM sites WHERE owner=users.username) as site_count,
+                      (SELECT COUNT(*) FROM videos v JOIN sites s ON v.site_id=s.id WHERE s.owner=users.username) as video_count
+               FROM users ORDER BY created_at DESC LIMIT 100"""
+        ).fetchall()
+    plans = {r["plan"]: r["count"] for r in plan_rows}
+    return {
+        "plans": plans,
+        "total_users": total_users,
+        "total_sites": total_sites,
+        "total_videos": total_videos,
+        "users": [dict(r) for r in recent_users],
+        "stripe_connected": False,  # flip to True once Stripe keys are added
+    }
+
+
 @router.patch("/api/sites/{site_id}")
 def update_site(site_id: str, body: SitePatch, request: Request):
     with write_lock:

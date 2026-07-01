@@ -273,6 +273,7 @@
       <button class="navbtn" id="navbtn-userstats" data-target="userstats" title="Usage statistics per user"><i class="bi bi-bar-chart-fill me-1"></i>Usage Stats</button>
       <button class="navbtn" id="navbtn-audit" data-target="audit" title="Audit log"><i class="bi bi-journal-text me-1"></i>Audit Log</button>
       <button class="navbtn" data-target="duplicates" title="Duplicate video candidates"><i class="bi bi-files me-1"></i>Duplicates</button>
+      <button class="navbtn" id="navbtn-payments" data-target="payments" title="Payments and billing"><i class="bi bi-credit-card me-1"></i>Payments</button>
       <button class="navbtn" data-target="maintenance" title="Maintenance actions"><i class="bi bi-tools me-1"></i>Maintenance</button>
     </aside>
 
@@ -492,6 +493,81 @@
           </button>
         </div>
         <div id="maint-msg" class="meta mt-2"></div>
+      </section>
+
+      <!-- ── Payments ── -->
+      <section id="payments" class="cardx pane hidden">
+        <h6><i class="bi bi-credit-card me-2" style="color:var(--brand)"></i>Payments &amp; Billing</h6>
+
+        <!-- Stripe banner -->
+        <div id="stripe-banner" style="display:none;background:linear-gradient(135deg,#635bff11,#635bff22);border:1px solid #635bff44;border-radius:10px;padding:1rem 1.25rem;margin-bottom:1.5rem;display:flex;align-items:center;gap:1rem;flex-wrap:wrap;">
+          <div style="flex:1;min-width:200px;">
+            <div style="font-weight:700;font-size:.88rem;margin-bottom:.2rem;"><i class="bi bi-stripe me-1" style="color:#635bff"></i>Stripe not connected</div>
+            <div class="meta" style="font-size:.8rem;">Connect Stripe to see live revenue, invoices, and subscription status. Plan assignments below are manual until then.</div>
+          </div>
+          <a href="https://stripe.com" target="_blank" class="btn btn-sm" style="background:#635bff;color:#fff;border:none;font-weight:600;white-space:nowrap;">
+            <i class="bi bi-box-arrow-up-right me-1"></i>Set up Stripe
+          </a>
+        </div>
+
+        <!-- Stats row -->
+        <div id="billing-stats-row" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:.75rem;margin-bottom:1.5rem;"></div>
+
+        <!-- Revenue placeholder -->
+        <div style="background:var(--card-bg);border:1px solid var(--border);border-radius:10px;padding:1rem 1.25rem;margin-bottom:1.5rem;">
+          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:.75rem;">
+            <div style="font-weight:700;font-size:.85rem;"><i class="bi bi-graph-up-arrow me-1" style="color:var(--brand)"></i>Revenue</div>
+            <span class="meta" style="font-size:.75rem;">Requires Stripe</span>
+          </div>
+          <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:.75rem;text-align:center;">
+            <div>
+              <div style="font-size:1.4rem;font-weight:800;color:var(--brand);" id="billing-mrr">—</div>
+              <div class="meta" style="font-size:.75rem;">MRR</div>
+            </div>
+            <div>
+              <div style="font-size:1.4rem;font-weight:800;color:var(--brand);" id="billing-arr">—</div>
+              <div class="meta" style="font-size:.75rem;">ARR</div>
+            </div>
+            <div>
+              <div style="font-size:1.4rem;font-weight:800;color:var(--brand);" id="billing-churn">—</div>
+              <div class="meta" style="font-size:.75rem;">Churn rate</div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Users / plan table -->
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:.6rem;flex-wrap:wrap;gap:.5rem;">
+          <div style="font-weight:700;font-size:.85rem;"><i class="bi bi-people me-1" style="color:var(--brand)"></i>Users</div>
+          <input id="billing-user-search" type="search" placeholder="Filter users…" style="font-size:.78rem;padding:.25rem .6rem;border:1px solid var(--border);border-radius:6px;background:var(--input-bg,#f8fafc);color:var(--text);width:180px;">
+        </div>
+        <div style="overflow-x:auto;">
+          <table style="width:100%;font-size:.82rem;border-collapse:collapse;" id="billing-users-table">
+            <thead>
+              <tr style="border-bottom:2px solid var(--border);text-align:left;">
+                <th style="padding:.4rem .6rem;font-weight:600;">User</th>
+                <th style="padding:.4rem .6rem;font-weight:600;">Email</th>
+                <th style="padding:.4rem .6rem;font-weight:600;">Plan</th>
+                <th style="padding:.4rem .6rem;font-weight:600;">Sites</th>
+                <th style="padding:.4rem .6rem;font-weight:600;">Videos</th>
+                <th style="padding:.4rem .6rem;font-weight:600;">Joined</th>
+                <th style="padding:.4rem .6rem;font-weight:600;">Status</th>
+                <th style="padding:.4rem .6rem;font-weight:600;">Subscription</th>
+                <th style="padding:.4rem .6rem;"></th>
+              </tr>
+            </thead>
+            <tbody id="billing-users-body"></tbody>
+          </table>
+        </div>
+
+        <!-- Transactions placeholder -->
+        <div style="margin-top:1.5rem;">
+          <div style="font-weight:700;font-size:.85rem;margin-bottom:.6rem;"><i class="bi bi-receipt me-1" style="color:var(--brand)"></i>Recent Transactions</div>
+          <div id="billing-txn-wrap" style="background:var(--card-bg);border:1px dashed var(--border);border-radius:10px;padding:2rem;text-align:center;color:var(--text-muted);">
+            <i class="bi bi-stripe" style="font-size:2rem;color:#635bff;opacity:.4;display:block;margin-bottom:.5rem;"></i>
+            <div style="font-size:.85rem;font-weight:600;margin-bottom:.25rem;">No transactions yet</div>
+            <div style="font-size:.78rem;">Transaction history will appear here once Stripe is connected.</div>
+          </div>
+        </div>
       </section>
     </main>
   </div>
@@ -1221,6 +1297,102 @@
       const isSuperAdmin = role === 'super_admin';
       const isAdmin      = isSuperAdmin || role === 'admin';
 
+    // ── Payments ─────────────────────────────────────────────────────────────
+    const PLAN_COLORS = { free: '#64748b', pro: '#0f766e', unlimited: '#7c3aed' };
+    const PLAN_LABELS = { free: 'Free', pro: 'Pro', unlimited: 'Unlimited' };
+    let _billingUsers = [];
+
+    async function loadPayments() {
+      const stats = await api('/admin/billing/stats').catch(() => null);
+      if (!stats) return;
+
+      // Stripe banner
+      if (!stats.stripe_connected) {
+        document.getElementById('stripe-banner').style.display = 'flex';
+      }
+
+      // Stats cards
+      const statsRow = document.getElementById('billing-stats-row');
+      const planOrder = ['free', 'pro', 'unlimited'];
+      const cards = [
+        { label: 'Total users',  value: stats.total_users,  icon: 'bi-people',      color: 'var(--brand)' },
+        { label: 'Free',         value: stats.plans.free || 0,  icon: 'bi-person',  color: PLAN_COLORS.free },
+        { label: 'Pro',          value: stats.plans.pro || 0,   icon: 'bi-star-fill', color: PLAN_COLORS.pro },
+        { label: 'Unlimited',    value: stats.plans.unlimited || 0, icon: 'bi-infinity', color: PLAN_COLORS.unlimited },
+        { label: 'Total sites',  value: stats.total_sites,  icon: 'bi-diagram-3',   color: 'var(--brand)' },
+        { label: 'Total videos', value: stats.total_videos, icon: 'bi-film',         color: 'var(--brand)' },
+      ];
+      statsRow.innerHTML = cards.map(c => `
+        <div style="background:var(--card-bg);border:1px solid var(--border);border-radius:10px;padding:.75rem 1rem;">
+          <div style="display:flex;align-items:center;gap:.4rem;color:${c.color};font-size:.75rem;font-weight:600;margin-bottom:.3rem;">
+            <i class="bi ${c.icon}"></i>${c.label}
+          </div>
+          <div style="font-size:1.5rem;font-weight:800;">${c.value.toLocaleString()}</div>
+        </div>`).join('');
+
+      // Users table
+      _billingUsers = stats.users;
+      renderBillingUsers(_billingUsers);
+
+      // Search filter
+      document.getElementById('billing-user-search').oninput = e => {
+        const q = e.target.value.trim().toLowerCase();
+        renderBillingUsers(q ? _billingUsers.filter(u =>
+          (u.username||'').toLowerCase().includes(q) || (u.email||'').toLowerCase().includes(q) || (u.plan||'').includes(q)
+        ) : _billingUsers);
+      };
+    }
+
+    function renderBillingUsers(users) {
+      const tbody = document.getElementById('billing-users-body');
+      if (!users.length) {
+        tbody.innerHTML = '<tr><td colspan="9" style="padding:1rem;text-align:center;color:var(--text-muted);font-size:.82rem;">No users found</td></tr>';
+        return;
+      }
+      tbody.innerHTML = users.map(u => {
+        const plan = u.plan || 'free';
+        const color = PLAN_COLORS[plan] || '#64748b';
+        const badge = `<span style="display:inline-block;padding:.15rem .5rem;border-radius:999px;font-size:.72rem;font-weight:700;background:${color}22;color:${color};border:1px solid ${color}44;">${PLAN_LABELS[plan] || plan}</span>`;
+        const planSel = `<select data-user="${u.username}" class="plan-sel" style="font-size:.75rem;padding:.15rem .4rem;border:1px solid var(--border);border-radius:5px;background:var(--input-bg,#f8fafc);color:var(--text);">
+          <option value="free" ${plan==='free'?'selected':''}>Free</option>
+          <option value="pro" ${plan==='pro'?'selected':''}>Pro</option>
+          <option value="unlimited" ${plan==='unlimited'?'selected':''}>Unlimited</option>
+        </select>`;
+        const status = u.active ? '<span style="color:#16a34a;font-size:.75rem;font-weight:600;">● Active</span>' : '<span style="color:#dc2626;font-size:.75rem;font-weight:600;">● Inactive</span>';
+        return `<tr style="border-bottom:1px solid var(--border);">
+          <td style="padding:.45rem .6rem;font-weight:600;">${u.username}</td>
+          <td style="padding:.45rem .6rem;color:var(--text-muted);">${u.email || '—'}</td>
+          <td style="padding:.45rem .6rem;">${badge}</td>
+          <td style="padding:.45rem .6rem;text-align:center;">${u.site_count}</td>
+          <td style="padding:.45rem .6rem;text-align:center;">${u.video_count}</td>
+          <td style="padding:.45rem .6rem;color:var(--text-muted);font-size:.78rem;">${(u.created_at||'').slice(0,10)}</td>
+          <td style="padding:.45rem .6rem;">${status}</td>
+          <td style="padding:.45rem .6rem;color:var(--text-muted);font-size:.75rem;">— <span style="opacity:.5">Stripe</span></td>
+          <td style="padding:.45rem .6rem;">${planSel}</td>
+        </tr>`;
+      }).join('');
+
+      // Wire up plan selects
+      tbody.querySelectorAll('.plan-sel').forEach(sel => {
+        sel.addEventListener('change', async () => {
+          const username = sel.dataset.user;
+          const plan = sel.value;
+          try {
+            await api(`/admin/users/${encodeURIComponent(username)}/plan`, { method: 'PATCH', body: JSON.stringify({ plan }) });
+            showToast(`${username} → ${PLAN_LABELS[plan]}`, 'success');
+            // Update local cache
+            const u = _billingUsers.find(x => x.username === username);
+            if (u) u.plan = plan;
+            // Re-render badge in the same row
+            const row = sel.closest('tr');
+            const badgeCell = row.children[2];
+            const color = PLAN_COLORS[plan] || '#64748b';
+            badgeCell.innerHTML = `<span style="display:inline-block;padding:.15rem .5rem;border-radius:999px;font-size:.72rem;font-weight:700;background:${color}22;color:${color};border:1px solid ${color}44;">${PLAN_LABELS[plan]}</span>`;
+          } catch(e) { showToast(e.message, 'danger'); sel.value = (_billingUsers.find(x=>x.username===sel.dataset.user)||{}).plan||'free'; }
+        });
+      });
+    }
+
       // Sections visible to all authenticated users
       await Promise.allSettled([loadGeneral(), loadHealth(), loadNotifications(), loadSitesRules()]);
 
@@ -1232,10 +1404,11 @@
         document.getElementById('users')?.remove();
       }
 
-      // Duplicates, Maintenance, All Users' Sites — super_admin only
+      // Duplicates, Maintenance, All Users' Sites, Payments — super_admin only
       if (isSuperAdmin) {
         await Promise.allSettled([loadDuplicates(), loadAllSites(), loadUserStats(), loadAuditLog()]);
         document.getElementById('btn-audit-refresh')?.addEventListener('click', () => loadAuditLog(_auditOffset));
+        document.querySelector('.navbtn[data-target="payments"]')?.addEventListener('click', loadPayments);
       } else {
         document.querySelector('.navbtn[data-target="duplicates"]')?.remove();
         document.getElementById('duplicates')?.remove();
@@ -1247,6 +1420,8 @@
         document.getElementById('userstats')?.remove();
         document.getElementById('navbtn-audit')?.remove();
         document.getElementById('audit')?.remove();
+        document.getElementById('navbtn-payments')?.remove();
+        document.getElementById('payments')?.remove();
       }
     })();
   </script>
