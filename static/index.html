@@ -512,6 +512,58 @@
       }
     }
 
+    /* ── Mobile UX improvements ── */
+    /* Larger touch targets on video card action buttons */
+    @media (max-width: 991.98px) {
+      .btn-icon {
+        width: 36px !important;
+        height: 36px !important;
+        font-size: .85rem !important;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+      }
+      /* Show site actions always on touch (no hover) */
+      .site-actions { opacity: 1 !important; }
+
+      /* Full-width modals on mobile */
+      .modal-dialog {
+        margin: .5rem;
+        max-width: calc(100vw - 1rem);
+      }
+
+      /* Filter bar toggle */
+      #filter-bar-wrap {
+        display: none;
+      }
+      #filter-bar-wrap.filter-open {
+        display: block;
+      }
+      #btn-filter-toggle {
+        display: inline-flex !important;
+      }
+
+      /* Toast notifications at top on mobile */
+      #toast-container {
+        bottom: auto;
+        top: 12px;
+        right: 12px;
+        left: 12px;
+      }
+      .toast-notice {
+        min-width: unset;
+        max-width: 100%;
+      }
+    }
+
+    /* Safe area for iPhone notch/home bar */
+    @supports (padding-bottom: env(safe-area-inset-bottom)) {
+      #main { padding-bottom: env(safe-area-inset-bottom); }
+    }
+
+    /* Filter toggle button — hidden on desktop */
+    #btn-filter-toggle { display: none; }
+
     /* ── Stat card icons ── */
     .stat-header { display: flex; align-items: center; gap: .45rem; margin-bottom: .3rem; }
     .stat-header .stat-label { margin-bottom: 0; }
@@ -688,6 +740,10 @@
         </ul>
       </div>
     </div>
+    <button class="btn btn-sm btn-outline-secondary" id="btn-filter-toggle" aria-label="Toggle filters" aria-expanded="false">
+      <i class="bi bi-sliders me-1"></i>Filters
+    </button>
+    <div id="filter-bar-wrap">
     <div class="filter-bar">
       <input type="search" id="search-inp" placeholder="Search titles, cast, site, url…" />
       <div class="filter-labeled"><span class="filter-float-label">Released after</span><input type="date" id="released-after" aria-label="Released after date" /></div>
@@ -698,6 +754,7 @@
       <select id="platform-filter" aria-label="Filter by platform">
         <option value="">All types</option>
       </select>
+    </div>
     </div>
     <div class="topbar-actions">
       <button class="btn btn-sm btn-outline-secondary" id="btn-seen" aria-label="Mark visible videos as seen">
@@ -1291,6 +1348,32 @@ function initMobileSidebar() {
       setSidebarOpen(false);
     }
   });
+
+  // Swipe-to-close sidebar on mobile
+  const sidebar = document.getElementById('sidebar');
+  if (sidebar) {
+    let touchStartX = 0;
+    sidebar.addEventListener('touchstart', (e) => {
+      touchStartX = e.touches[0].clientX;
+    }, { passive: true });
+    sidebar.addEventListener('touchend', (e) => {
+      const dx = e.changedTouches[0].clientX - touchStartX;
+      if (dx < -60) setSidebarOpen(false);
+    }, { passive: true });
+  }
+
+  // Filter bar toggle button
+  const filterToggle = document.getElementById('btn-filter-toggle');
+  const filterWrap = document.getElementById('filter-bar-wrap');
+  if (filterToggle && filterWrap) {
+    filterToggle.addEventListener('click', () => {
+      const open = filterWrap.classList.toggle('filter-open');
+      filterToggle.setAttribute('aria-expanded', String(open));
+      filterToggle.innerHTML = open
+        ? '<i class="bi bi-x-lg me-1"></i>Filters'
+        : '<i class="bi bi-sliders me-1"></i>Filters';
+    });
+  }
 }
 
 function connectSSE() {
