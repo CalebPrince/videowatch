@@ -295,6 +295,24 @@ def init_db():
             """)
             db.execute("CREATE INDEX IF NOT EXISTS idx_collections_owner ON collections(owner)")
             db.execute("""
+                CREATE TABLE IF NOT EXISTS roadmap_items (
+                    id         TEXT PRIMARY KEY,
+                    title      TEXT NOT NULL,
+                    description TEXT,
+                    status     TEXT NOT NULL DEFAULT 'planned',
+                    sort_order INTEGER DEFAULT 0,
+                    created_at TEXT NOT NULL
+                )
+            """)
+            db.execute("""
+                CREATE TABLE IF NOT EXISTS roadmap_votes (
+                    item_id  TEXT NOT NULL,
+                    username TEXT NOT NULL,
+                    PRIMARY KEY (item_id, username),
+                    FOREIGN KEY (item_id) REFERENCES roadmap_items(id) ON DELETE CASCADE
+                )
+            """)
+            db.execute("""
                 CREATE TABLE IF NOT EXISTS collection_videos (
                     collection_id TEXT NOT NULL,
                     video_id      TEXT NOT NULL,

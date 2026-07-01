@@ -3239,6 +3239,107 @@ def admin_broadcast(request: Request, body: dict):
     return {"ok": True, "queued": len(recipients)}
 
 
+@router.get("/api/roadmap")
+def get_roadmap(request: Request):
+    """Public endpoint — returns all roadmap items with vote counts."""
+    username = None
+    try:
+        username = current_user(request)
+    except Exception:
+        pass
+    with get_db() as db:
+        rows = db.execute(
+            """SELECT r.id, r.title, r.description, r.status, r.sort_order,
+                      COUNT(v.username) AS votes,
+                      MAX(CASE WHEN v.username=? THEN 1 ELSE 0 END) AS voted
+               FROM roadmap_items r
+               LEFT JOIN roadmap_votes v ON v.item_id=r.id
+               GROUP BY r.id ORDER BY r.status, votes DESC, r.sort_order""",
+            (username or "",)
+        ).fetchall()
+    return [dict(r) for r in rows]
+
+
+@router.post("/api/roadmap/vote/{item_id}")
+def vote_roadmap(item_id: str, request: Request):
+    username = _api_auth(request)
+    with write_lock:
+        with get_db() as db:
+            if not db.execute("SELECT 1 FROM roadmap_items WHERE id=?", (item_id,)).fetchone():
+                raise HTTPException(404)
+            existing = db.execute("SELECT 1 FROM roadmap_votes WHERE item_id=? AND username=?", (item_id, username)).fetchone()
+            if existing:
+                db.execute("DELETE FROM roadmap_votes WHERE item_id=? AND username=?", (item_id, username))
+                voted = False
+            else:
+                db.execute("INSERT INTO roadmap_votes (item_id, username) VALUES (?,?)", (item_id, username))
+                voted = True
+            count = db.execute("SELECT COUNT(*) FROM roadmap_votes WHERE item_id=?", (item_id,)).fetchone()[0]
+            db.commit()
+    return {"ok": True, "voted": voted, "votes": count}
+
+
+@router.get("/api/admin/roadmap")
+def admin_get_roadmap(request: Request):
+    if not is_admin(request):
+        raise HTTPException(403)
+    with get_db() as db:
+        rows = db.execute(
+            """SELECT r.id, r.title, r.description, r.status, r.sort_order, COUNT(v.username) AS votes
+               FROM roadmap_items r LEFT JOIN roadmap_votes v ON v.item_id=r.id
+               GROUP BY r.id ORDER BY r.sort_order, r.created_at"""
+        ).fetchall()
+    return [dict(r) for r in rows]
+
+
+@router.post("/api/admin/roadmap")
+def admin_create_roadmap(request: Request, body: dict):
+    if not is_admin(request):
+        raise HTTPException(403)
+    title = (body.get("title") or "").strip()
+    if not title:
+        raise HTTPException(400, "title required")
+    rid = str(__import__("uuid").uuid4())
+    with write_lock:
+        with get_db() as db:
+            db.execute(
+                "INSERT INTO roadmap_items (id, title, description, status, sort_order, created_at) VALUES (?,?,?,?,?,?)",
+                (rid, title, body.get("description",""), body.get("status","planned"), int(body.get("sort_order",0)), now_iso())
+            )
+            db.commit()
+    return {"id": rid, "title": title, "votes": 0}
+
+
+@router.patch("/api/admin/roadmap/{item_id}")
+def admin_update_roadmap(item_id: str, request: Request, body: dict):
+    if not is_admin(request):
+        raise HTTPException(403)
+    fields = {}
+    if "title" in body: fields["title"] = body["title"]
+    if "description" in body: fields["description"] = body["description"]
+    if "status" in body: fields["status"] = body["status"]
+    if "sort_order" in body: fields["sort_order"] = int(body["sort_order"])
+    if not fields:
+        raise HTTPException(400, "nothing to update")
+    set_clause = ", ".join(f"{k}=?" for k in fields)
+    with write_lock:
+        with get_db() as db:
+            db.execute(f"UPDATE roadmap_items SET {set_clause} WHERE id=?", [*fields.values(), item_id])
+            db.commit()
+    return {"ok": True}
+
+
+@router.delete("/api/admin/roadmap/{item_id}")
+def admin_delete_roadmap(item_id: str, request: Request):
+    if not is_admin(request):
+        raise HTTPException(403)
+    with write_lock:
+        with get_db() as db:
+            db.execute("DELETE FROM roadmap_items WHERE id=?", (item_id,))
+            db.commit()
+    return {"ok": True}
+
+
 @router.get("/api/collections")
 def list_collections(request: Request):
     username = _api_auth(request)

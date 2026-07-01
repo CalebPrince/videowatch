@@ -275,6 +275,7 @@
       <button class="navbtn" id="navbtn-userstats" data-target="userstats" title="Usage statistics per user"><i class="bi bi-bar-chart-fill me-1"></i>Usage Stats</button>
       <button class="navbtn" id="navbtn-audit" data-target="audit" title="Audit log"><i class="bi bi-journal-text me-1"></i>Audit Log</button>
       <button class="navbtn" data-target="duplicates" title="Duplicate video candidates"><i class="bi bi-files me-1"></i>Duplicates</button>
+      <button class="navbtn" id="navbtn-roadmap-admin" data-target="roadmap-admin" title="Manage roadmap"><i class="bi bi-map me-1"></i>Roadmap</button>
       <button class="navbtn" id="navbtn-analytics" data-target="analytics" title="Usage analytics"><i class="bi bi-bar-chart-line me-1"></i>Analytics</button>
       <button class="navbtn" id="navbtn-payments" data-target="payments" title="Payments and billing"><i class="bi bi-credit-card me-1"></i>Payments</button>
       <button class="navbtn" data-target="maintenance" title="Maintenance actions"><i class="bi bi-tools me-1"></i>Maintenance</button>
@@ -600,6 +601,18 @@
           <div style="font-size:.75rem;color:var(--text-muted);margin-bottom:.6rem;">A backup runs automatically every night. The last 7 are kept.</div>
           <div id="backup-list" style="border:1px solid var(--border);border-radius:8px;overflow:hidden;"></div>
         </div>
+      </section>
+
+      <!-- ── Roadmap Admin ── -->
+      <section id="roadmap-admin" class="cardx pane hidden">
+        <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:.75rem;margin-bottom:1.25rem;">
+          <h6 style="margin:0;"><i class="bi bi-map me-2" style="color:var(--brand)"></i>Roadmap</h6>
+          <div style="display:flex;gap:.5rem;">
+            <a href="/roadmap" target="_blank" class="btn btn-sm btn-outline-secondary"><i class="bi bi-box-arrow-up-right me-1"></i>View public page</a>
+            <button class="btn btn-sm btn-primary" id="btn-new-roadmap-item"><i class="bi bi-plus me-1"></i>Add Item</button>
+          </div>
+        </div>
+        <div id="roadmap-admin-list" style="display:flex;flex-direction:column;gap:.6rem;"></div>
       </section>
 
       <!-- ── Analytics ── -->
@@ -1639,6 +1652,56 @@
     // ── Payments ─────────────────────────────────────────────────────────────
     const PLAN_COLORS = { free: '#64748b', pro: '#0f766e', unlimited: '#7c3aed' };
     const PLAN_LABELS = { free: 'Free', pro: 'Pro', unlimited: 'Unlimited' };
+    // ── Roadmap Admin ─────────────────────────────────────────────────────────
+    const _ROADMAP_STATUSES = ['planned','in-progress','done'];
+    const _statusLabel = { planned:'Planned', 'in-progress':'In Progress', done:'Done' };
+
+    async function loadRoadmapAdmin() {
+      const items = await api('/admin/roadmap').catch(() => []);
+      const list = document.getElementById('roadmap-admin-list');
+      if (!list) return;
+      list.innerHTML = items.length ? items.map(item => `
+        <div style="background:var(--card-bg);border:1px solid var(--border);border-radius:10px;padding:.75rem 1rem;display:flex;align-items:flex-start;gap:.75rem;">
+          <div style="flex:1;">
+            <div style="font-weight:700;font-size:.88rem;">${item.title}</div>
+            ${item.description ? `<div style="font-size:.78rem;color:var(--text-muted);margin-top:.2rem;">${item.description}</div>` : ''}
+          </div>
+          <select onchange="updateRoadmapItem('${item.id}',{status:this.value})" style="font-size:.76rem;padding:.2rem .4rem;border:1px solid var(--border);border-radius:6px;background:var(--card-bg);color:var(--text);">
+            ${_ROADMAP_STATUSES.map(s=>`<option value="${s}" ${item.status===s?'selected':''}>${_statusLabel[s]}</option>`).join('')}
+          </select>
+          <span style="font-size:.75rem;color:var(--text-muted);white-space:nowrap;"><i class="bi bi-arrow-up-circle me-1"></i>${item.votes}</span>
+          <button class="btn-icon" title="Edit" onclick="editRoadmapItem('${item.id}','${item.title.replace(/'/g,"\\'")}','${(item.description||'').replace(/'/g,"\\'")}')"><i class="bi bi-pencil"></i></button>
+          <button class="btn-icon" title="Delete" onclick="deleteRoadmapItem('${item.id}')"><i class="bi bi-trash"></i></button>
+        </div>`).join('') : '<div style="color:var(--text-muted);font-size:.82rem;">No roadmap items yet.</div>';
+    }
+
+    async function updateRoadmapItem(id, patch) {
+      await api(`/admin/roadmap/${id}`, { method: 'PATCH', body: JSON.stringify(patch) });
+      loadRoadmapAdmin();
+    }
+
+    async function editRoadmapItem(id, title, desc) {
+      const newTitle = prompt('Title:', title);
+      if (!newTitle?.trim()) return;
+      const newDesc = prompt('Description (optional):', desc);
+      await api(`/admin/roadmap/${id}`, { method: 'PATCH', body: JSON.stringify({ title: newTitle.trim(), description: newDesc||'' }) });
+      loadRoadmapAdmin();
+    }
+
+    async function deleteRoadmapItem(id) {
+      if (!confirm('Delete this roadmap item?')) return;
+      await api(`/admin/roadmap/${id}`, { method: 'DELETE' });
+      loadRoadmapAdmin();
+    }
+
+    document.getElementById('btn-new-roadmap-item')?.addEventListener('click', async () => {
+      const title = prompt('Feature title:');
+      if (!title?.trim()) return;
+      const desc = prompt('Description (optional):') || '';
+      await api('/admin/roadmap', { method: 'POST', body: JSON.stringify({ title: title.trim(), description: desc }) });
+      loadRoadmapAdmin();
+    });
+
     // ── Collections ───────────────────────────────────────────────────────────
     let _collections = [], _activeCollection = null;
 
@@ -1992,6 +2055,7 @@
         document.getElementById('btn-audit-refresh')?.addEventListener('click', () => loadAuditLog(_auditOffset));
         document.querySelector('.navbtn[data-target="payments"]')?.addEventListener('click', loadPayments);
         document.querySelector('.navbtn[data-target="analytics"]')?.addEventListener('click', loadAnalytics);
+        document.querySelector('.navbtn[data-target="roadmap-admin"]')?.addEventListener('click', loadRoadmapAdmin);
         document.querySelector('.navbtn[data-target="maintenance"]')?.addEventListener('click', loadBackups);
         document.getElementById('btn-run-backup')?.addEventListener('click', async () => {
           const btn = document.getElementById('btn-run-backup');
@@ -2019,6 +2083,8 @@
         document.getElementById('payments')?.remove();
         document.getElementById('navbtn-analytics')?.remove();
         document.getElementById('analytics')?.remove();
+        document.getElementById('navbtn-roadmap-admin')?.remove();
+        document.getElementById('roadmap-admin')?.remove();
       }
       // Auto-open pane from URL ?tab=
       const _tab = new URLSearchParams(window.location.search).get('tab');
