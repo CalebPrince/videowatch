@@ -458,9 +458,10 @@
       btn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span>Creating account…';
 
       try {
+        const _refCode = new URLSearchParams(window.location.search).get('ref') || undefined;
         const res = await api('/auth/register', {
           method: 'POST',
-          body: JSON.stringify({ username, email, password, confirm_password: confirm, tos_accepted }),
+          body: JSON.stringify({ username, email, password, confirm_password: confirm, tos_accepted, referral_code: _refCode }),
         });
         if (res.verify_email) {
           // Show "check your inbox" screen

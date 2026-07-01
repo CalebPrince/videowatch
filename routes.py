@@ -375,6 +375,7 @@ class RegisterIn(BaseModel):
     password: str
     confirm_password: str
     tos_accepted: bool = False
+    referral_code: str | None = None
 
 
 class UserRolePatchIn(BaseModel):
@@ -1493,13 +1494,25 @@ def auth_register(body: RegisterIn, request: Request):
         if db.execute("SELECT 1 FROM users WHERE email=?", (email,)).fetchone():
             raise HTTPException(409, "An account with that email already exists")
     _create_user_record(username, body.password, "viewer")
+    # Generate referral code and track referrer
+    ref_code = secrets.token_urlsafe(8)
+    referred_by = None
+    ref_param = (body.__dict__.get("referral_code") or "").strip()
+    if ref_param:
+        with get_db() as db:
+            ref_row = db.execute("SELECT username FROM users WHERE referral_code=?", (ref_param,)).fetchone()
+            if ref_row:
+                referred_by = ref_row["username"]
     # Store email and set verified status
     from datetime import timedelta
     expires = (datetime.now(timezone.utc) + timedelta(hours=24)).isoformat()
     token = secrets.token_urlsafe(32)
     with write_lock:
         with get_db() as db:
-            db.execute("UPDATE users SET email=?, email_verified=0, tos_accepted_at=? WHERE username=?", (email, now_iso(), username))
+            db.execute(
+                "UPDATE users SET email=?, email_verified=0, tos_accepted_at=?, referral_code=?, referred_by=? WHERE username=?",
+                (email, now_iso(), ref_code, referred_by, username)
+            )
             db.execute(
                 "INSERT OR REPLACE INTO email_verifications (token, username, expires_at) VALUES (?,?,?)",
                 (token, username, expires),
@@ -3237,6 +3250,36 @@ def admin_broadcast(request: Request, body: dict):
 
     threading.Thread(target=_blast, daemon=True).start()
     return {"ok": True, "queued": len(recipients)}
+
+
+@router.get("/api/user/referral")
+def get_referral(request: Request):
+    username = _api_auth(request)
+    with get_db() as db:
+        row = db.execute("SELECT referral_code, referred_by FROM users WHERE username=?", (username,)).fetchone()
+        if not row:
+            raise HTTPException(404)
+        # Ensure referral code exists
+        ref_code = row["referral_code"]
+        if not ref_code:
+            ref_code = secrets.token_urlsafe(8)
+            with write_lock:
+                with get_db() as db2:
+                    db2.execute("UPDATE users SET referral_code=? WHERE username=?", (ref_code, username))
+                    db2.commit()
+        count = db.execute("SELECT COUNT(*) FROM users WHERE referred_by=?", (username,)).fetchone()[0]
+        referrals = db.execute(
+            "SELECT username, created_at FROM users WHERE referred_by=? ORDER BY created_at DESC LIMIT 50",
+            (username,)
+        ).fetchall()
+    base = "https://videowatch.duckdns.org"
+    return {
+        "referral_code": ref_code,
+        "referral_url": f"{base}/register?ref={ref_code}",
+        "referred_by": row["referred_by"],
+        "count": count,
+        "referrals": [{"username": r["username"], "joined": r["created_at"][:10]} for r in referrals],
+    }
 
 
 @router.get("/api/roadmap")
