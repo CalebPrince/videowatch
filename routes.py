@@ -1742,6 +1742,9 @@ _scan_queue_items: list[dict] = []   # shadow list for status queries
 _scan_running: dict | None = None    # currently running job
 
 
+_RETRY_DELAYS = [30, 120, 600]   # seconds: 30s, 2min, 10min
+
+
 def _scan_worker():
     global _scan_running
     while True:
@@ -1752,10 +1755,24 @@ def _scan_worker():
             _scan_running = job
             if job in _scan_queue_items:
                 _scan_queue_items.remove(job)
+        site = job["site"]
+        attempt = job.get("attempt", 0)
         try:
-            _run_scan_one_sync(job["site"])
+            _run_scan_one_sync(site)
         except Exception as e:
-            log.error(f"Scan queue worker error: {e}")
+            log.error(f"Scan failed for {site.get('url')} (attempt {attempt + 1}): {e}")
+            if attempt < len(_RETRY_DELAYS):
+                delay = _RETRY_DELAYS[attempt]
+                log.info(f"Retrying {site.get('url')} in {delay}s (attempt {attempt + 2}/{len(_RETRY_DELAYS) + 1})")
+                retry_job = {"site": site, "attempt": attempt + 1, "retry_after": time.monotonic() + delay}
+                def _schedule_retry(j=retry_job, d=delay):
+                    time.sleep(d)
+                    with _scan_queue_lock:
+                        _scan_queue_items.append(j)
+                    _scan_queue.put(j)
+                threading.Thread(target=_schedule_retry, daemon=True, name=f"scan-retry-{attempt+1}").start()
+            else:
+                log.error(f"Giving up on {site.get('url')} after {attempt + 1} attempts")
         finally:
             with _scan_queue_lock:
                 _scan_running = None
@@ -1871,7 +1888,13 @@ def get_scan_queue(request: Request):
             s = _scan_running.get("site", {})
             running = {"site_id": s.get("id"), "name": s.get("name") or s.get("url"), "url": s.get("url")}
         pending = [
-            {"site_id": j["site"].get("id"), "name": j["site"].get("name") or j["site"].get("url"), "url": j["site"].get("url")}
+            {
+                "site_id": j["site"].get("id"),
+                "name": j["site"].get("name") or j["site"].get("url"),
+                "url": j["site"].get("url"),
+                "attempt": j.get("attempt", 0),
+                "is_retry": j.get("attempt", 0) > 0,
+            }
             for j in _scan_queue_items
         ]
     return {"running": running, "pending": pending, "total": len(pending) + (1 if running else 0)}
