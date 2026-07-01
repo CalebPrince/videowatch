@@ -902,26 +902,68 @@ def validate_credentials(username: str, password: str) -> bool:
 
 
 def _notify_scan_summary(site: dict, found: int, added: int):
-    enabled = (_read_setting("notify_enabled") or "0") == "1"
-    webhook = (_read_setting("notify_webhook_url") or "").strip()
+    site_label = site.get("name") or site.get("url") or site.get("id")
     site_notify = site.get("notify_enabled")
     site_notify_off = site_notify is not None and int(site_notify) == 0
-    if not enabled or not webhook or added <= 0 or site_notify_off:
-        return
 
-    site_label = site.get("name") or site.get("url") or site.get("id")
-    payload = {
-        "text": f"VideoWatch: {site_label} scan complete - {added} new video(s), {found} found.",
-        "site_id": site.get("id"),
-        "site": site_label,
-        "found": found,
-        "added": added,
-        "time": now_iso(),
-    }
+    # Webhook notification (admin-configured, global)
+    enabled = (_read_setting("notify_enabled") or "0") == "1"
+    webhook = (_read_setting("notify_webhook_url") or "").strip()
+    if enabled and webhook and added > 0 and not site_notify_off:
+        payload = {
+            "text": f"VideoWatch: {site_label} scan complete - {added} new video(s), {found} found.",
+            "site_id": site.get("id"),
+            "site": site_label,
+            "found": found,
+            "added": added,
+            "time": now_iso(),
+        }
+        try:
+            httpx.post(webhook, json=payload, timeout=8.0)
+        except Exception as e:
+            log.warning(f"Notification webhook failed: {e}")
+
+    # Per-user email notification
+    if added <= 0 or site_notify_off or not _email_configured():
+        return
+    owner = site.get("owner")
+    if not owner:
+        return
     try:
-        httpx.post(webhook, json=payload, timeout=8.0)
+        with get_db() as db:
+            row = db.execute(
+                "SELECT email, notify_new_videos FROM users WHERE username=? AND email_verified=1",
+                (owner,),
+            ).fetchone()
+        if not row or not row["notify_new_videos"] or not row["email"]:
+            return
+        site_url = site.get("url", "")
+        subject = f"VideoWatch: {added} new video{'s' if added != 1 else ''} on {site_label}"
+        body_html = f"""
+        <div style="font-family:sans-serif;max-width:520px;margin:0 auto">
+          <h2 style="color:#0f766e">VideoWatch</h2>
+          <p>A scan just finished for <strong>{site_label}</strong>.</p>
+          <table style="border-collapse:collapse;width:100%">
+            <tr><td style="padding:6px 0;color:#64748b">New videos added</td>
+                <td style="padding:6px 0;font-weight:700">{added}</td></tr>
+            <tr><td style="padding:6px 0;color:#64748b">Total found</td>
+                <td style="padding:6px 0">{found}</td></tr>
+            <tr><td style="padding:6px 0;color:#64748b">Site</td>
+                <td style="padding:6px 0"><a href="{site_url}">{site_url}</a></td></tr>
+          </table>
+          <p style="margin-top:1.5rem">
+            <a href="{_APP_BASE_URL}" style="background:#0f766e;color:#fff;padding:10px 22px;border-radius:8px;text-decoration:none;font-weight:700">
+              View in VideoWatch
+            </a>
+          </p>
+          <p style="color:#94a3b8;font-size:.8rem;margin-top:2rem">
+            You're receiving this because you enabled email notifications in VideoWatch.<br>
+            <a href="{_APP_BASE_URL}" style="color:#94a3b8">Manage notification settings</a>
+          </p>
+        </div>"""
+        _send_email(row["email"], subject, body_html)
     except Exception as e:
-        log.warning(f"Notification webhook failed: {e}")
+        log.warning(f"Per-user scan email failed: {e}")
 
 # ── Helper for SSRF verification ──────────────────────────────────────────────
 
@@ -1821,6 +1863,44 @@ def scan_health(request: Request, limit: int = 20):
         "sites": per_site,
         "anomalies": anomalies,
     }
+
+
+@router.get("/api/user/notifications")
+def get_user_notifications(request: Request):
+    if not is_authenticated(request):
+        raise HTTPException(401, "Authentication required")
+    username = current_user(request)
+    with get_db() as db:
+        row = db.execute(
+            "SELECT email, email_verified, notify_new_videos FROM users WHERE username=?",
+            (username,),
+        ).fetchone()
+    if not row:
+        raise HTTPException(404)
+    return {
+        "notify_new_videos": bool(row["notify_new_videos"]),
+        "email": row["email"] or "",
+        "email_verified": bool(row["email_verified"]),
+    }
+
+
+@router.post("/api/user/notifications")
+def set_user_notifications(request: Request, body: dict):
+    if not is_authenticated(request):
+        raise HTTPException(401, "Authentication required")
+    username = current_user(request)
+    notify = bool(body.get("notify_new_videos", False))
+    with get_db() as db:
+        row = db.execute(
+            "SELECT email_verified FROM users WHERE username=?", (username,)
+        ).fetchone()
+        if notify and (not row or not row["email_verified"]):
+            raise HTTPException(400, "A verified email address is required to enable email notifications.")
+        db.execute(
+            "UPDATE users SET notify_new_videos=? WHERE username=?",
+            (1 if notify else 0, username),
+        )
+    return {"ok": True, "notify_new_videos": notify}
 
 
 @router.get("/api/notifications")

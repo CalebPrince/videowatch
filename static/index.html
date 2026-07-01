@@ -1051,18 +1051,33 @@
         <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
       </div>
       <div class="modal-body">
-        <div class="form-check form-switch">
-          <input class="form-check-input" type="checkbox" id="notify-enabled">
-          <label class="form-check-label" for="notify-enabled">Enable webhook notifications for new videos</label>
+        <!-- Per-user email notifications -->
+        <p style="font-size:.82rem;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.04em;margin-bottom:.6rem">Email</p>
+        <div class="form-check form-switch mb-1">
+          <input class="form-check-input" type="checkbox" id="notify-email-new-videos">
+          <label class="form-check-label" for="notify-email-new-videos" style="font-size:.9rem;">Email me when new videos are found</label>
         </div>
-        <label class="form-label mt-3" style="font-size:.85rem;">Webhook URL</label>
-        <input type="url" id="notify-webhook" class="form-control" placeholder="https://..." />
-        <label class="form-label mt-3" style="font-size:.85rem;">Digest interval (minutes, 0=instant)</label>
-        <input type="number" id="notify-digest" min="0" class="form-control" value="0" />
+        <div id="notify-email-hint" style="font-size:.78rem;color:var(--muted);margin-left:2.5rem;display:none;"></div>
+
+        <!-- Admin: webhook -->
+        <div id="notify-webhook-section" style="display:none">
+          <hr class="my-3">
+          <p style="font-size:.82rem;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.04em;margin-bottom:.6rem">Webhook (admin)</p>
+          <div class="form-check form-switch mb-2">
+            <input class="form-check-input" type="checkbox" id="notify-enabled">
+            <label class="form-check-label" for="notify-enabled" style="font-size:.9rem;">Enable webhook for all sites</label>
+          </div>
+          <label class="form-label mt-2" style="font-size:.85rem;">Webhook URL</label>
+          <input type="url" id="notify-webhook" class="form-control" placeholder="https://..." />
+          <label class="form-label mt-2" style="font-size:.85rem;">Digest interval (minutes, 0=instant)</label>
+          <input type="number" id="notify-digest" min="0" class="form-control" value="0" />
+        </div>
+
         <div id="notify-error" class="text-danger mt-2" style="font-size:.82rem;display:none;"></div>
+        <div id="notify-success" class="text-success mt-2" style="font-size:.82rem;display:none;"></div>
       </div>
       <div class="modal-footer border-0 pt-0">
-        <button class="btn btn-sm btn-secondary" data-bs-dismiss="modal">Cancel</button>
+        <button class="btn btn-sm btn-secondary" data-bs-dismiss="modal">Close</button>
         <button class="btn btn-sm btn-brand" id="btn-notify-save">Save</button>
       </div>
     </div>
@@ -2959,13 +2974,35 @@ const notifyBtn = document.getElementById('btn-notifications-open');
 if (notifyBtn) {
   notifyBtn.onclick = async () => {
     try {
-      const n = await api('/notifications');
-      document.getElementById('notify-enabled').checked = !!n.enabled;
-      document.getElementById('notify-webhook').value = n.webhook_url || '';
-      document.getElementById('notify-digest').value = Number(n.digest_minutes || 0);
-      const err = document.getElementById('notify-error');
-      err.style.display = 'none';
-      err.textContent = '';
+      const [userN, adminN, st] = await Promise.all([
+        api('/user/notifications'),
+        api('/notifications'),
+        api('/auth/status'),
+      ]);
+      // Email toggle
+      const emailToggle = document.getElementById('notify-email-new-videos');
+      emailToggle.checked = !!userN.notify_new_videos;
+      const hint = document.getElementById('notify-email-hint');
+      if (!userN.email_verified) {
+        hint.textContent = 'You need a verified email address to receive notifications.';
+        hint.style.display = 'block';
+        emailToggle.disabled = true;
+      } else {
+        hint.style.display = 'none';
+        emailToggle.disabled = false;
+      }
+      // Admin webhook section
+      const webhookSection = document.getElementById('notify-webhook-section');
+      if (st.role === 'admin' || st.role === 'super_admin') {
+        webhookSection.style.display = 'block';
+        document.getElementById('notify-enabled').checked = !!adminN.enabled;
+        document.getElementById('notify-webhook').value = adminN.webhook_url || '';
+        document.getElementById('notify-digest').value = Number(adminN.digest_minutes || 0);
+      } else {
+        webhookSection.style.display = 'none';
+      }
+      document.getElementById('notify-error').style.display = 'none';
+      document.getElementById('notify-success').style.display = 'none';
       new bootstrap.Modal(document.getElementById('notificationsModal')).show();
     } catch (e) {
       showToast(`Failed to load notification settings: ${e.message}`, 'danger');
@@ -2977,18 +3014,34 @@ const notifySaveBtn = document.getElementById('btn-notify-save');
 if (notifySaveBtn) {
   notifySaveBtn.onclick = async () => {
     const err = document.getElementById('notify-error');
+    const ok  = document.getElementById('notify-success');
     err.style.display = 'none';
+    ok.style.display  = 'none';
     try {
-      await api('/notifications', {
+      // Save per-user email pref
+      await api('/user/notifications', {
         method: 'POST',
         body: JSON.stringify({
-          enabled: document.getElementById('notify-enabled').checked,
-          webhook_url: document.getElementById('notify-webhook').value.trim(),
-          digest_minutes: parseInt(document.getElementById('notify-digest').value || '0', 10),
+          notify_new_videos: document.getElementById('notify-email-new-videos').checked,
         }),
       });
-      bootstrap.Modal.getInstance(document.getElementById('notificationsModal')).hide();
-      showToast('Notification settings saved', 'success');
+      // Save admin webhook if section is visible
+      const webhookSection = document.getElementById('notify-webhook-section');
+      if (webhookSection.style.display !== 'none') {
+        await api('/notifications', {
+          method: 'POST',
+          body: JSON.stringify({
+            enabled: document.getElementById('notify-enabled').checked,
+            webhook_url: document.getElementById('notify-webhook').value.trim(),
+            digest_minutes: parseInt(document.getElementById('notify-digest').value || '0', 10),
+          }),
+        });
+      }
+      ok.textContent = 'Settings saved.';
+      ok.style.display = 'block';
+      setTimeout(() => {
+        bootstrap.Modal.getInstance(document.getElementById('notificationsModal'))?.hide();
+      }, 900);
     } catch (e) {
       err.textContent = e.message;
       err.style.display = 'block';
