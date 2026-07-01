@@ -821,10 +821,22 @@ def _create_user_record(username: str, raw_password: str, role: str):
 def _get_user(username: str) -> dict | None:
     with get_db() as db:
         row = db.execute(
-            "SELECT username, password_salt, password_hash, role, active, email_verified, onboarding_done FROM users WHERE username=?",
+            "SELECT username, password_salt, password_hash, role, active, email_verified, onboarding_done, plan, ui_theme FROM users WHERE username=?",
             (username,),
         ).fetchone()
     return dict(row) if row else None
+
+
+PLAN_LIMITS = {
+    "free":      {"sites": 3,   "videos": 200,  "min_interval": 21600},
+    "pro":       {"sites": 25,  "videos": 5000, "min_interval": 300},
+    "unlimited": {"sites": None,"videos": None,  "min_interval": 300},
+}
+
+def _plan_limits(username: str) -> dict:
+    row = _get_user(username)
+    plan = (row.get("plan") or "free") if row else "free"
+    return PLAN_LIMITS.get(plan, PLAN_LIMITS["free"])
 
 
 def _ensure_default_admin_user():
@@ -1258,7 +1270,6 @@ def _add_site_impl(body: SiteIn, request: Request):
         url = url + "/"
         
     max_pages = max(1, min(body.max_pages, 20))
-    scan_interval = max(60, body.scan_interval)
     rule_min_duration = max(0, body.rule_min_duration or 0)
     profile = (body.scan_profile or "balanced").strip().lower()
     if profile not in {"fast", "balanced", "deep"}:
@@ -1266,6 +1277,17 @@ def _add_site_impl(body: SiteIn, request: Request):
     with write_lock:
         with get_db() as db:
             owner = current_user(request) or (expected_auth_user().strip() or "admin")
+
+            # Enforce plan site limit
+            limits = _plan_limits(owner)
+            if limits["sites"] is not None:
+                site_count = db.execute("SELECT COUNT(*) FROM sites WHERE owner=?", (owner,)).fetchone()[0]
+                if site_count >= limits["sites"]:
+                    raise HTTPException(403, f"Free plan is limited to {limits['sites']} monitored sites. Upgrade to add more.")
+
+            # Enforce plan minimum scan interval
+            scan_interval = max(limits["min_interval"], max(60, body.scan_interval))
+
             if db.execute("SELECT id FROM sites WHERE url=? AND owner=?", (url, owner)).fetchone():
                 raise HTTPException(409, "Site already monitored")
             site_id = short_id(f"{owner}:{url}")
@@ -1650,7 +1672,10 @@ def update_site(site_id: str, body: SitePatch, request: Request):
             if body.name is not None: updates["name"] = body.name.strip()
             if body.group_name is not None: updates["group_name"] = body.group_name.strip()
             if body.max_pages is not None: updates["max_pages"] = max(1, min(body.max_pages, 20))
-            if body.scan_interval is not None: updates["scan_interval"] = max(60, body.scan_interval)
+            if body.scan_interval is not None:
+                owner = row["owner"] or current_user(request)
+                min_interval = _plan_limits(owner)["min_interval"]
+                updates["scan_interval"] = max(min_interval, max(60, body.scan_interval))
             if body.rule_include_keywords is not None:
                 updates["rule_include_keywords"] = body.rule_include_keywords.strip()
             if body.rule_exclude_keywords is not None:

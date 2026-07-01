@@ -1899,6 +1899,24 @@ async def scan_site(site: dict, push_func=None):
         """Insert new videos and enrich existing records without duplicate-row failures."""
         inserted_count = 0
         inserted_ids: list[str] = []
+
+        # Enforce free plan video limit
+        site_row = db_conn.execute("SELECT owner FROM sites WHERE id=?", (target_site_id,)).fetchone()
+        if site_row and site_row["owner"]:
+            owner = site_row["owner"]
+            user_row = db_conn.execute("SELECT plan FROM users WHERE username=?", (owner,)).fetchone()
+            plan = (user_row["plan"] if user_row and user_row["plan"] else "free")
+            from routes import PLAN_LIMITS
+            video_limit = PLAN_LIMITS.get(plan, PLAN_LIMITS["free"])["videos"]
+            if video_limit is not None:
+                current_count = db_conn.execute(
+                    "SELECT COUNT(*) FROM videos WHERE site_id IN (SELECT id FROM sites WHERE owner=?)",
+                    (owner,),
+                ).fetchone()[0]
+                if current_count >= video_limit:
+                    log.warning(f"Video limit ({video_limit}) reached for user {owner} on plan '{plan}'. Skipping inserts.")
+                    return inserted_count, inserted_ids
+
         for v in videos:
             vid_id = short_id(f"{target_site_id}:{v['url']}")
             title = v["title"] or f"Scene {vid_id}"
