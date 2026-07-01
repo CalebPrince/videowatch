@@ -1766,11 +1766,9 @@ def scan_health(request: Request, limit: int = 20):
     with get_db() as db:
         if is_super_admin(request):
             params_overall = (limit,)
-            params_per_site = (limit * 10,)
         else:
             owner = current_user(request)
             params_overall = (owner, limit)
-            params_per_site = (limit * 10, owner)  # limit first (subquery), owner after (WHERE)
 
         overall = db.execute(
             "SELECT COUNT(*) as runs, "
@@ -1782,6 +1780,13 @@ def scan_health(request: Request, limit: int = 20):
             params_overall,
         ).fetchone()
 
+        if is_super_admin(request):
+            health_where = ""
+            health_params = ()
+        else:
+            health_where = "WHERE s.owner=?"
+            health_params = (current_user(request),)
+
         per_site = [dict(r) for r in db.execute(
             "SELECT s.id as site_id, COALESCE(NULLIF(s.name,''), s.url) as site_name, "
             "COUNT(l.id) as runs, "
@@ -1789,11 +1794,10 @@ def scan_health(request: Request, limit: int = 20):
             "ROUND(AVG(l.found), 2) as avg_found, "
             "ROUND(AVG(l.added), 2) as avg_added, "
             "MAX(l.scanned_at) as last_scan "
-            "FROM sites s "
-            "LEFT JOIN (SELECT * FROM scan_log ORDER BY id DESC LIMIT ?) l ON l.site_id=s.id "
-            + ("" if is_super_admin(request) else "WHERE s.owner=? ") +
+            f"FROM sites s {health_where} "
+            "LEFT JOIN scan_log l ON l.site_id=s.id "
             "GROUP BY s.id ORDER BY runs DESC, last_scan DESC",
-            params_per_site,
+            health_params,
         ).fetchall()]
 
     anomalies = []
@@ -2019,10 +2023,10 @@ def stats(request: Request):
             ow, op = "AND sites.owner=?", [current_user(request) or ""]
         vj = f"FROM videos LEFT JOIN sites ON videos.site_id=sites.id WHERE 1=1 {ow}"
         total     = db.execute(f"SELECT COUNT(*) {vj}", op).fetchone()[0]
-        new       = db.execute(f"SELECT COUNT(*) {vj} AND is_new=1", op).fetchone()[0]
-        favorites = db.execute(f"SELECT COUNT(*) {vj} AND COALESCE(is_favorite,0)=1", op).fetchone()[0]
-        archived  = db.execute(f"SELECT COUNT(*) {vj} AND COALESCE(is_archived,0)=1", op).fetchone()[0]
-        ignored   = db.execute(f"SELECT COUNT(*) {vj} AND COALESCE(is_ignored,0)=1", op).fetchone()[0]
+        new       = db.execute(f"SELECT COUNT(*) {vj} AND videos.is_new=1", op).fetchone()[0]
+        favorites = db.execute(f"SELECT COUNT(*) {vj} AND COALESCE(videos.is_favorite,0)=1", op).fetchone()[0]
+        archived  = db.execute(f"SELECT COUNT(*) {vj} AND COALESCE(videos.is_archived,0)=1", op).fetchone()[0]
+        ignored   = db.execute(f"SELECT COUNT(*) {vj} AND COALESCE(videos.is_ignored,0)=1", op).fetchone()[0]
         if is_super_admin(request):
             sites = db.execute("SELECT COUNT(*) FROM sites").fetchone()[0]
             scans = db.execute("SELECT COUNT(*) FROM scan_log").fetchone()[0]
