@@ -878,6 +878,7 @@
       <button class="btn btn-sm btn-outline-secondary" onclick="bulkAction('archive')"><i class="bi bi-inbox me-1"></i>Archive</button>
       <button class="btn btn-sm btn-outline-secondary" onclick="bulkAction('ignore')"><i class="bi bi-eye-slash me-1"></i>Ignore</button>
       <button class="btn btn-sm btn-outline-secondary" onclick="selectAllVideos()"><i class="bi bi-check-all me-1"></i>Select all</button>
+      <button class="btn btn-sm btn-outline-secondary" onclick="bulkAddToCollection()"><i class="bi bi-collection me-1"></i>Add to collection</button>
       <button class="btn btn-sm btn-outline-danger ms-auto" onclick="clearBulkSelection()"><i class="bi bi-x-lg me-1"></i>Cancel</button>
     </div>
 
@@ -2118,6 +2119,50 @@ function updateBulkSelection() {
   } else {
     toolbar.style.display = 'none';
   }
+}
+
+async function bulkAddToCollection() {
+  const ids = [...document.querySelectorAll('#video-grid input[type=checkbox][data-vid]:checked')].map(c => c.dataset.vid);
+  if (!ids.length) return;
+
+  const cols = await api('/collections').catch(() => []);
+  if (!cols.length) { showToast('No collections yet. Create one in Settings → Collections.', 'info'); return; }
+
+  // Simple select dialog using a popover-style modal
+  const ov = document.createElement('div');
+  ov.style.cssText = 'position:fixed;inset:0;z-index:3000;background:rgba(0,0,0,.6);display:flex;align-items:center;justify-content:center;';
+  const box = document.createElement('div');
+  box.style.cssText = 'background:var(--card-bg,#fff);border-radius:14px;padding:1.25rem 1.5rem;min-width:280px;max-width:360px;color:var(--text,#1e293b);box-shadow:0 24px 60px rgba(0,0,0,.3);';
+  box.innerHTML = `
+    <div style="font-weight:700;font-size:.95rem;margin-bottom:1rem;"><i class="bi bi-collection me-2" style="color:var(--brand)"></i>Add ${ids.length} video${ids.length>1?'s':''} to collection</div>
+    ${cols.map(c => `
+      <label style="display:flex;align-items:center;gap:.6rem;padding:.35rem 0;font-size:.88rem;cursor:pointer;border-bottom:1px solid var(--border);">
+        <input type="checkbox" data-cid="${c.id}" style="accent-color:var(--brand);cursor:pointer;">
+        <span>${c.name}</span>
+        <span style="margin-left:auto;font-size:.75rem;color:var(--muted);">${c.video_count} videos</span>
+      </label>`).join('')}
+    <div style="display:flex;gap:.5rem;margin-top:1rem;">
+      <button id="bulk-col-confirm" class="btn btn-sm btn-primary" style="flex:1;">Add</button>
+      <button class="btn btn-sm btn-outline-secondary" style="flex:1;" onclick="this.closest('div[style*=fixed]').remove()">Cancel</button>
+    </div>`;
+  ov.appendChild(box);
+  document.body.appendChild(ov);
+  ov.addEventListener('click', e => { if (e.target === ov) ov.remove(); });
+
+  box.querySelector('#bulk-col-confirm').addEventListener('click', async () => {
+    const selected = [...box.querySelectorAll('input[data-cid]:checked')].map(c => c.dataset.cid);
+    if (!selected.length) { ov.remove(); return; }
+    let added = 0;
+    for (const cid of selected) {
+      await Promise.all(ids.map(vid =>
+        api(`/collections/${cid}/videos`, { method: 'POST', body: JSON.stringify({ video_id: vid }) }).catch(() => {})
+      ));
+      added++;
+    }
+    ov.remove();
+    showToast(`Added to ${added} collection${added>1?'s':''}`, 'success');
+    clearBulkSelection();
+  });
 }
 
 function clearBulkSelection() {
