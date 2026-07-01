@@ -2087,6 +2087,22 @@ def mark_seen(body: MarkSeenIn):
             db.commit()
     return {"ok": True}
 
+@router.delete("/api/videos/{video_id}")
+def delete_video(video_id: str, request: Request):
+    username = _api_auth(request)
+    with write_lock:
+        with get_db() as db:
+            row = db.execute(
+                "SELECT v.id FROM videos v JOIN sites s ON s.id=v.site_id WHERE v.id=? AND s.owner=?",
+                (video_id, username)
+            ).fetchone()
+            if not row:
+                raise HTTPException(404, "Video not found")
+            db.execute("DELETE FROM videos WHERE id=?", (video_id,))
+            db.commit()
+    return {"ok": True}
+
+
 @router.delete("/api/videos/junk")
 def clear_junk_videos():
     with write_lock:

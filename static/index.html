@@ -2723,6 +2723,20 @@ async function renderVideos() {
     noteBtn.onclick = (e) => { e.preventDefault(); e.stopPropagation(); openNotePopover(noteBtn, v); };
     meta.appendChild(noteBtn);
 
+    // Delete button
+    const delBtn = document.createElement('button');
+    delBtn.className = 'btn-icon danger';
+    delBtn.title = 'Delete video';
+    delBtn.innerHTML = '<i class="bi bi-trash"></i>';
+    delBtn.onclick = async (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      if (!confirm(`Delete "${v.title || v.url}"? This cannot be undone.`)) return;
+      await api(`/videos/${encodeURIComponent(v.id)}`, { method: 'DELETE' });
+      await renderVideos();
+    };
+    meta.appendChild(delBtn);
+
     // Collection button
     const colBtn = document.createElement('button');
     colBtn.className = 'btn-icon';
