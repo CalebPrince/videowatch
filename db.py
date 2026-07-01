@@ -252,4 +252,41 @@ def init_db():
                 "INSERT OR IGNORE INTO app_settings (key, value) VALUES (?, ?)",
                 ("autoscan_enabled", "0"),
             )
+
+            # FTS5 full-text search index on video title and cast_names
+            db.executescript("""
+                CREATE VIRTUAL TABLE IF NOT EXISTS videos_fts USING fts5(
+                    title,
+                    cast_names,
+                    content='videos',
+                    content_rowid='rowid',
+                    tokenize='unicode61'
+                );
+
+                CREATE TRIGGER IF NOT EXISTS videos_fts_insert AFTER INSERT ON videos BEGIN
+                    INSERT INTO videos_fts(rowid, title, cast_names)
+                    VALUES (new.rowid, COALESCE(new.title,''), COALESCE(new.cast_names,''));
+                END;
+
+                CREATE TRIGGER IF NOT EXISTS videos_fts_delete AFTER DELETE ON videos BEGIN
+                    INSERT INTO videos_fts(videos_fts, rowid, title, cast_names)
+                    VALUES ('delete', old.rowid, COALESCE(old.title,''), COALESCE(old.cast_names,''));
+                END;
+
+                CREATE TRIGGER IF NOT EXISTS videos_fts_update AFTER UPDATE ON videos BEGIN
+                    INSERT INTO videos_fts(videos_fts, rowid, title, cast_names)
+                    VALUES ('delete', old.rowid, COALESCE(old.title,''), COALESCE(old.cast_names,''));
+                    INSERT INTO videos_fts(rowid, title, cast_names)
+                    VALUES (new.rowid, COALESCE(new.title,''), COALESCE(new.cast_names,''));
+                END;
+            """)
+
+            # Populate FTS index if it is empty (first run after migration)
+            fts_count = db.execute("SELECT COUNT(*) FROM videos_fts").fetchone()[0]
+            if fts_count == 0:
+                db.execute("""
+                    INSERT INTO videos_fts(rowid, title, cast_names)
+                    SELECT rowid, COALESCE(title,''), COALESCE(cast_names,'') FROM videos
+                """)
+
             db.commit()
