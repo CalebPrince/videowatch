@@ -725,6 +725,13 @@
   </div>
   <div id="site-list">
     <div class="list-label">Monitored sites</div>
+    <div style="padding:.4rem .75rem .2rem;">
+      <div style="position:relative;">
+        <i class="bi bi-search" style="position:absolute;left:.5rem;top:50%;transform:translateY(-50%);font-size:.75rem;color:rgba(255,255,255,.4);pointer-events:none;"></i>
+        <input id="site-search" type="search" placeholder="Filter sites…" autocomplete="off"
+          style="width:100%;padding:.3rem .5rem .3rem 1.7rem;font-size:.78rem;background:rgba(255,255,255,.07);border:1px solid rgba(255,255,255,.12);border-radius:6px;color:var(--sidebar-text);outline:none;">
+      </div>
+    </div>
     <div id="site-items"></div>
   </div>
   <div class="sidebar-footer">
@@ -2324,7 +2331,37 @@ async function renderSidebar() {
   } else {
     document.getElementById('next-scan-txt').textContent = autoScanEnabled ? 'scan due' : 'auto paused';
   }
+
+  // Re-apply any active search filter after re-render
+  _applySiteFilter(document.getElementById('site-search')?.value || '');
 }
+
+function _applySiteFilter(q) {
+  const term = q.trim().toLowerCase();
+  const items = document.querySelectorAll('#site-items .site-item');
+  const headers = document.querySelectorAll('#site-items .site-group-label');
+
+  // Always show the "All sites" row (first item)
+  items.forEach((item, i) => {
+    if (i === 0) { item.style.display = ''; return; }
+    if (!term) { item.style.display = ''; return; }
+    const text = item.textContent.toLowerCase();
+    item.style.display = text.includes(term) ? '' : 'none';
+  });
+
+  // Hide group headers that have no visible children
+  headers.forEach(header => {
+    let sibling = header.nextElementSibling;
+    let hasVisible = false;
+    while (sibling && !sibling.classList.contains('site-group-label')) {
+      if (sibling.classList.contains('site-item') && sibling.style.display !== 'none') hasVisible = true;
+      sibling = sibling.nextElementSibling;
+    }
+    header.style.display = hasVisible ? '' : 'none';
+  });
+}
+
+document.getElementById('site-search').addEventListener('input', e => _applySiteFilter(e.target.value));
 
 async function renderAutomationState() {
   const state = await api('/scan/automation');
