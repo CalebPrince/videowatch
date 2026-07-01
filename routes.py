@@ -2261,7 +2261,7 @@ def get_user_notifications(request: Request):
     username = current_user(request)
     with get_db() as db:
         row = db.execute(
-            "SELECT email, email_verified, notify_new_videos FROM users WHERE username=?",
+            "SELECT email, email_verified, notify_new_videos, plan FROM users WHERE username=?",
             (username,),
         ).fetchone()
     if not row:
@@ -2270,6 +2270,7 @@ def get_user_notifications(request: Request):
         "notify_new_videos": bool(row["notify_new_videos"]),
         "email": row["email"] or "",
         "email_verified": bool(row["email_verified"]),
+        "plan": row["plan"] or "free",
     }
 
 
@@ -2305,6 +2306,37 @@ def set_user_prefs(request: Request, body: dict):
             db.execute("UPDATE users SET ui_theme=? WHERE username=?", (theme, username))
             db.commit()
     return {"ok": True, "ui_theme": theme}
+
+
+@router.post("/api/user/delete-account")
+def delete_own_account(request: Request, body: dict):
+    if not is_authenticated(request):
+        raise HTTPException(401)
+    username = current_user(request)
+    if is_super_admin(request):
+        raise HTTPException(403, "Super admin account cannot be self-deleted. Use the Users panel.")
+    password = (body or {}).get("password", "")
+    if not validate_credentials(username, password):
+        raise HTTPException(403, "Incorrect password")
+    with write_lock:
+        with get_db() as db:
+            # Delete all user data
+            site_ids = [r["id"] for r in db.execute("SELECT id FROM sites WHERE owner=?", (username,)).fetchall()]
+            for sid in site_ids:
+                _delete_thumbs_for_videos(db, "site_id=?", (sid,))
+            if site_ids:
+                placeholders = ",".join("?" * len(site_ids))
+                db.execute(f"DELETE FROM videos WHERE site_id IN ({placeholders})", site_ids)
+                db.execute(f"DELETE FROM scan_log WHERE site_id IN ({placeholders})", site_ids)
+                db.execute(f"DELETE FROM sites WHERE id IN ({placeholders})", site_ids)
+            db.execute("DELETE FROM video_tags WHERE owner=?", (username,))
+            db.execute("DELETE FROM email_verifications WHERE username=?", (username,))
+            db.execute("DELETE FROM password_resets WHERE username=?", (username,))
+            db.execute("DELETE FROM users WHERE username=?", (username,))
+            db.commit()
+    request.session.clear()
+    _audit(request, "account_deleted", f"username={username}")
+    return {"ok": True}
 
 
 @router.get("/api/notifications")
