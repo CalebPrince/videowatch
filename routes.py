@@ -1012,6 +1012,34 @@ def is_url_allowed(url: str, allowed_hosts: set[str]) -> bool:
 
 # ── API Endpoints ─────────────────────────────────────────────────────────────
 
+def _audit(request: Request, action: str, detail: str = ""):
+    try:
+        username = current_user(request) or "anonymous"
+        ip = _client_ip(request)
+        with get_db() as db:
+            db.execute(
+                "INSERT INTO audit_log (timestamp, username, action, detail, ip) VALUES (?,?,?,?,?)",
+                (now_iso(), username, action, detail, ip),
+            )
+            db.commit()
+    except Exception as e:
+        log.warning(f"Audit log write failed: {e}")
+
+
+@router.get("/api/admin/audit")
+def get_audit_log(request: Request, limit: int = 100, offset: int = 0):
+    if not is_super_admin(request):
+        raise HTTPException(403, "Super admin required")
+    limit = max(1, min(limit, 500))
+    with get_db() as db:
+        total = db.execute("SELECT COUNT(*) FROM audit_log").fetchone()[0]
+        rows = db.execute(
+            "SELECT * FROM audit_log ORDER BY id DESC LIMIT ? OFFSET ?",
+            (limit, offset),
+        ).fetchall()
+    return {"total": total, "rows": [dict(r) for r in rows]}
+
+
 @router.get("/api/admin/user-stats")
 def admin_user_stats(request: Request):
     """Per-user usage stats (super_admin only)."""
@@ -1191,6 +1219,7 @@ def _add_site_impl(body: SiteIn, request: Request):
                     "ON CONFLICT(key) DO UPDATE SET value='1'",
                 )
             db.commit()
+    _audit(request, "site_add", f"url={url} name={body.name or ''}")
     return {"id": site_id, "url": url, "name": body.name or "",
             "group_name": body.group_name or "", "max_pages": max_pages, "scan_interval": scan_interval,
             "rule_include_keywords": (body.rule_include_keywords or "").strip(),
@@ -1215,6 +1244,7 @@ def auth_login(body: LoginIn, request: Request):
         }
 
     if not validate_credentials(body.username, body.password):
+        _audit(request, "login_failed", f"username={body.username}")
         raise HTTPException(401, "Invalid username or password")
 
     row = _get_user(body.username)
@@ -1229,6 +1259,7 @@ def auth_login(body: LoginIn, request: Request):
     request.session["auth_user"] = body.username
     request.session["auth_role"] = _sanitize_role(row.get("role") if row else None) or "viewer"
     request.session["session_expires_at"] = (datetime.now(timezone.utc) + ttl).isoformat()
+    _audit(request, "login", f"role={request.session['auth_role']} remember_me={body.remember_me}")
     return {
         "ok": True,
         "authenticated": True,
@@ -1239,6 +1270,7 @@ def auth_login(body: LoginIn, request: Request):
 
 @router.post("/api/auth/logout")
 def auth_logout(request: Request):
+    _audit(request, "logout", "")
     request.session.clear()
     return {"ok": True, "authenticated": False}
 
@@ -1279,6 +1311,7 @@ def auth_register(body: RegisterIn, request: Request):
             )
             db.commit()
     log.info(f"New user registered: {username} <{email}>")
+    _audit(request, "register", f"username={username} email={email}")
     if _email_configured():
         try:
             _send_verification_email(email, username, token)
@@ -1373,6 +1406,13 @@ def reset_password(body: ResetPasswordIn):
             db.execute("DELETE FROM password_resets WHERE token=?", (body.token,))
             db.commit()
     log.info(f"Password reset for user: {username}")
+    # No request object here — log with anonymous ip
+    with get_db() as db:
+        db.execute(
+            "INSERT INTO audit_log (timestamp, username, action, detail, ip) VALUES (?,?,?,?,?)",
+            (now_iso(), username, "password_reset", "via email token", None),
+        )
+        db.commit()
     return {"ok": True}
 
 
@@ -1471,6 +1511,7 @@ def create_user(body: UserCreateIn, request: Request):
         raise HTTPException(409, "User already exists")
 
     _create_user_record(username, body.password, role)
+    _audit(request, "user_create", f"username={username} role={role}")
     return {"ok": True, "username": username, "role": role}
 
 
@@ -1512,6 +1553,7 @@ def update_user_role(username: str, body: UserRolePatchIn, request: Request):
     # Keep session role fresh if current user changed themselves.
     if request.session.get("auth_user") == username:
         request.session["auth_role"] = role
+    _audit(request, "user_update", f"username={username} role={role} active={active}")
     return {"ok": True, "username": username, "role": role, "active": bool(active)}
 
 @router.patch("/api/sites/{site_id}")
@@ -1599,6 +1641,7 @@ def remove_site(site_id: str, request: Request):
     cp = cookie_path(site_id)
     if cp.exists():
         cp.unlink()
+    _audit(request, "site_delete", f"site_id={site_id}")
     return {"ok": True}
 
 @router.get("/api/videos")
@@ -1901,6 +1944,7 @@ async def scan_all(request: Request):
     user = current_user(request) or ""
     owner = None if is_super_admin(request) else user
     _enqueue_scan_all(owner)
+    _audit(request, "scan_all", f"owner={owner or 'all'}")
     return {"ok": True, "message": "Scan queued"}
 
 @router.post("/api/scan/fresh")
@@ -1937,6 +1981,8 @@ async def scan_one(site_id: str, request: Request):
         raise HTTPException(403, "Not authorised to scan this site")
     queued = _enqueue_scan(dict(site))
     msg = f"Queued {site['url']}" if queued else f"{site['url']} is already queued or running"
+    if queued:
+        _audit(request, "scan_site", f"site_id={site_id} url={site['url']}")
     return {"ok": True, "queued": queued, "message": msg}
 
 @router.get("/api/scan/queue")

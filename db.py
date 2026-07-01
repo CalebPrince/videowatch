@@ -235,6 +235,17 @@ def init_db():
             """)
             db.execute("CREATE INDEX IF NOT EXISTS idx_video_tags_owner ON video_tags(owner)")
             db.execute("""
+                CREATE TABLE IF NOT EXISTS audit_log (
+                    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+                    timestamp   TEXT NOT NULL,
+                    username    TEXT NOT NULL,
+                    action      TEXT NOT NULL,
+                    detail      TEXT,
+                    ip          TEXT
+                )
+            """)
+            db.execute("CREATE INDEX IF NOT EXISTS idx_audit_log_ts ON audit_log(timestamp DESC)")
+            db.execute("""
                 CREATE TABLE IF NOT EXISTS email_verifications (
                     token       TEXT PRIMARY KEY,
                     username    TEXT NOT NULL,
