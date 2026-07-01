@@ -2963,8 +2963,13 @@ async function obSkip() {
 
 async function obDone() {
   await api('/auth/complete-onboarding', { method: 'POST' }).catch(() => {});
-  _obModal && _obModal.hide();
-  await renderAll();
+  if (_obModal) {
+    const el = document.getElementById('onboardingModal');
+    el.addEventListener('hidden.bs.modal', () => renderAll(), { once: true });
+    _obModal.hide();
+  } else {
+    await renderAll();
+  }
 }
 
 async function obAddSite() {
