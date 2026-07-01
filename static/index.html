@@ -2579,9 +2579,8 @@ async function renderVideos() {
 
     const overlay = document.createElement('div');
     overlay.className = 'play-overlay';
-    overlay.innerHTML = '<i class="bi bi-play-circle-fill"></i>'; // play icon
-    // Open directly in a new tab for the primary card action.
-    overlay.addEventListener('click', () => openVideoInNewTab(v));
+    overlay.innerHTML = '<i class="bi bi-play-circle-fill"></i>';
+    overlay.addEventListener('click', (e) => { e.preventDefault(); e.stopPropagation(); openVideoModal(v); });
     thumbWrap.appendChild(overlay);
 
     // Body
@@ -3734,6 +3733,160 @@ async function maybeShowOnboarding(st) {
   }
   await refreshLog();
 })();
+</script>
+
+<!-- ── Video Player Modal ── -->
+<div id="vp-modal" style="display:none;position:fixed;inset:0;z-index:2000;background:rgba(0,0,0,.85);align-items:center;justify-content:center;padding:1rem;" onclick="closeVideoModal(event)">
+  <div id="vp-box" style="background:#0d0d1a;border-radius:16px;width:100%;max-width:900px;overflow:hidden;box-shadow:0 32px 80px rgba(0,0,0,.7);position:relative;display:flex;flex-direction:column;">
+    <!-- Header -->
+    <div id="vp-header" style="padding:.75rem 1rem;display:flex;align-items:flex-start;justify-content:space-between;gap:.75rem;border-bottom:1px solid rgba(255,255,255,.08);">
+      <div style="min-width:0;">
+        <div id="vp-title" style="font-weight:700;font-size:1rem;color:#e2e8f0;line-height:1.4;overflow:hidden;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;"></div>
+        <div id="vp-meta" style="font-size:.75rem;color:#64748b;margin-top:.2rem;"></div>
+      </div>
+      <div style="display:flex;gap:.5rem;flex-shrink:0;align-items:center;">
+        <a id="vp-open-btn" href="#" target="_blank" rel="noopener" style="display:inline-flex;align-items:center;gap:.35rem;padding:.3rem .75rem;border-radius:7px;background:rgba(255,255,255,.08);color:#94a3b8;font-size:.78rem;text-decoration:none;white-space:nowrap;" onclick="event.stopPropagation()">
+          <i class="bi bi-box-arrow-up-right"></i> Open site
+        </a>
+        <button onclick="closeVideoModal()" style="background:rgba(255,255,255,.08);border:none;color:#94a3b8;border-radius:7px;padding:.3rem .55rem;font-size:1rem;cursor:pointer;line-height:1;">✕</button>
+      </div>
+    </div>
+    <!-- Player area -->
+    <div id="vp-player" style="position:relative;width:100%;background:#000;"></div>
+    <!-- Footer actions -->
+    <div id="vp-footer" style="padding:.6rem 1rem;display:flex;align-items:center;gap:.6rem;border-top:1px solid rgba(255,255,255,.08);flex-wrap:wrap;">
+      <button id="vp-fav-btn"   class="btn btn-sm btn-outline-secondary" style="font-size:.78rem;" onclick="vpToggle('favorite')"></button>
+      <button id="vp-watch-btn" class="btn btn-sm btn-outline-secondary" style="font-size:.78rem;" onclick="vpToggle('watched')"></button>
+      <button id="vp-arch-btn"  class="btn btn-sm btn-outline-secondary" style="font-size:.78rem;" onclick="vpToggle('archive')"></button>
+      <span id="vp-duration" style="margin-left:auto;font-size:.75rem;color:#64748b;"></span>
+    </div>
+  </div>
+</div>
+
+<script>
+let _vpVideo = null;
+
+function openVideoModal(v) {
+  _vpVideo = v;
+  const modal = document.getElementById('vp-modal');
+  const player = document.getElementById('vp-player');
+  player.innerHTML = '';
+
+  document.getElementById('vp-title').textContent = v.title || 'Untitled';
+  document.getElementById('vp-open-btn').href = v.url;
+
+  const metaParts = [];
+  if (v.site_name) metaParts.push(v.site_name);
+  if (v.released_at) metaParts.push(fmtDate(v.released_at));
+  document.getElementById('vp-meta').textContent = metaParts.join(' · ');
+
+  const dur = v.duration ? `${Math.floor(v.duration/60)}m ${v.duration%60}s` : '';
+  document.getElementById('vp-duration').textContent = dur;
+
+  _vpUpdateFooter();
+
+  // Determine player type
+  const embed = v.embed_url;
+  const direct = v.resolved_media_url;
+  const isDirectVideo = direct && /\.(mp4|webm|ogg|mov)(\?|$)/i.test(direct);
+
+  if (embed) {
+    // Embeddable (YouTube, Vimeo, etc.)
+    const iframe = document.createElement('iframe');
+    const sep = embed.includes('?') ? '&' : '?';
+    iframe.src = embed + sep + 'autoplay=1';
+    iframe.allow = 'autoplay; fullscreen; picture-in-picture';
+    iframe.allowFullscreen = true;
+    iframe.style.cssText = 'width:100%;aspect-ratio:16/9;border:none;display:block;';
+    player.appendChild(iframe);
+  } else if (isDirectVideo) {
+    // Direct video file
+    const vid = document.createElement('video');
+    vid.src = direct;
+    vid.controls = true;
+    vid.autoplay = true;
+    vid.style.cssText = 'width:100%;aspect-ratio:16/9;display:block;background:#000;';
+    player.appendChild(vid);
+  } else {
+    // Not playable inline — show thumb + message
+    const thumb = v.thumb ? `<img src="${v.thumb}" style="width:100%;aspect-ratio:16/9;object-fit:cover;display:block;opacity:.5;">` : '';
+    player.innerHTML = `
+      <div style="position:relative;aspect-ratio:16/9;display:flex;align-items:center;justify-content:center;background:#0a0a14;">
+        ${thumb}
+        <div style="position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:.75rem;">
+          <i class="bi bi-play-circle" style="font-size:3.5rem;color:rgba(255,255,255,.5);"></i>
+          <div style="color:rgba(255,255,255,.6);font-size:.85rem;">This video can't be played inline</div>
+          <a href="${v.url}" target="_blank" rel="noopener" onclick="event.stopPropagation()"
+             style="background:var(--brand);color:#fff;padding:.45rem 1.25rem;border-radius:8px;font-weight:700;font-size:.85rem;text-decoration:none;">
+            <i class="bi bi-box-arrow-up-right me-1"></i>Watch on site
+          </a>
+        </div>
+      </div>`;
+  }
+
+  modal.style.display = 'flex';
+  document.body.style.overflow = 'hidden';
+
+  // Mark as watched
+  if (!Number(v.is_watched)) {
+    patchVideoState(v.id, { is_watched: true, is_new: false }).then(() => {
+      v.is_watched = 1;
+      _vpUpdateFooter();
+    });
+  }
+}
+
+function _vpUpdateFooter() {
+  const v = _vpVideo;
+  if (!v) return;
+  const favBtn = document.getElementById('vp-fav-btn');
+  favBtn.innerHTML = `<i class="bi bi-star${Number(v.is_favorite)?'-fill':''} me-1"></i>${Number(v.is_favorite)?'Unfavorite':'Favorite'}`;
+  favBtn.style.color = Number(v.is_favorite) ? '#f59e0b' : '';
+
+  const watchBtn = document.getElementById('vp-watch-btn');
+  watchBtn.innerHTML = `<i class="bi bi-eye${Number(v.is_watched)?'-slash':''} me-1"></i>${Number(v.is_watched)?'Mark unwatched':'Mark watched'}`;
+
+  const archBtn = document.getElementById('vp-arch-btn');
+  archBtn.innerHTML = `<i class="bi bi-inbox${Number(v.is_archived)?'-fill':''} me-1"></i>${Number(v.is_archived)?'Unarchive':'Archive'}`;
+}
+
+async function vpToggle(action) {
+  const v = _vpVideo;
+  if (!v) return;
+  if (action === 'favorite') {
+    await patchVideoState(v.id, { is_favorite: !Number(v.is_favorite) });
+    v.is_favorite = Number(v.is_favorite) ? 0 : 1;
+  } else if (action === 'watched') {
+    const wasWatched = Number(v.is_watched);
+    await patchVideoState(v.id, { is_watched: !wasWatched });
+    v.is_watched = wasWatched ? 0 : 1;
+  } else if (action === 'archive') {
+    await patchVideoState(v.id, { is_archived: !Number(v.is_archived) });
+    v.is_archived = Number(v.is_archived) ? 0 : 1;
+  }
+  _vpUpdateFooter();
+  renderVideos();
+}
+
+function closeVideoModal(e) {
+  if (e && e.target !== document.getElementById('vp-modal')) return;
+  const modal = document.getElementById('vp-modal');
+  modal.style.display = 'none';
+  document.body.style.overflow = '';
+  // Stop any playing media
+  const player = document.getElementById('vp-player');
+  player.querySelectorAll('iframe,video').forEach(el => {
+    if (el.tagName === 'IFRAME') el.src = '';
+    else el.pause();
+  });
+  _vpVideo = null;
+  renderVideos();
+}
+
+// Close on Escape key
+document.addEventListener('keydown', e => {
+  if (e.key === 'Escape' && _vpVideo) closeVideoModal({ target: document.getElementById('vp-modal') });
+});
 </script>
 
 </body>
