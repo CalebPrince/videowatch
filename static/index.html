@@ -1930,6 +1930,74 @@ function openTagPopover(anchor, v) {
   }, 0);
 }
 
+let _notePopover = null;
+function openNotePopover(anchor, v) {
+  if (_notePopover) { _notePopover.remove(); _notePopover = null; }
+
+  const pop = document.createElement('div');
+  pop.className = 'tag-popover';
+  pop.style.width = '260px';
+  _notePopover = pop;
+
+  const label = document.createElement('div');
+  label.textContent = 'Note';
+  label.style.cssText = 'font-size:.75rem;font-weight:600;color:var(--text-muted);margin-bottom:.4rem;';
+  pop.appendChild(label);
+
+  const ta = document.createElement('textarea');
+  ta.rows = 4;
+  ta.placeholder = 'Add a private note…';
+  ta.maxLength = 1000;
+  ta.value = v.note || '';
+  ta.style.cssText = 'width:100%;resize:vertical;font-size:.82rem;padding:.35rem .5rem;border:1px solid var(--border);border-radius:4px;background:var(--card-bg);color:var(--text);';
+  pop.appendChild(ta);
+
+  const row = document.createElement('div');
+  row.style.cssText = 'display:flex;justify-content:flex-end;gap:.4rem;margin-top:.4rem;';
+
+  const saveBtn = document.createElement('button');
+  saveBtn.className = 'btn btn-sm btn-primary';
+  saveBtn.textContent = 'Save';
+  saveBtn.onclick = async (e) => {
+    e.stopPropagation();
+    const note = ta.value.trim();
+    try {
+      await api(`/videos/${encodeURIComponent(v.id)}/note`, { method: 'PATCH', body: JSON.stringify({ note }) });
+      v.note = note || null;
+      pop.remove(); _notePopover = null;
+      // Update button in-place
+      anchor.className = `btn-icon${v.note ? ' is-active' : ''}`;
+      anchor.title = v.note ? 'Edit note' : 'Add note';
+      anchor.innerHTML = `<i class="bi ${v.note ? 'bi-sticky-fill' : 'bi-sticky'}"></i>`;
+    } catch { ta.style.borderColor = 'red'; setTimeout(() => ta.style.borderColor = '', 1000); }
+  };
+
+  const clearBtn = document.createElement('button');
+  clearBtn.className = 'btn btn-sm btn-outline-secondary';
+  clearBtn.textContent = 'Clear';
+  clearBtn.onclick = async (e) => {
+    e.stopPropagation();
+    ta.value = '';
+    saveBtn.click();
+  };
+
+  row.appendChild(clearBtn);
+  row.appendChild(saveBtn);
+  pop.appendChild(row);
+
+  document.body.appendChild(pop);
+  const rect = anchor.getBoundingClientRect();
+  pop.style.top  = `${rect.bottom + window.scrollY + 4}px`;
+  pop.style.left = `${Math.min(rect.left + window.scrollX, window.innerWidth - 270)}px`;
+  ta.focus();
+
+  setTimeout(() => {
+    document.addEventListener('click', function handler(e) {
+      if (!pop.contains(e.target)) { pop.remove(); _notePopover = null; document.removeEventListener('click', handler); }
+    });
+  }, 0);
+}
+
 async function patchVideoState(videoId, patch) {
   await api(`/videos/${encodeURIComponent(videoId)}/state`, {
     method: 'PATCH',
@@ -2518,6 +2586,14 @@ async function renderVideos() {
     tagBtn.innerHTML = '<i class="bi bi-tag"></i>';
     tagBtn.onclick = (e) => { e.preventDefault(); e.stopPropagation(); openTagPopover(tagBtn, v); };
     meta.appendChild(tagBtn);
+
+    // Note button
+    const noteBtn = document.createElement('button');
+    noteBtn.className = `btn-icon${v.note ? ' is-active' : ''}`;
+    noteBtn.title = v.note ? 'Edit note' : 'Add note';
+    noteBtn.innerHTML = `<i class="bi ${v.note ? 'bi-sticky-fill' : 'bi-sticky'}"></i>`;
+    noteBtn.onclick = (e) => { e.preventDefault(); e.stopPropagation(); openNotePopover(noteBtn, v); };
+    meta.appendChild(noteBtn);
 
     // Tag chips
     const chipsWrap = document.createElement('div');

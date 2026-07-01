@@ -2490,6 +2490,18 @@ def remove_video_tag(video_id: str, tag: str, request: Request):
     return {"ok": True}
 
 
+@router.patch("/api/videos/{video_id}/note")
+def set_video_note(video_id: str, request: Request, body: dict):
+    if not is_authenticated(request):
+        raise HTTPException(401)
+    note = (body.get("note") or "").strip() or None
+    with write_lock:
+        with get_db() as db:
+            db.execute("UPDATE videos SET note=? WHERE id=?", (note, video_id))
+            db.commit()
+    return {"ok": True, "note": note}
+
+
 @router.get("/api/videos/duplicates")
 def list_duplicate_candidates(limit: int = 50):
     limit = max(10, min(limit, 200))
