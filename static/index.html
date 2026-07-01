@@ -89,8 +89,14 @@
       border-radius: 99px; font-size: .68rem; padding: 2px 7px; font-weight: 700;
       flex-shrink: 0; animation: none !important;
     }
-    .site-actions { display: flex; gap: 2px; opacity: 0; transition: opacity .15s; flex-shrink: 0; }
+    .site-actions { display: flex; align-items: center; gap: 2px; opacity: 0; transition: opacity .15s; flex-shrink: 0; }
     .site-item:hover .site-actions { opacity: 1; }
+    .site-interval-sel {
+      font-size: .68rem; background: rgba(255,255,255,.1); color: rgba(220,233,247,.85);
+      border: 1px solid rgba(255,255,255,.18); border-radius: 5px; padding: 1px 3px;
+      cursor: pointer; outline: none; max-width: 46px;
+    }
+    .site-interval-sel:focus { border-color: var(--brand); }
     .btn-icon {
       background: none; border: none; padding: 2px 4px; font-size: 13px;
       cursor: pointer; border-radius: 4px; color: rgba(255,255,255,.3);
@@ -2193,10 +2199,29 @@ async function renderSidebar() {
       const actions = document.createElement('div');
       actions.className = 'site-actions';
       actions.innerHTML = `
+        <select class="site-interval-sel" title="Auto-scan interval">
+          <option value="300">5m</option>
+          <option value="600">10m</option>
+          <option value="1800">30m</option>
+          <option value="3600">1h</option>
+          <option value="21600">6h</option>
+          <option value="86400">24h</option>
+        </select>
         <button class="btn-icon" title="Settings"><i class="bi bi-gear"></i></button>
         <button class="btn-icon danger" title="Remove"><i class="bi bi-trash"></i></button>`;
-      actions.children[0].onclick = e => { e.stopPropagation(); openSettings(s); };
-      actions.children[1].onclick = e => removeSite(e, s.id);
+      const intervalSel = actions.querySelector('.site-interval-sel');
+      intervalSel.value = String(s.scan_interval || 300);
+      intervalSel.addEventListener('click', e => e.stopPropagation());
+      intervalSel.addEventListener('change', async e => {
+        e.stopPropagation();
+        try {
+          await api(`/sites/${s.id}`, { method: 'PATCH', body: JSON.stringify({ scan_interval: parseInt(intervalSel.value, 10) }) });
+          showToast(`Scan interval updated`, 'success');
+          await renderSites();
+        } catch (err) { showToast(err.message, 'danger'); }
+      });
+      actions.children[1].onclick = e => { e.stopPropagation(); openSettings(s); };
+      actions.children[2].onclick = e => removeSite(e, s.id);
 
       if (s.new_count) {
         const badge = document.createElement('span');
