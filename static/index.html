@@ -844,6 +844,7 @@
       <button class="btn btn-sm btn-outline-secondary" onclick="bulkAction('unfavorite')"><i class="bi bi-star me-1"></i>Unfavorite</button>
       <button class="btn btn-sm btn-outline-secondary" onclick="bulkAction('archive')"><i class="bi bi-inbox me-1"></i>Archive</button>
       <button class="btn btn-sm btn-outline-secondary" onclick="bulkAction('ignore')"><i class="bi bi-eye-slash me-1"></i>Ignore</button>
+      <button class="btn btn-sm btn-outline-secondary" onclick="selectAllVideos()"><i class="bi bi-check-all me-1"></i>Select all</button>
       <button class="btn btn-sm btn-outline-danger ms-auto" onclick="clearBulkSelection()"><i class="bi bi-x-lg me-1"></i>Cancel</button>
     </div>
 
@@ -1950,6 +1951,11 @@ function updateBulkSelection() {
 
 function clearBulkSelection() {
   document.querySelectorAll('#video-grid input[type=checkbox][data-vid]').forEach(c => c.checked = false);
+  updateBulkSelection();
+}
+
+function selectAllVideos() {
+  document.querySelectorAll('#video-grid input[type=checkbox][data-vid]').forEach(c => c.checked = true);
   updateBulkSelection();
 }
 
