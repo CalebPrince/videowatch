@@ -2984,7 +2984,7 @@ async function obAddSite() {
     const site = await api('/sites', { method: 'POST', body: JSON.stringify({ url, name: name || null }) });
     // Kick off an immediate scan for the new site
     if (site && site.id) {
-      api('/scan/one', { method: 'POST', body: JSON.stringify({ site_id: site.id }) }).catch(() => {});
+      api(`/scan/${site.id}`, { method: 'POST' }).catch(() => {});
     }
     obNext(3);
     document.getElementById('ob-progress').style.width = '100%';
