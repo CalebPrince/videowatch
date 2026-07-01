@@ -411,6 +411,9 @@
           <a class="btn btn-sm btn-outline-secondary" id="btn-db-backup" href="/api/admin/backup" download>
             <i class="bi bi-download me-1"></i>Download DB backup
           </a>
+          <button class="btn btn-sm btn-outline-warning" id="btn-thumb-cleanup">
+            <i class="bi bi-images me-1"></i>Clean thumbnail cache
+          </button>
         </div>
         <div id="maint-msg" class="meta mt-2"></div>
       </section>
@@ -958,6 +961,17 @@
       try {
         const r = await api('/scan/fresh', { method: 'POST' });
         msg.textContent = `Fresh scan started. Removed ${r.deleted || 0} rows.`;
+      } catch (e) {
+        msg.textContent = e.message;
+      }
+    };
+
+    document.getElementById('btn-thumb-cleanup').onclick = async () => {
+      const msg = document.getElementById('maint-msg');
+      if (!confirm('Delete all orphaned cached thumbnails (no matching video)?')) return;
+      try {
+        const r = await api('/admin/thumb-cleanup', { method: 'POST' });
+        msg.textContent = `Thumbnail cache cleaned: ${r.removed} file(s) removed${r.errors ? `, ${r.errors} error(s)` : ''}.`;
       } catch (e) {
         msg.textContent = e.message;
       }

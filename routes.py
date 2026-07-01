@@ -161,6 +161,19 @@ log = logging.getLogger(__name__)
 THUMBS_DIR = Path("thumbcache")
 THUMBS_DIR.mkdir(exist_ok=True)
 
+def _delete_thumb(url: str | None):
+    if not url:
+        return
+    try:
+        (THUMBS_DIR / hashlib.md5(url.encode()).hexdigest()).unlink(missing_ok=True)
+    except Exception:
+        pass
+
+def _delete_thumbs_for_videos(db_conn, where_sql: str, params: tuple):
+    rows = db_conn.execute(f"SELECT thumb FROM videos WHERE {where_sql}", params).fetchall()
+    for r in rows:
+        _delete_thumb(r["thumb"])
+
 
 def _migrate_legacy_videos_dir(target_dir: Path | None = None, legacy_dir: Path | None = None) -> dict[str, int]:
     target = Path(target_dir or VIDEOS_DIR)
@@ -1102,6 +1115,29 @@ def download_backup(request: Request):
     )
 
 
+@router.post("/api/admin/thumb-cleanup")
+def thumb_cleanup(request: Request):
+    """Delete cached thumbnail files with no matching video in the DB (super_admin only)."""
+    if not is_super_admin(request):
+        raise HTTPException(403, "Super admin required")
+    with get_db() as db:
+        known = {
+            hashlib.md5(r["thumb"].encode()).hexdigest()
+            for r in db.execute("SELECT thumb FROM videos WHERE thumb IS NOT NULL").fetchall()
+        }
+    removed = 0
+    errors = 0
+    for f in THUMBS_DIR.iterdir():
+        if f.is_file() and f.name not in known:
+            try:
+                f.unlink()
+                removed += 1
+            except Exception:
+                errors += 1
+    _audit(request, "thumb_cleanup", f"removed={removed} errors={errors}")
+    return {"ok": True, "removed": removed, "errors": errors}
+
+
 @router.get("/api/admin/sites")
 def admin_list_all_sites(request: Request):
     """Super-admin view: all sites across all users, grouped by owner."""
@@ -1628,6 +1664,7 @@ def remove_site(site_id: str, request: Request):
                 raise HTTPException(404, "Site not found")
             if not is_super_admin(request) and row["owner"] != current_user(request):
                 raise HTTPException(403, "Not authorised to delete this site")
+            _delete_thumbs_for_videos(db, "site_id=?", (site_id,))
             db.execute("DELETE FROM sites WHERE id=?", (site_id,))
             db.execute("DELETE FROM videos WHERE site_id=?", (site_id,))
             # Auto-disable auto-scan when no sites remain
@@ -1830,9 +1867,11 @@ def clear_videos(site_id: str | None = None):
     with write_lock:
         with get_db() as db:
             if site_id:
+                _delete_thumbs_for_videos(db, "site_id=?", (site_id,))
                 db.execute("DELETE FROM videos WHERE site_id=?", (site_id,))
                 db.execute("UPDATE sites SET last_scan=NULL WHERE id=?", (site_id,))
             else:
+                _delete_thumbs_for_videos(db, "1=1", ())
                 db.execute("DELETE FROM videos")
                 db.execute("UPDATE sites SET last_scan=NULL")
             db.commit()
