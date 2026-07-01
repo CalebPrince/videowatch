@@ -1,0 +1,126 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="630" viewBox="0 0 1200 630">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#0d1b2a"/>
+      <stop offset="100%" stop-color="#0f2a1e"/>
+    </linearGradient>
+    <linearGradient id="brand" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0%" stop-color="#0f766e"/>
+      <stop offset="100%" stop-color="#14b8a6"/>
+    </linearGradient>
+    <linearGradient id="card1" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#1e3a5f"/>
+      <stop offset="100%" stop-color="#0d2035"/>
+    </linearGradient>
+    <filter id="glow">
+      <feGaussianBlur stdDeviation="18" result="blur"/>
+      <feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge>
+    </filter>
+  </defs>
+
+  <!-- Background -->
+  <rect width="1200" height="630" fill="url(#bg)"/>
+
+  <!-- Glow orbs -->
+  <circle cx="900" cy="120" r="220" fill="#0f766e" opacity="0.08"/>
+  <circle cx="200" cy="500" r="160" fill="#14b8a6" opacity="0.06"/>
+  <circle cx="1050" cy="480" r="130" fill="#7c3aed" opacity="0.07"/>
+
+  <!-- Left content -->
+  <!-- Logo icon -->
+  <rect x="80" y="100" width="56" height="56" rx="16" fill="url(#brand)"/>
+  <text x="108" y="139" font-family="sans-serif" font-size="28" fill="white" text-anchor="middle">▶</text>
+
+  <!-- App name -->
+  <text x="152" y="132" font-family="-apple-system,BlinkMacSystemFont,sans-serif" font-size="26" font-weight="700" fill="white">VideoWatch</text>
+
+  <!-- Headline -->
+  <text x="80" y="240" font-family="-apple-system,BlinkMacSystemFont,sans-serif" font-size="58" font-weight="800" fill="white">Never miss a</text>
+  <text x="80" y="310" font-family="-apple-system,BlinkMacSystemFont,sans-serif" font-size="58" font-weight="800" fill="white">new video.</text>
+
+  <!-- Subheadline -->
+  <text x="80" y="370" font-family="-apple-system,BlinkMacSystemFont,sans-serif" font-size="24" fill="#94a3b8">Automatically monitor your favourite sites and</text>
+  <text x="80" y="402" font-family="-apple-system,BlinkMacSystemFont,sans-serif" font-size="24" fill="#94a3b8">get alerted the moment new content drops.</text>
+
+  <!-- Feature pills -->
+  <rect x="80" y="440" width="148" height="36" rx="18" fill="#0f766e22" stroke="#0f766e" stroke-width="1.5"/>
+  <text x="154" y="463" font-family="-apple-system,BlinkMacSystemFont,sans-serif" font-size="14" fill="#14b8a6" text-anchor="middle">⚡ Auto-scanning</text>
+
+  <rect x="244" y="440" width="148" height="36" rx="18" fill="#0f766e22" stroke="#0f766e" stroke-width="1.5"/>
+  <text x="318" y="463" font-family="-apple-system,BlinkMacSystemFont,sans-serif" font-size="14" fill="#14b8a6" text-anchor="middle">🔔 Instant alerts</text>
+
+  <rect x="408" y="440" width="148" height="36" rx="18" fill="#0f766e22" stroke="#0f766e" stroke-width="1.5"/>
+  <text x="482" y="463" font-family="-apple-system,BlinkMacSystemFont,sans-serif" font-size="14" fill="#14b8a6" text-anchor="middle">🆓 Free plan</text>
+
+  <!-- URL -->
+  <text x="80" y="560" font-family="-apple-system,BlinkMacSystemFont,sans-serif" font-size="18" fill="#475569">videowatch.duckdns.org</text>
+
+  <!-- Right: mock dashboard card -->
+  <rect x="700" y="80" width="420" height="470" rx="20" fill="url(#card1)" opacity="0.9"/>
+  <rect x="700" y="80" width="420" height="470" rx="20" fill="none" stroke="#1e3a5f" stroke-width="1.5"/>
+
+  <!-- Card header -->
+  <rect x="700" y="80" width="420" height="52" rx="20" fill="#10253b"/>
+  <rect x="700" y="112" width="420" height="20" fill="#10253b"/>
+  <circle cx="732" cy="106" r="8" fill="#0f766e"/>
+  <text x="750" y="111" font-family="-apple-system,BlinkMacSystemFont,sans-serif" font-size="13" font-weight="600" fill="white">VideoWatch Dashboard</text>
+  <rect x="1060" y="92" width="48" height="28" rx="6" fill="url(#brand)"/>
+  <text x="1084" y="111" font-family="-apple-system,BlinkMacSystemFont,sans-serif" font-size="11" fill="white" text-anchor="middle">Scan</text>
+
+  <!-- Video cards inside dashboard -->
+  <!-- Card 1 -->
+  <rect x="720" y="148" width="176" height="120" rx="10" fill="#0d1b2a"/>
+  <rect x="720" y="148" width="176" height="76" rx="10" fill="#1a3050"/>
+  <rect x="720" y="204" width="176" height="20" fill="#1a3050"/>
+  <circle cx="808" cy="186" r="18" fill="#0f766e88"/>
+  <text x="808" y="192" font-family="sans-serif" font-size="16" fill="white" text-anchor="middle">▶</text>
+  <rect x="728" y="232" width="100" height="9" rx="4" fill="#1e3a5f"/>
+  <rect x="728" y="247" width="68" height="7" rx="3" fill="#0f766e44"/>
+  <rect x="868" y="148" width="8" height="8" rx="2" fill="#14b8a6"/>
+  <text x="879" y="156" font-family="sans-serif" font-size="9" fill="#14b8a6">NEW</text>
+
+  <!-- Card 2 -->
+  <rect x="912" y="148" width="176" height="120" rx="10" fill="#0d1b2a"/>
+  <rect x="912" y="148" width="176" height="76" rx="10" fill="#2a1a3a"/>
+  <rect x="912" y="204" width="176" height="20" fill="#2a1a3a"/>
+  <circle cx="1000" cy="186" r="18" fill="#7c3aed88"/>
+  <text x="1000" y="192" font-family="sans-serif" font-size="16" fill="white" text-anchor="middle">▶</text>
+  <rect x="920" y="232" width="110" height="9" rx="4" fill="#1e3a5f"/>
+  <rect x="920" y="247" width="72" height="7" rx="3" fill="#7c3aed44"/>
+
+  <!-- Card 3 -->
+  <rect x="720" y="284" width="176" height="120" rx="10" fill="#0d1b2a"/>
+  <rect x="720" y="284" width="176" height="76" rx="10" fill="#1a2a40"/>
+  <rect x="720" y="340" width="176" height="20" fill="#1a2a40"/>
+  <circle cx="808" cy="322" r="18" fill="#0284c788"/>
+  <text x="808" y="328" font-family="sans-serif" font-size="16" fill="white" text-anchor="middle">▶</text>
+  <rect x="728" y="368" width="88" height="9" rx="4" fill="#1e3a5f"/>
+  <rect x="728" y="383" width="60" height="7" rx="3" fill="#0284c744"/>
+
+  <!-- Card 4 -->
+  <rect x="912" y="284" width="176" height="120" rx="10" fill="#0d1b2a"/>
+  <rect x="912" y="284" width="176" height="76" rx="10" fill="#1a3020"/>
+  <rect x="912" y="340" width="176" height="20" fill="#1a3020"/>
+  <circle cx="1000" cy="322" r="18" fill="#16a34a88"/>
+  <text x="1000" y="328" font-family="sans-serif" font-size="16" fill="white" text-anchor="middle">▶</text>
+  <rect x="920" y="368" width="120" height="9" rx="4" fill="#1e3a5f"/>
+  <rect x="920" y="383" width="80" height="7" rx="3" fill="#16a34a44"/>
+
+  <!-- Bottom stat bar -->
+  <rect x="720" y="420" width="368" height="110" rx="10" fill="#0a1628"/>
+  <text x="736" y="444" font-family="-apple-system,BlinkMacSystemFont,sans-serif" font-size="11" fill="#475569">MONITORED SITES</text>
+  <text x="736" y="468" font-family="-apple-system,BlinkMacSystemFont,sans-serif" font-size="26" font-weight="800" fill="white">12</text>
+
+  <line x1="830" y1="430" x2="830" y2="520" stroke="#1e3a5f" stroke-width="1"/>
+
+  <text x="848" y="444" font-family="-apple-system,BlinkMacSystemFont,sans-serif" font-size="11" fill="#475569">VIDEOS FOUND</text>
+  <text x="848" y="468" font-family="-apple-system,BlinkMacSystemFont,sans-serif" font-size="26" font-weight="800" fill="white">1,847</text>
+
+  <line x1="966" y1="430" x2="966" y2="520" stroke="#1e3a5f" stroke-width="1"/>
+
+  <text x="984" y="444" font-family="-apple-system,BlinkMacSystemFont,sans-serif" font-size="11" fill="#475569">NEW TODAY</text>
+  <text x="984" y="468" font-family="-apple-system,BlinkMacSystemFont,sans-serif" font-size="26" font-weight="800" fill="#14b8a6">23</text>
+
+  <!-- Bottom gradient bar -->
+  <rect x="0" y="600" width="1200" height="30" fill="url(#brand)" opacity="0.6"/>
+</svg>

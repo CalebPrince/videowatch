@@ -1,0 +1,33 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <title>Export OG Image — VideoWatch</title>
+  <style>
+    body { margin: 0; background: #0d1b2a; display: flex; flex-direction: column; align-items: center; justify-content: center; min-height: 100vh; font-family: sans-serif; color: #94a3b8; gap: 1.5rem; }
+    canvas { border-radius: 12px; box-shadow: 0 24px 60px rgba(0,0,0,.6); max-width: 100%; }
+    .btn { padding: .6rem 1.5rem; background: linear-gradient(135deg,#0f766e,#14b8a6); color: #fff; border: none; border-radius: 8px; font-size: 1rem; font-weight: 700; cursor: pointer; }
+    .btn:hover { opacity: .9; }
+    p { font-size: .85rem; }
+  </style>
+</head>
+<body>
+  <p>Click download to save <strong style="color:#fff">og-image.png</strong> then place it in <code>static/</code> on the server.</p>
+  <canvas id="c" width="1200" height="630"></canvas>
+  <button class="btn" id="dl">⬇ Download og-image.png</button>
+  <script>
+    const img = new Image();
+    img.onload = () => {
+      const ctx = document.getElementById('c').getContext('2d');
+      ctx.drawImage(img, 0, 0, 1200, 630);
+    };
+    img.src = '/static/og-image.svg';
+    document.getElementById('dl').onclick = () => {
+      const a = document.createElement('a');
+      a.download = 'og-image.png';
+      a.href = document.getElementById('c').toDataURL('image/png');
+      a.click();
+    };
+  </script>
+</body>
+</html>
