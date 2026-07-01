@@ -1680,7 +1680,22 @@ function normalizeVideoUrl(rawUrl) {
 }
 
 function normalizeNavigablePageUrl(rawUrl) {
-  return normalizeVideoUrl(rawUrl);
+  const url = normalizeVideoUrl(rawUrl);
+  if (!url) return null;
+  try {
+    const u = new URL(url);
+    const path = u.pathname || '/';
+    const hasFileExt = /\.[a-z0-9]{2,6}$/i.test(path);
+    // Add trailing slash for bare directory-style paths (no query, no hash, no file ext)
+    // Skip embeddable platforms that break with trailing slashes
+    const skipHosts = /youtube\.com|youtu\.be|vimeo\.com|twitch\.tv|dailymotion\.com/i;
+    if (!skipHosts.test(u.hostname) && path !== '/' && !path.endsWith('/') && !u.search && !u.hash && !hasFileExt) {
+      u.pathname = `${path}/`;
+    }
+    return u.href;
+  } catch (_) {
+    return url;
+  }
 }
 
 function openVideoInNewTab(video) {
