@@ -1568,18 +1568,30 @@ def list_videos(request: Request,
             filters.append("videos.site_id=?"); params.append(site_id)
         if search:
             search_term = f"%{search}%"
-            # Use FTS5 for title/cast_names, LIKE for url/platform/site fields
-            fts_query = " OR ".join(
-                f'"{word}"*' if word.isalnum() else f'"{word}"'
-                for word in search.split()
-                if word
-            ) or f'"{search}"'
-            filters.append(
-                "(videos.rowid IN (SELECT rowid FROM videos_fts WHERE videos_fts MATCH ?) "
-                "OR videos.url LIKE ? OR videos.platform LIKE ? "
-                "OR sites.name LIKE ? OR sites.group_name LIKE ?)"
-            )
-            params.extend([fts_query, search_term, search_term, search_term, search_term])
+            fts_available = False
+            try:
+                db.execute("SELECT 1 FROM videos_fts LIMIT 1")
+                fts_available = True
+            except Exception:
+                pass
+            if fts_available:
+                fts_query = " OR ".join(
+                    f'"{word}"*' if word.isalnum() else f'"{word}"'
+                    for word in search.split()
+                    if word
+                ) or f'"{search}"'
+                filters.append(
+                    "(videos.rowid IN (SELECT rowid FROM videos_fts WHERE videos_fts MATCH ?) "
+                    "OR videos.url LIKE ? OR videos.platform LIKE ? "
+                    "OR sites.name LIKE ? OR sites.group_name LIKE ?)"
+                )
+                params.extend([fts_query, search_term, search_term, search_term, search_term])
+            else:
+                filters.append(
+                    "(videos.title LIKE ? OR videos.cast_names LIKE ? OR videos.url LIKE ? "
+                    "OR videos.platform LIKE ? OR sites.name LIKE ? OR sites.group_name LIKE ?)"
+                )
+                params.extend([search_term] * 6)
         if released_after:
             filters.append("videos.released_at >= ?"); params.append(released_after)
         if released_before:
