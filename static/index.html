@@ -3857,7 +3857,7 @@ function _timeAgo(date) {
 
 <!-- ── Video Player Modal ── -->
 <div id="vp-modal" style="display:none;position:fixed;inset:0;z-index:2000;background:rgba(0,0,0,.85);align-items:center;justify-content:center;padding:1rem;" onclick="closeVideoModal(event)">
-  <div id="vp-box" style="background:#0d0d1a;border-radius:16px;width:100%;max-width:900px;overflow:hidden;box-shadow:0 32px 80px rgba(0,0,0,.7);position:relative;display:flex;flex-direction:column;">
+  <div id="vp-box" style="background:#0d0d1a;border-radius:16px;width:min(640px,calc(100vw - 2rem));max-height:88vh;overflow:hidden;box-shadow:0 32px 80px rgba(0,0,0,.7);position:relative;display:flex;flex-direction:column;flex-shrink:0;">
     <!-- Header -->
     <div id="vp-header" style="padding:.75rem 1rem;display:flex;align-items:flex-start;justify-content:space-between;gap:.75rem;border-bottom:1px solid rgba(255,255,255,.08);">
       <div style="min-width:0;">
