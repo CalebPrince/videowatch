@@ -159,6 +159,78 @@ def _send_reset_email(to_address: str, username: str, token: str) -> None:
         smtp.login(_SMTP_USER, _SMTP_PASSWORD)
         smtp.sendmail(_SMTP_USER, to_address, msg.as_string())
 
+def _send_email_simple(to_address: str, subject: str, html: str, text: str) -> None:
+    """Fire-and-forget helper — call in a daemon thread."""
+    if not _email_configured() or not to_address:
+        return
+    msg = MIMEMultipart("alternative")
+    msg["Subject"] = subject
+    msg["From"] = f"VideoWatch <{_SMTP_USER}>"
+    msg["To"] = to_address
+    msg["Reply-To"] = _SMTP_USER
+    msg.attach(MIMEText(text, "plain"))
+    msg.attach(MIMEText(html, "html"))
+    try:
+        with smtplib.SMTP(_SMTP_HOST, _SMTP_PORT) as smtp:
+            smtp.ehlo(); smtp.starttls()
+            smtp.login(_SMTP_USER, _SMTP_PASSWORD)
+            smtp.sendmail(_SMTP_USER, to_address, msg.as_string())
+    except Exception as exc:
+        log.warning("Email send failed (%s): %s", subject, exc)
+
+
+def _notify_password_changed(username: str, email: str, ip: str) -> None:
+    when = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
+    html = f"""
+    <div style="font-family:sans-serif;max-width:480px;margin:auto;padding:24px">
+      <h2 style="color:#0f766e;margin-bottom:8px">Your password was changed</h2>
+      <p style="color:#374151">Hi <strong>{username}</strong>,</p>
+      <p style="color:#374151">Your VideoWatch account password was successfully changed.</p>
+      <table style="font-size:13px;color:#374151;border-collapse:collapse;margin:12px 0">
+        <tr><td style="padding:4px 12px 4px 0;color:#6b7280">When</td><td>{when}</td></tr>
+        <tr><td style="padding:4px 12px 4px 0;color:#6b7280">IP address</td><td>{ip}</td></tr>
+      </table>
+      <p style="color:#374151;font-size:13px">If you didn't make this change, please <a href="{_APP_BASE_URL}/forgot-password" style="color:#0f766e">reset your password</a> immediately.</p>
+      <hr style="border:none;border-top:1px solid #e5e7eb;margin:24px 0"/>
+      <p style="color:#9ca3af;font-size:12px">VideoWatch · Your personal video monitoring hub</p>
+    </div>"""
+    text = (
+        f"Hi {username},\n\nYour VideoWatch password was changed on {when} from IP {ip}.\n\n"
+        f"If you didn't do this, reset your password at: {_APP_BASE_URL}/forgot-password\n"
+    )
+    threading.Thread(
+        target=_send_email_simple,
+        args=(email, "Your VideoWatch password was changed", html, text),
+        daemon=True,
+    ).start()
+
+
+def _notify_new_login(username: str, email: str, ip: str) -> None:
+    when = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
+    html = f"""
+    <div style="font-family:sans-serif;max-width:480px;margin:auto;padding:24px">
+      <h2 style="color:#0f766e;margin-bottom:8px">New sign-in to VideoWatch</h2>
+      <p style="color:#374151">Hi <strong>{username}</strong>,</p>
+      <p style="color:#374151">We noticed a new sign-in to your account.</p>
+      <table style="font-size:13px;color:#374151;border-collapse:collapse;margin:12px 0">
+        <tr><td style="padding:4px 12px 4px 0;color:#6b7280">When</td><td>{when}</td></tr>
+        <tr><td style="padding:4px 12px 4px 0;color:#6b7280">IP address</td><td>{ip}</td></tr>
+      </table>
+      <p style="color:#374151;font-size:13px">If this wasn't you, please <a href="{_APP_BASE_URL}/forgot-password" style="color:#0f766e">reset your password</a> immediately.</p>
+      <hr style="border:none;border-top:1px solid #e5e7eb;margin:24px 0"/>
+      <p style="color:#9ca3af;font-size:12px">VideoWatch · Your personal video monitoring hub</p>
+    </div>"""
+    text = (
+        f"Hi {username},\n\nNew sign-in to VideoWatch on {when} from IP {ip}.\n\n"
+        f"If this wasn't you, reset your password at: {_APP_BASE_URL}/forgot-password\n"
+    )
+    threading.Thread(
+        target=_send_email_simple,
+        args=(email, "New sign-in to your VideoWatch account", html, text),
+        daemon=True,
+    ).start()
+
+
 from scraper import (
     scan_site,
     scan_all_sites,
@@ -1373,6 +1445,9 @@ def auth_login(body: LoginIn, request: Request):
     request.session["auth_role"] = _sanitize_role(row.get("role") if row else None) or "viewer"
     request.session["session_expires_at"] = (datetime.now(timezone.utc) + ttl).isoformat()
     _audit(request, "login", f"role={request.session['auth_role']} remember_me={body.remember_me}")
+    # Email login notification if user has a verified email
+    if row and row.get("email") and row.get("email_verified"):
+        _notify_new_login(body.username, row["email"], _client_ip(request))
     return {
         "ok": True,
         "authenticated": True,
@@ -1561,6 +1636,9 @@ def auth_change_password(body: ChangePasswordIn, request: Request):
                 db.commit()
     else:
         _set_hashed_password(username, body.new_password)
+    # Notify via email
+    if user_row and user_row.get("email") and user_row.get("email_verified"):
+        _notify_password_changed(username, user_row["email"], _client_ip(request))
     return {"ok": True}
 
 
