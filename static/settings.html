@@ -801,7 +801,7 @@
       const isAdmin      = isSuperAdmin || role === 'admin';
 
       // Sections visible to all authenticated users
-      await Promise.all([loadGeneral(), loadHealth(), loadNotifications(), loadSitesRules()]);
+      await Promise.allSettled([loadGeneral(), loadHealth(), loadNotifications(), loadSitesRules()]);
 
       // Users & Roles — admin and super_admin only
       if (isAdmin) {
