@@ -268,6 +268,7 @@
       <button class="navbtn" data-target="health" title="Scan health metrics"><i class="bi bi-activity me-1"></i>Scan Health</button>
       <button class="navbtn" data-target="notifications" title="Webhook notifications"><i class="bi bi-bell me-1"></i>Notifications</button>
       <button class="navbtn" data-target="account" title="Account settings"><i class="bi bi-person-circle me-1"></i>My Account</button>
+      <button class="navbtn" data-target="history" title="Watch history"><i class="bi bi-clock-history me-1"></i>Watch History</button>
       <button class="navbtn" data-target="users" title="User accounts and roles"><i class="bi bi-people me-1"></i>Users and Roles</button>
       <button class="navbtn" id="navbtn-allsites" data-target="allsites" title="All monitored sites across all users"><i class="bi bi-diagram-3-fill me-1"></i>All Users' Sites</button>
       <button class="navbtn" id="navbtn-userstats" data-target="userstats" title="Usage statistics per user"><i class="bi bi-bar-chart-fill me-1"></i>Usage Stats</button>
@@ -528,6 +529,22 @@
       <section id="allsites" class="cardx pane hidden">
         <h6 class="mb-3"><i class="bi bi-diagram-3-fill me-2" style="color:var(--brand)"></i>All Users' Sites</h6>
         <div id="allsites-list"></div>
+      </section>
+
+      <!-- ── Watch History ── -->
+      <section id="history" class="cardx pane hidden">
+        <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:.75rem;margin-bottom:1.25rem;">
+          <h6 style="margin:0;"><i class="bi bi-clock-history me-2" style="color:var(--brand)"></i>Watch History</h6>
+          <div style="display:flex;gap:.5rem;align-items:center;">
+            <input id="history-search" type="text" placeholder="Search…" style="font-size:.8rem;padding:.25rem .6rem;border:1px solid var(--border);border-radius:6px;background:var(--input-bg,#f8fafc);color:var(--text);width:160px;" />
+            <button class="btn btn-sm btn-outline-secondary" id="btn-history-refresh"><i class="bi bi-arrow-clockwise"></i></button>
+          </div>
+        </div>
+        <div id="history-stats" style="font-size:.78rem;color:var(--text-muted);margin-bottom:.75rem;"></div>
+        <div id="history-list" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:.75rem;"></div>
+        <div style="text-align:center;margin-top:1rem;">
+          <button id="btn-history-more" class="btn btn-sm btn-outline-secondary" style="display:none;">Load more</button>
+        </div>
       </section>
 
       <section id="duplicates" class="cardx pane hidden">
@@ -1420,6 +1437,10 @@
     };
 
     document.querySelector('.navbtn[data-target="account"]').addEventListener('click', () => { loadAccount(); loadTokens(); });
+    document.querySelector('.navbtn[data-target="history"]')?.addEventListener('click', () => loadHistory());
+    document.getElementById('btn-history-refresh')?.addEventListener('click', () => loadHistory());
+    document.getElementById('btn-history-more')?.addEventListener('click', () => loadHistory(false));
+    document.getElementById('history-search')?.addEventListener('input', e => _renderHistory(e.target.value));
 
     document.getElementById('btn-delete-account').onclick = () => {
       document.getElementById('delete-account-modal').style.display = 'flex';
@@ -1597,6 +1618,47 @@
     // ── Payments ─────────────────────────────────────────────────────────────
     const PLAN_COLORS = { free: '#64748b', pro: '#0f766e', unlimited: '#7c3aed' };
     const PLAN_LABELS = { free: 'Free', pro: 'Pro', unlimited: 'Unlimited' };
+    // ── Watch History ─────────────────────────────────────────────────────────
+    let _historyOffset = 0, _historyTotal = 0, _historyItems = [];
+    const _HIST_PAGE = 48;
+
+    function _renderHistory(filter = '') {
+      const lc = filter.toLowerCase();
+      const visible = lc ? _historyItems.filter(v => (v.title||'').toLowerCase().includes(lc) || (v.site_name||'').toLowerCase().includes(lc)) : _historyItems;
+      const list = document.getElementById('history-list');
+      if (!list) return;
+      list.innerHTML = visible.length ? visible.map(v => {
+        const dur = v.duration ? `${Math.floor(v.duration/60)}m` : '';
+        const when = v.last_watched_at ? new Date(v.last_watched_at).toLocaleDateString() : '';
+        return `<a href="${v.url}" target="_blank" rel="noopener" style="text-decoration:none;color:inherit;">
+          <div style="background:var(--card-bg);border:1px solid var(--border);border-radius:10px;overflow:hidden;transition:box-shadow .15s;" onmouseover="this.style.boxShadow='0 4px 16px #0002'" onmouseout="this.style.boxShadow=''">
+            <div style="position:relative;aspect-ratio:16/9;background:#111;overflow:hidden;">
+              ${v.thumb ? `<img src="${v.thumb}" style="width:100%;height:100%;object-fit:cover;" loading="lazy" />` : '<div style="width:100%;height:100%;display:flex;align-items:center;justify-content:center;"><i class="bi bi-play-circle" style="font-size:2rem;color:#555;"></i></div>'}
+              ${dur ? `<span style="position:absolute;bottom:4px;right:5px;background:#000b;color:#fff;font-size:.65rem;padding:1px 5px;border-radius:4px;">${dur}</span>` : ''}
+              <span style="position:absolute;top:4px;right:5px;background:#000b;color:#aaa;font-size:.65rem;padding:1px 5px;border-radius:4px;"><i class="bi bi-eye-fill me-1"></i>${when}</span>
+            </div>
+            <div style="padding:.5rem .65rem;">
+              <div style="font-size:.78rem;font-weight:600;line-height:1.3;overflow:hidden;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;">${v.title || 'Untitled'}</div>
+              <div style="font-size:.7rem;color:var(--text-muted);margin-top:.25rem;overflow:hidden;white-space:nowrap;text-overflow:ellipsis;">${v.site_name || v.site_url || ''}</div>
+            </div>
+          </div>
+        </a>`;
+      }).join('') : '<div style="padding:2rem;text-align:center;color:var(--text-muted);grid-column:1/-1;">No watched videos yet.</div>';
+      document.getElementById('btn-history-more').style.display = (_historyOffset < _historyTotal && !lc) ? '' : 'none';
+    }
+
+    async function loadHistory(reset = true) {
+      if (reset) { _historyOffset = 0; _historyItems = []; }
+      const data = await api(`/videos/history?limit=${_HIST_PAGE}&offset=${_historyOffset}`).catch(() => null);
+      if (!data) return;
+      _historyTotal = data.total;
+      _historyItems = [..._historyItems, ...data.items];
+      _historyOffset += data.items.length;
+      const statsEl = document.getElementById('history-stats');
+      if (statsEl) statsEl.textContent = `${_historyTotal} video${_historyTotal !== 1 ? 's' : ''} watched`;
+      _renderHistory(document.getElementById('history-search')?.value || '');
+    }
+
     // ── Backups ───────────────────────────────────────────────────────────────
     async function loadBackups() {
       const list = document.getElementById('backup-list');
@@ -1868,6 +1930,7 @@
         setPane(_tab);
         // Trigger load callbacks for panes that need it
         if (_tab === 'account') { loadAccount(); loadTokens(); }
+        if (_tab === 'history') loadHistory?.();
         if (_tab === 'payments') loadPayments?.();
         if (_tab === 'analytics') loadAnalytics?.();
       }

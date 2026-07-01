@@ -3239,6 +3239,28 @@ def admin_broadcast(request: Request, body: dict):
     return {"ok": True, "queued": len(recipients)}
 
 
+@router.get("/api/videos/history")
+def watch_history(request: Request, limit: int = Query(100, ge=1, le=500), offset: int = Query(0, ge=0)):
+    """Return videos the current user has marked as watched, newest-watched first."""
+    username = _api_auth(request)
+    with get_db() as db:
+        total = db.execute(
+            "SELECT COUNT(*) FROM videos v JOIN sites s ON s.id=v.site_id WHERE s.owner=? AND v.is_watched=1",
+            (username,)
+        ).fetchone()[0]
+        rows = db.execute(
+            """SELECT v.id, v.title, v.url, v.thumb, v.platform, v.duration,
+                      v.last_watched_at, v.is_favorite, v.note,
+                      s.name AS site_name, s.url AS site_url
+               FROM videos v JOIN sites s ON s.id=v.site_id
+               WHERE s.owner=? AND v.is_watched=1
+               ORDER BY v.last_watched_at DESC NULLS LAST
+               LIMIT ? OFFSET ?""",
+            (username, limit, offset)
+        ).fetchall()
+    return {"total": total, "items": [dict(r) for r in rows]}
+
+
 def _run_backup() -> dict:
     """Copy the SQLite DB to backups/ with a timestamp name; prune old copies."""
     from db import DB_PATH
