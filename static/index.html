@@ -3890,7 +3890,7 @@ function openVideoModal(v) {
   player.innerHTML = '';
 
   document.getElementById('vp-title').textContent = v.title || 'Untitled';
-  document.getElementById('vp-open-btn').href = v.url;
+  document.getElementById('vp-open-btn').href = normalizeNavigablePageUrl(v.url) || v.url;
 
   const metaParts = [];
   if (v.site_name) metaParts.push(v.site_name);
@@ -3933,7 +3933,7 @@ function openVideoModal(v) {
         <div style="position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:.75rem;">
           <i class="bi bi-play-circle" style="font-size:3.5rem;color:rgba(255,255,255,.5);"></i>
           <div style="color:rgba(255,255,255,.6);font-size:.85rem;">This video can't be played inline</div>
-          <a href="${v.url}" target="_blank" rel="noopener" onclick="event.stopPropagation()"
+          <a href="${normalizeNavigablePageUrl(v.url) || v.url}" target="_blank" rel="noopener" onclick="event.stopPropagation()"
              style="background:var(--brand);color:#fff;padding:.45rem 1.25rem;border-radius:8px;font-weight:700;font-size:.85rem;text-decoration:none;">
             <i class="bi bi-box-arrow-up-right me-1"></i>Watch on site
           </a>
@@ -4012,7 +4012,7 @@ document.addEventListener('keydown', e => {
     if (e.key === 'f' || e.key === 'F') { vpToggle('favorite'); return; }
     if (e.key === 'a' || e.key === 'A') { vpToggle('archive'); return; }
     if (e.key === 'w' || e.key === 'W') { vpToggle('watched'); return; }
-    if (e.key === 'Enter') { window.open(_vpVideo.url, '_blank', 'noopener'); return; }
+    if (e.key === 'Enter') { window.open(normalizeNavigablePageUrl(_vpVideo.url) || _vpVideo.url, '_blank', 'noopener'); return; }
     return;
   }
 
