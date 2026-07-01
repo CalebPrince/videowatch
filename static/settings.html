@@ -807,18 +807,18 @@
       if (isAdmin) {
         await loadUsers();
       } else {
-        document.querySelector('.navbtn[data-target="users"]')?.classList.add('hidden');
-        document.getElementById('users')?.classList.add('hidden');
+        document.querySelector('.navbtn[data-target="users"]')?.remove();
+        document.getElementById('users')?.remove();
       }
 
       // Duplicates & Maintenance — super_admin only
       if (isSuperAdmin) {
         await loadDuplicates();
       } else {
-        document.querySelector('.navbtn[data-target="duplicates"]')?.classList.add('hidden');
-        document.getElementById('duplicates')?.classList.add('hidden');
-        document.querySelector('.navbtn[data-target="maintenance"]')?.classList.add('hidden');
-        document.getElementById('maintenance')?.classList.add('hidden');
+        document.querySelector('.navbtn[data-target="duplicates"]')?.remove();
+        document.getElementById('duplicates')?.remove();
+        document.querySelector('.navbtn[data-target="maintenance"]')?.remove();
+        document.getElementById('maintenance')?.remove();
       }
     })();
   </script>
