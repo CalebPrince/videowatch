@@ -1816,9 +1816,10 @@ def scan_health(request: Request, limit: int = 20):
             "SELECT COUNT(*) as runs, "
             "AVG(CASE WHEN message LIKE 'ERROR:%' THEN 0.0 ELSE 1.0 END) as success_rate, "
             "AVG(found) as avg_found, AVG(added) as avg_added "
+            "FROM (SELECT scan_log.id, scan_log.message, scan_log.found, scan_log.added "
             "FROM scan_log JOIN sites ON scan_log.site_id=sites.id "
             + ("" if is_super_admin(request) else "WHERE sites.owner=? ") +
-            "ORDER BY scan_log.id DESC LIMIT ?",
+            "ORDER BY scan_log.id DESC LIMIT ?)",
             params_overall,
         ).fetchone()
 
