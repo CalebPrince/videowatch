@@ -285,6 +285,7 @@ class RegisterIn(BaseModel):
     email: str
     password: str
     confirm_password: str
+    tos_accepted: bool = False
 
 
 class UserRolePatchIn(BaseModel):
@@ -1392,6 +1393,8 @@ def auth_register(body: RegisterIn, request: Request):
         raise HTTPException(400, "Password must be at least 8 characters")
     if body.password != body.confirm_password:
         raise HTTPException(400, "Passwords do not match")
+    if not body.tos_accepted:
+        raise HTTPException(400, "You must accept the Terms of Service to create an account")
     with get_db() as db:
         if db.execute("SELECT 1 FROM users WHERE username=?", (username,)).fetchone():
             raise HTTPException(409, "Username already taken")
@@ -1404,7 +1407,7 @@ def auth_register(body: RegisterIn, request: Request):
     token = secrets.token_urlsafe(32)
     with write_lock:
         with get_db() as db:
-            db.execute("UPDATE users SET email=?, email_verified=0 WHERE username=?", (email, username))
+            db.execute("UPDATE users SET email=?, email_verified=0, tos_accepted_at=? WHERE username=?", (email, now_iso(), username))
             db.execute(
                 "INSERT OR REPLACE INTO email_verifications (token, username, expires_at) VALUES (?,?,?)",
                 (token, username, expires),
