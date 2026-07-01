@@ -1673,7 +1673,12 @@ function normalizeVideoUrl(rawUrl) {
     videoUrl = 'https://' + videoUrl;
   }
   try {
-    return new URL(videoUrl, window.location.href).href;
+    const u = new URL(videoUrl, window.location.href);
+    // Strip trailing slash from non-root paths
+    if (u.pathname.length > 1 && u.pathname.endsWith('/')) {
+      u.pathname = u.pathname.replace(/\/+$/, '');
+    }
+    return u.href;
   } catch (err) {
     return null;
   }
