@@ -3174,6 +3174,7 @@ async function obAddSite() {
 
 async function maybeShowOnboarding(st) {
   if (!st.authenticated || st.onboarding_done) return;
+  if (st.role === 'admin' || st.role === 'super_admin') return;
   const el = document.getElementById('onboardingModal');
   if (!el) return;
   // Personalise welcome text
