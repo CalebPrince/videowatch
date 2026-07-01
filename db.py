@@ -183,6 +183,8 @@ def init_db():
             add_column_if_missing(db, "sites", "group_name", "TEXT")
             add_column_if_missing(db, "sites", "notify_enabled", "INTEGER DEFAULT 1")
             add_column_if_missing(db, "sites", "owner", "TEXT")
+            add_column_if_missing(db, "sites", "consecutive_failures", "INTEGER DEFAULT 0")
+            add_column_if_missing(db, "sites", "alert_sent", "INTEGER DEFAULT 0")
 
             # Migrate sites table: replace UNIQUE(url) with UNIQUE(url, owner)
             idx_rows = db.execute("PRAGMA index_list(sites)").fetchall()

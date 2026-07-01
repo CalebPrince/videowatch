@@ -980,6 +980,48 @@ def _notify_scan_summary(site: dict, found: int, added: int):
     except Exception as e:
         log.warning(f"Per-user scan email failed: {e}")
 
+def _notify_scan_failure(site: dict, attempts: int):
+    """Send one alert email to the site owner when repeated scans keep failing."""
+    owner = site.get("owner")
+    if not owner or not _email_configured():
+        return
+    try:
+        with get_db() as db:
+            row = db.execute(
+                "SELECT email, notify_new_videos FROM users WHERE username=? AND email_verified=1",
+                (owner,),
+            ).fetchone()
+        if not row or not row["notify_new_videos"] or not row["email"]:
+            return
+        site_label = site.get("name") or site.get("url") or site.get("id")
+        site_url = site.get("url", "")
+        subject = f"VideoWatch: scan failing for {site_label}"
+        body_html = f"""
+        <div style="font-family:sans-serif;max-width:520px;margin:0 auto">
+          <h2 style="color:#dc2626">VideoWatch — Scan Alert</h2>
+          <p>The site <strong>{site_label}</strong> has failed to scan {attempts} time(s) in a row.</p>
+          <table style="border-collapse:collapse;width:100%">
+            <tr><td style="padding:6px 0;color:#64748b">Site</td>
+                <td style="padding:6px 0"><a href="{site_url}">{site_url}</a></td></tr>
+            <tr><td style="padding:6px 0;color:#64748b">Failed attempts</td>
+                <td style="padding:6px 0;font-weight:700;color:#dc2626">{attempts}</td></tr>
+          </table>
+          <p>The site may be down, blocking scrapers, or requiring updated scan settings.</p>
+          <p style="margin-top:1.5rem">
+            <a href="{_APP_BASE_URL}" style="background:#0f766e;color:#fff;padding:10px 22px;border-radius:8px;text-decoration:none;font-weight:700">
+              Open VideoWatch
+            </a>
+          </p>
+          <p style="color:#94a3b8;font-size:.8rem;margin-top:2rem">
+            You'll receive this alert once per failure streak. It won't repeat until the site recovers and fails again.
+          </p>
+        </div>"""
+        _send_email(row["email"], subject, body_html)
+        log.info(f"Scan failure alert sent to {row['email']} for {site_label}")
+    except Exception as e:
+        log.warning(f"Scan failure alert email failed: {e}")
+
+
 # ── Helper for SSRF verification ──────────────────────────────────────────────
 
 def get_allowed_hosts() -> set[str]:
@@ -1903,6 +1945,16 @@ def _scan_worker():
         attempt = job.get("attempt", 0)
         try:
             _run_scan_one_sync(site)
+            # Reset failure streak on success
+            site_id = site.get("id")
+            if site_id:
+                with write_lock:
+                    with get_db() as db:
+                        db.execute(
+                            "UPDATE sites SET consecutive_failures=0, alert_sent=0 WHERE id=?",
+                            (site_id,),
+                        )
+                        db.commit()
         except Exception as e:
             log.error(f"Scan failed for {site.get('url')} (attempt {attempt + 1}): {e}")
             if attempt < len(_RETRY_DELAYS):
@@ -1917,6 +1969,26 @@ def _scan_worker():
                 threading.Thread(target=_schedule_retry, daemon=True, name=f"scan-retry-{attempt+1}").start()
             else:
                 log.error(f"Giving up on {site.get('url')} after {attempt + 1} attempts")
+                # Increment consecutive failure streak and alert once
+                site_id = site.get("id")
+                if site_id:
+                    with write_lock:
+                        with get_db() as db:
+                            db.execute(
+                                "UPDATE sites SET consecutive_failures=consecutive_failures+1 WHERE id=?",
+                                (site_id,),
+                            )
+                            db.commit()
+                            row = db.execute(
+                                "SELECT consecutive_failures, alert_sent FROM sites WHERE id=?",
+                                (site_id,),
+                            ).fetchone()
+                    if row and row["consecutive_failures"] >= 3 and not row["alert_sent"]:
+                        _notify_scan_failure(site, row["consecutive_failures"])
+                        with write_lock:
+                            with get_db() as db:
+                                db.execute("UPDATE sites SET alert_sent=1 WHERE id=?", (site_id,))
+                                db.commit()
         finally:
             with _scan_queue_lock:
                 _scan_running = None
