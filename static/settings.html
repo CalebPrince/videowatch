@@ -320,6 +320,7 @@
       <button class="navbtn" id="navbtn-analytics" data-target="analytics" title="Usage analytics"><i class="bi bi-bar-chart-line me-1"></i>Analytics</button>
       <button class="navbtn" id="navbtn-payments" data-target="payments" title="Payments and billing"><i class="bi bi-credit-card me-1"></i>Payments</button>
       <button class="navbtn" data-target="maintenance" title="Maintenance actions"><i class="bi bi-tools me-1"></i>Maintenance</button>
+      <button class="navbtn" id="navbtn-ratelimits" data-target="ratelimits" title="Rate limit dashboard"><i class="bi bi-shield-exclamation me-1"></i>Rate Limits</button>
     </aside>
 
     <main class="main">
@@ -664,6 +665,19 @@
           <div style="font-size:.75rem;color:var(--text-muted);margin-bottom:.6rem;">A backup runs automatically every night. The last 7 are kept.</div>
           <div id="backup-list" style="border:1px solid var(--border);border-radius:8px;overflow:hidden;"></div>
         </div>
+
+      </section>
+
+      <!-- ── Rate Limits ── -->
+      <section id="ratelimits" class="cardx pane hidden">
+        <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:.5rem;margin-bottom:.75rem;">
+          <h6 style="margin:0;"><i class="bi bi-shield-exclamation me-2" style="color:var(--brand)"></i>Rate Limit Dashboard</h6>
+          <button class="btn btn-sm btn-outline-secondary" onclick="loadRateLimits()"><i class="bi bi-arrow-clockwise me-1"></i>Refresh</button>
+        </div>
+        <div style="font-size:.8rem;color:var(--text-muted);margin-bottom:1rem;">IPs that have triggered rate-limited endpoints (login / register) in the last hour. Clear an entry to immediately unblock an IP.</div>
+        <div id="rate-limit-table-wrap">
+          <div style="font-size:.8rem;color:var(--text-muted);text-align:center;padding:1.5rem;">Click Refresh to load.</div>
+        </div>
       </section>
 
       <!-- ── Roadmap Admin ── -->
@@ -852,6 +866,7 @@
             <div id="bc-status" style="margin-top:.6rem;font-size:.8rem;display:none;"></div>
           </div>
         </div>
+
       </section>
     </main>
   </div>
@@ -2039,6 +2054,53 @@
       btn.disabled = false;
     });
 
+    // ── Rate limit dashboard ───────────────────────────────────────────────────
+    async function loadRateLimits() {
+      const wrap = document.getElementById('rate-limit-table-wrap');
+      if (!wrap) return;
+      wrap.innerHTML = '<div style="font-size:.8rem;color:var(--text-muted);text-align:center;padding:1rem;">Loading…</div>';
+      try {
+        const data = await api('/admin/rate-limits');
+        if (!data.entries || data.entries.length === 0) {
+          wrap.innerHTML = '<div style="font-size:.8rem;color:var(--text-muted);text-align:center;padding:1rem;">No rate-limited IPs in the last hour.</div>';
+          return;
+        }
+        function fmtAgo(sec) {
+          if (sec < 60) return `${sec}s ago`;
+          if (sec < 3600) return `${Math.round(sec/60)}m ago`;
+          return `${Math.round(sec/3600)}h ago`;
+        }
+        wrap.innerHTML = `
+          <table style="width:100%;font-size:.8rem;border-collapse:collapse;">
+            <thead><tr style="border-bottom:1px solid var(--border);color:var(--text-muted);">
+              <th style="text-align:left;padding:.35rem .5rem;">IP Address</th>
+              <th style="text-align:center;padding:.35rem .5rem;">Hits (1h)</th>
+              <th style="text-align:center;padding:.35rem .5rem;">Last Hit</th>
+              <th style="text-align:center;padding:.35rem .5rem;">Action</th>
+            </tr></thead>
+            <tbody>${data.entries.map(e => `
+              <tr style="border-bottom:1px solid var(--border);">
+                <td style="padding:.35rem .5rem;font-family:monospace;">${e.ip}</td>
+                <td style="padding:.35rem .5rem;text-align:center;">
+                  <span style="font-weight:700;color:${e.hits_1h >= 5 ? '#f87171' : 'var(--text)'};">${e.hits_1h}</span>
+                </td>
+                <td style="padding:.35rem .5rem;text-align:center;color:var(--text-muted);">${fmtAgo(e.last_hit_seconds_ago)}</td>
+                <td style="padding:.35rem .5rem;text-align:center;">
+                  <button class="btn btn-sm btn-outline-danger" style="font-size:.72rem;padding:.1rem .4rem;" onclick="clearRateLimit('${e.ip}')">Clear</button>
+                </td>
+              </tr>`).join('')}
+            </tbody>
+          </table>`;
+      } catch (err) {
+        wrap.innerHTML = `<div style="font-size:.8rem;color:#f87171;padding:.5rem;">Error: ${err.message}</div>`;
+      }
+    }
+
+    async function clearRateLimit(ip) {
+      await api(`/admin/rate-limits/${encodeURIComponent(ip)}`, { method: 'DELETE' });
+      loadRateLimits();
+    }
+
     // ── Broadcast ─────────────────────────────────────────────────────────────
     async function sendBroadcast() {
       const subject = document.getElementById('bc-subject').value.trim();
@@ -2256,6 +2318,7 @@
         document.querySelector('.navbtn[data-target="analytics"]')?.addEventListener('click', loadAnalytics);
         document.querySelector('.navbtn[data-target="roadmap-admin"]')?.addEventListener('click', loadRoadmapAdmin);
         document.querySelector('.navbtn[data-target="maintenance"]')?.addEventListener('click', loadBackups);
+        document.querySelector('.navbtn[data-target="ratelimits"]')?.addEventListener('click', loadRateLimits);
         document.getElementById('btn-run-backup')?.addEventListener('click', async () => {
           const btn = document.getElementById('btn-run-backup');
           btn.disabled = true; btn.innerHTML = '<i class="bi bi-hourglass-split me-1"></i>Backing up…';
@@ -2284,6 +2347,8 @@
         document.getElementById('analytics')?.remove();
         document.getElementById('navbtn-roadmap-admin')?.remove();
         document.getElementById('roadmap-admin')?.remove();
+        document.getElementById('navbtn-ratelimits')?.remove();
+        document.getElementById('ratelimits')?.remove();
       }
       // Auto-open pane from URL ?tab=
       const _tab = new URLSearchParams(window.location.search).get('tab');

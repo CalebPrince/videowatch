@@ -813,7 +813,14 @@
     <div class="filter-bar">
       <input type="search" id="search-inp" placeholder="Search titles, cast, site, url…" />
       <div class="filter-labeled"><span class="filter-float-label">Released after</span><input type="date" id="released-after" aria-label="Released after date" /></div>
-      <div class="filter-labeled"><span class="filter-float-label">Min duration (sec)</span><input type="number" id="duration-min" min="0" placeholder="0" aria-label="Minimum duration in seconds" /></div>
+      <div class="filter-labeled" id="dur-filter-wrap" style="position:relative;padding-top:.9rem;">
+        <span class="filter-float-label" style="top:.15rem;">Duration</span>
+        <div style="display:flex;align-items:center;gap:.35rem;width:100%;">
+          <input type="range" id="duration-min" min="0" max="7200" step="30" value="0" style="flex:1;accent-color:var(--brand);cursor:pointer;" aria-label="Minimum duration" />
+          <input type="range" id="duration-max" min="0" max="7200" step="30" value="7200" style="flex:1;accent-color:var(--brand);cursor:pointer;" aria-label="Maximum duration" />
+        </div>
+        <div id="dur-label" style="font-size:.72rem;color:var(--muted);text-align:center;margin-top:.1rem;line-height:1.2;">Any duration</div>
+      </div>
       <select id="site-filter" aria-label="Filter by site group">
         <option value="">All sites</option>
       </select>
@@ -866,6 +873,13 @@
         </div>
         <div id="ob-checklist-pct" style="font-size:.75rem;color:var(--text-muted);margin-top:.3rem;"></div>
       </div>
+    </div>
+
+    <!-- Activity feed banner -->
+    <div id="activity-banner" style="display:none;align-items:center;gap:.75rem;padding:.6rem .9rem;background:linear-gradient(135deg,rgba(15,118,110,.12),rgba(20,184,166,.08));border:1px solid rgba(15,118,110,.25);border-radius:.6rem;margin-bottom:.75rem;font-size:.83rem;">
+      <i class="bi bi-stars" style="color:var(--brand);font-size:1rem;flex-shrink:0;"></i>
+      <span id="activity-banner-text"></span>
+      <button onclick="document.getElementById('activity-banner').style.display='none'" style="margin-left:auto;background:none;border:none;color:var(--muted);font-size:1rem;cursor:pointer;padding:0 .2rem;line-height:1;">✕</button>
     </div>
 
     <!-- Bulk action toolbar (hidden until checkboxes are ticked) -->
@@ -1402,6 +1416,7 @@ let statusFilt    = '';
 let tagFilt       = '';
 let releasedAfter = '';
 let durationMin   = '';
+let durationMax   = '';
 let searchTimer   = null;
 let sseSource     = null;
 let wasDisconnected = false;
@@ -2385,7 +2400,9 @@ async function renderSidebar() {
     }
 
     groups[groupName].forEach(s => {
-      const isErr  = !!s.has_error;
+      const isErr      = !!s.has_error;
+      const failCount  = s.consecutive_failures || 0;
+      const isCritical = failCount >= 3;   // 3+ consecutive scan failures = health alert
       const siteHost = hostname(s.url);
       const letter = siteHost && siteHost[0] ? siteHost[0].toUpperCase() : '?';
       const maxP   = s.max_pages || 1;
@@ -2395,20 +2412,25 @@ async function renderSidebar() {
       const statusText = (s.total_count === 0 && hasNeverScanned)
         ? 'not scanned yet'
         : `${s.total_count} video${s.total_count!==1?'s':''} · ${maxP}p · every ${intv} · ${next}`;
+      const errTitle = isCritical
+        ? `⚠ ${failCount} consecutive scan failures — site may be unreachable`
+        : isErr ? 'Last scan failed — check log' : '';
 
       const item = document.createElement('div');
       item.className = `site-item${activeSite === s.id ? ' active' : ''}`;
-      item.title     = isErr ? 'Last scan failed — check log' : '';
+      item.title     = errTitle;
       item.onclick   = () => filterSite(s.id);
 
       const fav = document.createElement('div');
-      fav.className = `site-favicon${isErr ? ' has-error' : ''}`;
-      fav.innerHTML  = isErr ? '<i class="bi bi-exclamation-triangle-fill"></i>' : letter;
+      fav.className = `site-favicon${isCritical ? ' has-error critical' : isErr ? ' has-error' : ''}`;
+      fav.innerHTML  = isCritical
+        ? '<i class="bi bi-x-circle-fill"></i>'
+        : isErr ? '<i class="bi bi-exclamation-triangle-fill"></i>' : letter;
 
       const nameDiv = document.createElement('div');
-      nameDiv.className = `site-name${isErr ? ' has-error' : ''}`;
+      nameDiv.className = `site-name${isCritical ? ' has-error' : isErr ? ' has-error' : ''}`;
       nameDiv.innerHTML = `
-        <div>${s.name || hostname(s.url)}</div>
+        <div>${s.name || hostname(s.url)}${isCritical ? ` <span style="font-size:.7rem;font-weight:600;color:#f87171;background:rgba(248,113,113,.12);border-radius:.3rem;padding:.05rem .35rem;vertical-align:middle;">${failCount} fails</span>` : ''}</div>
         <div class="site-meta">${s.group_name ? `${s.group_name} · ` : ''}${statusText}</div>`;
 
       const actions = document.createElement('div');
@@ -2534,6 +2556,7 @@ async function renderVideos() {
   if (searchTerm) params.set('search', searchTerm);
   if (releasedAfter) params.set('released_after', releasedAfter);
   if (durationMin) params.set('duration_min', durationMin);
+  if (durationMax) params.set('duration_max', durationMax);
   if (platformFilt) params.set('platform', platformFilt);
   if (tagFilt) params.set('tag', tagFilt);
   if (statusFilt === 'favorites') params.set('favorites_only', 'true');
@@ -3545,11 +3568,33 @@ document.getElementById('released-after').addEventListener('change', e => {
   renderVideos();
 });
 
-document.getElementById('duration-min').addEventListener('input', e => {
-  durationMin = e.target.value.trim();
+function _fmtDur(sec) {
+  sec = parseInt(sec, 10);
+  if (!sec) return '0s';
+  if (sec < 60) return `${sec}s`;
+  const h = Math.floor(sec / 3600), m = Math.floor((sec % 3600) / 60), s = sec % 60;
+  return h ? `${h}h${m ? m + 'm' : ''}` : `${m}m${s ? s + 's' : ''}`;
+}
+function _updateDurSliders() {
+  const minEl = document.getElementById('duration-min');
+  const maxEl = document.getElementById('duration-max');
+  const lbl   = document.getElementById('dur-label');
+  if (!minEl || !maxEl) return;
+  let lo = parseInt(minEl.value, 10), hi = parseInt(maxEl.value, 10);
+  if (lo > hi) { maxEl.value = lo; hi = lo; }
+  durationMin = lo > 0 ? String(lo) : '';
+  durationMax = hi < 7200 ? String(hi) : '';
+  if (lbl) {
+    if (!durationMin && !durationMax) lbl.textContent = 'Any duration';
+    else if (!durationMin) lbl.textContent = `Up to ${_fmtDur(hi)}`;
+    else if (!durationMax) lbl.textContent = `${_fmtDur(lo)}+`;
+    else lbl.textContent = `${_fmtDur(lo)} – ${_fmtDur(hi)}`;
+  }
   currentPage = 1;
   renderVideos();
-});
+}
+document.getElementById('duration-min').addEventListener('input', _updateDurSliders);
+document.getElementById('duration-max').addEventListener('input', _updateDurSliders);
 
 document.getElementById('site-filter').addEventListener('change', e => {
   activeGroup = e.target.value || null;
@@ -3777,7 +3822,37 @@ async function maybeShowOnboarding(st) {
     }
   }
   await refreshLog();
+  checkActivityFeed();
 })();
+
+function checkActivityFeed() {
+  try {
+    const key = 'vw_last_visit';
+    const last = localStorage.getItem(key);
+    const now = new Date().toISOString();
+    localStorage.setItem(key, now);
+    if (!last) return; // first visit — nothing to compare
+    // Count videos found since last visit using the already-loaded _allVideos
+    const since = new Date(last);
+    const fresh = (_allVideos || []).filter(v => v.found_at && new Date(v.found_at) > since);
+    if (fresh.length === 0) return;
+    const banner = document.getElementById('activity-banner');
+    const text   = document.getElementById('activity-banner-text');
+    if (!banner || !text) return;
+    const label = fresh.length === 1 ? '1 new video' : `${fresh.length} new videos`;
+    const ago = _timeAgo(since);
+    text.innerHTML = `<strong>${label}</strong> found since your last visit${ago ? ' <span style="color:var(--muted)">(' + ago + ')</span>' : ''}.`;
+    banner.style.display = 'flex';
+  } catch (_) {}
+}
+
+function _timeAgo(date) {
+  const diff = Math.floor((Date.now() - date.getTime()) / 1000);
+  if (diff < 90) return 'just now';
+  if (diff < 3600) return `${Math.round(diff / 60)}m ago`;
+  if (diff < 86400) return `${Math.round(diff / 3600)}h ago`;
+  return `${Math.round(diff / 86400)}d ago`;
+}
 </script>
 
 <!-- ── Video Player Modal ── -->

@@ -3327,6 +3327,36 @@ def delete_waitlist_entry(entry_id: int, request: Request):
     return {"ok": True}
 
 
+@router.get("/api/admin/rate-limits")
+def admin_rate_limits(request: Request):
+    """Return current in-memory rate-limit hit counts per IP."""
+    if not is_super_admin(request):
+        raise HTTPException(403, "Super admin only")
+    now = time.monotonic()
+    result = []
+    for ip, hits in list(_rate_limit_store.items()):
+        recent = [t for t in hits if now - t < 3600]  # last 1h
+        if not recent:
+            continue
+        last_hit = now - max(recent)
+        result.append({
+            "ip": ip,
+            "hits_1h": len(recent),
+            "last_hit_seconds_ago": round(last_hit),
+        })
+    result.sort(key=lambda x: x["hits_1h"], reverse=True)
+    return {"entries": result}
+
+
+@router.delete("/api/admin/rate-limits/{ip}")
+def admin_clear_rate_limit(ip: str, request: Request):
+    """Clear rate-limit record for a specific IP."""
+    if not is_super_admin(request):
+        raise HTTPException(403, "Super admin only")
+    _rate_limit_store.pop(ip, None)
+    return {"ok": True}
+
+
 @router.post("/api/admin/send-digest")
 def trigger_digest(request: Request):
     if not is_super_admin(request):
