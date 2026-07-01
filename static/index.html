@@ -853,6 +853,21 @@
       <button type="button" class="btn btn-sm btn-outline-secondary" data-status="archived">Archived</button>
       <button type="button" class="btn btn-sm btn-outline-secondary" data-status="ignored">Ignored</button>
     </div>
+    <!-- Onboarding checklist (hidden once all steps done) -->
+    <div id="onboarding-checklist" style="display:none;background:var(--card-bg);border:1px solid var(--border);border-radius:.75rem;padding:1rem 1.25rem;margin-bottom:1rem;">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:.75rem;">
+        <div style="font-weight:700;font-size:.9rem;"><i class="bi bi-check2-circle me-2" style="color:var(--brand)"></i>Getting started</div>
+        <button id="ob-checklist-dismiss" class="btn-icon" title="Dismiss checklist" style="font-size:.8rem;opacity:.5;"><i class="bi bi-x-lg"></i></button>
+      </div>
+      <div id="ob-checklist-items" style="display:flex;flex-direction:column;gap:.5rem;"></div>
+      <div style="margin-top:.75rem;">
+        <div style="height:6px;background:var(--border);border-radius:3px;overflow:hidden;">
+          <div id="ob-checklist-bar" style="height:100%;background:linear-gradient(90deg,var(--brand),#14b8a6);border-radius:3px;transition:width .4s;width:0%"></div>
+        </div>
+        <div id="ob-checklist-pct" style="font-size:.75rem;color:var(--text-muted);margin-top:.3rem;"></div>
+      </div>
+    </div>
+
     <!-- Bulk action toolbar (hidden until checkboxes are ticked) -->
     <div id="bulk-toolbar" style="display:none;align-items:center;gap:.5rem;flex-wrap:wrap;padding:.5rem .75rem;background:var(--card-bg);border:1px solid var(--border);border-radius:.5rem;margin-bottom:.75rem;">
       <span id="bulk-count" style="font-size:.82rem;color:var(--muted);margin-right:.25rem;">0 selected</span>
@@ -3498,6 +3513,89 @@ async function obAddSite() {
   }
 }
 
+// ── Onboarding checklist ──────────────────────────────────────────────────────
+const OB_DISMISS_KEY = 'vw_ob_checklist_dismissed';
+
+async function renderOnboardingChecklist(st) {
+  const panel = document.getElementById('onboarding-checklist');
+  if (!panel) return;
+
+  // Never show to admins, or if user dismissed it
+  if (!st.authenticated) return;
+  if (st.role === 'super_admin' || st.role === 'admin') return;
+  if (localStorage.getItem(OB_DISMISS_KEY) === st.user) return;
+
+  // Gather state
+  let hasSite = false, hasVideo = false, hasEmail = false, hasScan = false;
+  try {
+    const [sitesRes, notifRes] = await Promise.all([
+      api('/sites'),
+      api('/user/notifications'),
+    ]);
+    hasSite  = (sitesRes?.sites?.length || sitesRes?.length || 0) > 0;
+    hasEmail = !!(notifRes?.email && notifRes?.email_verified);
+    // Check for any videos
+    if (hasSite) {
+      const vRes = await api('/videos?per_page=1');
+      hasVideo = (vRes?.total || 0) > 0;
+      hasScan  = hasVideo; // if there are videos a scan has run
+    }
+  } catch { return; }
+
+  const steps = [
+    { key: 'site',  done: hasSite,  icon: 'bi-globe2',       label: 'Add your first monitored site',        action: () => document.querySelector('[data-bs-target="#addModal"]')?.click() },
+    { key: 'scan',  done: hasScan,  icon: 'bi-arrow-repeat',  label: 'Run your first scan',                  action: () => document.getElementById('btn-scan')?.click() },
+    { key: 'video', done: hasVideo, icon: 'bi-film',          label: 'See your first video appear',          action: null },
+    { key: 'email', done: hasEmail, icon: 'bi-envelope-check',label: 'Add & verify your email for alerts',   action: () => window.location.href = '/settings' },
+  ];
+
+  const doneCount = steps.filter(s => s.done).length;
+
+  // All done → hide permanently
+  if (doneCount === steps.length) {
+    panel.style.display = 'none';
+    return;
+  }
+
+  // Render items
+  const container = document.getElementById('ob-checklist-items');
+  container.innerHTML = '';
+  steps.forEach(step => {
+    const row = document.createElement('div');
+    row.style.cssText = 'display:flex;align-items:center;gap:.65rem;font-size:.84rem;';
+    const icon = document.createElement('div');
+    icon.style.cssText = `width:22px;height:22px;border-radius:50%;display:flex;align-items:center;justify-content:center;flex-shrink:0;font-size:.7rem;
+      background:${step.done ? '#d1fae5' : 'var(--border)'};color:${step.done ? '#059669' : 'var(--text-muted)'};`;
+    icon.innerHTML = step.done ? '<i class="bi bi-check-lg"></i>' : `<i class="${step.icon}"></i>`;
+    const label = document.createElement('span');
+    label.style.cssText = `flex:1;${step.done ? 'text-decoration:line-through;color:var(--text-muted);' : ''}`;
+    label.textContent = step.label;
+    row.appendChild(icon);
+    row.appendChild(label);
+    if (!step.done && step.action) {
+      const btn = document.createElement('button');
+      btn.className = 'btn btn-sm btn-brand-outline';
+      btn.style.cssText = 'font-size:.72rem;padding:.15rem .5rem;';
+      btn.textContent = 'Go';
+      btn.onclick = step.action;
+      row.appendChild(btn);
+    }
+    container.appendChild(row);
+  });
+
+  const pct = Math.round((doneCount / steps.length) * 100);
+  document.getElementById('ob-checklist-bar').style.width = pct + '%';
+  document.getElementById('ob-checklist-pct').textContent = `${doneCount} of ${steps.length} complete`;
+
+  panel.style.display = '';
+}
+
+document.getElementById('ob-checklist-dismiss').onclick = async () => {
+  const st = await api('/auth/status').catch(() => ({}));
+  if (st?.user) localStorage.setItem(OB_DISMISS_KEY, st.user);
+  document.getElementById('onboarding-checklist').style.display = 'none';
+};
+
 async function maybeShowOnboarding(st) {
   if (!st.authenticated || st.onboarding_done) return;
   if (st.role === 'admin' || st.role === 'super_admin') return;
@@ -3523,6 +3621,7 @@ async function maybeShowOnboarding(st) {
     const el = document.getElementById('topbar-username');
     if (el && st.user) el.textContent = st.user;
     maybeShowOnboarding(st);
+    renderOnboardingChecklist(st);
     // Apply DB theme, overriding localStorage if they differ
     if (st.ui_theme) applyTheme(st.ui_theme === 'dark', false);
   }).catch(() => {});
