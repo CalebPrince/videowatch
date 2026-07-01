@@ -75,11 +75,25 @@ async def auth_gate(request, call_next):
     expires_at = request.session.get("session_expires_at")
     if expires_at and request.session.get("auth_user"):
         try:
-            from datetime import datetime, timezone
             if datetime.now(timezone.utc) > datetime.fromisoformat(expires_at):
                 request.session.clear()
         except Exception:
             pass
+
+    # Inactivity timeout — 30 minutes of no API/page activity
+    _INACTIVITY_SECONDS = 30 * 60
+    if request.session.get("auth_user"):
+        last_active = request.session.get("last_active_at")
+        now_ts = datetime.now(timezone.utc)
+        if last_active:
+            try:
+                if (now_ts - datetime.fromisoformat(last_active)).total_seconds() > _INACTIVITY_SECONDS:
+                    request.session.clear()
+            except Exception:
+                pass
+        # Refresh on every authenticated request (skip static files to avoid noise)
+        if not path.startswith("/static/"):
+            request.session["last_active_at"] = now_ts.isoformat()
 
     if routes.auth_enabled() and not routes.is_authenticated(request):
         # Bearer-token routes bypass session check

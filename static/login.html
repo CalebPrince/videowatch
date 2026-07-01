@@ -103,6 +103,10 @@
     <div class="brand"><i class="bi bi-shield-lock"></i><span>VideoWatch Login</span></div>
     <div class="subtitle">Sign in to access monitoring and scan controls.</div>
 
+    <div id="session-expired-msg" style="display:none;background:#fef3c7;border:1px solid #d97706;border-radius:8px;padding:.65rem 1rem;font-size:.85rem;color:#92400e;margin-bottom:.5rem;">
+      <i class="bi bi-clock-history me-1"></i>Your session expired due to inactivity. Please sign in again.
+    </div>
+
     <form id="login-form" class="d-grid gap-3">
       <div>
         <label for="username" class="form-label mb-1">Username</label>
@@ -169,6 +173,11 @@
         throw new Error(err.detail || r.statusText);
       }
       return r.json();
+    }
+
+    if (sessionStorage.getItem('vw_session_expired')) {
+      document.getElementById('session-expired-msg').style.display = '';
+      sessionStorage.removeItem('vw_session_expired');
     }
 
     document.getElementById('toggle-password').addEventListener('click', function () {

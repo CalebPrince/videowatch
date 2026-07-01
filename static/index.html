@@ -2207,8 +2207,9 @@ async function api(path, opts = {}) {
     ...opts,
   });
   if (r.status === 401) {
+    sessionStorage.setItem('vw_session_expired', '1');
     window.location.href = '/';
-    throw new Error('Authentication required');
+    throw new Error('Session expired');
   }
   if (!r.ok) {
     const err = await r.json().catch(() => ({ detail: r.statusText }));
