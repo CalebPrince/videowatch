@@ -1,0 +1,123 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>VideoWatch</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: 'Segoe UI', system-ui, sans-serif;
+      width: 320px;
+      background: #0f172a;
+      color: #e2e8f0;
+    }
+    .header {
+      background: linear-gradient(135deg, #0d1b2a, #10253b);
+      padding: 1rem 1.1rem .85rem;
+      border-bottom: 1px solid rgba(255,255,255,.08);
+      display: flex;
+      align-items: center;
+      gap: .55rem;
+    }
+    .header svg { flex-shrink: 0; }
+    .header-title { font-weight: 700; font-size: 1rem; color: #fff; }
+    .header-sub { font-size: .72rem; color: rgba(220,233,247,.55); margin-top: .1rem; }
+    .body { padding: 1rem 1.1rem; }
+    .field { margin-bottom: .75rem; }
+    label { display: block; font-size: .74rem; font-weight: 600; color: #94a3b8; margin-bottom: .3rem; }
+    input, select {
+      width: 100%; padding: .4rem .6rem; border-radius: 7px;
+      border: 1px solid rgba(255,255,255,.12);
+      background: rgba(255,255,255,.06); color: #e2e8f0;
+      font-size: .82rem; outline: none;
+    }
+    input:focus, select:focus { border-color: #4f8ef7; }
+    .btn {
+      width: 100%; padding: .5rem; border-radius: 8px; border: none;
+      font-size: .88rem; font-weight: 700; cursor: pointer;
+      background: linear-gradient(135deg, #0f766e, #14b8a6);
+      color: #fff; margin-top: .25rem; transition: opacity .15s;
+    }
+    .btn:hover { opacity: .88; }
+    .btn:disabled { opacity: .45; cursor: not-allowed; }
+    .status {
+      margin-top: .75rem; font-size: .78rem; text-align: center;
+      padding: .5rem; border-radius: 7px; display: none;
+    }
+    .status.ok  { background: #064e3b; color: #6ee7b7; display: block; }
+    .status.err { background: #450a0a; color: #fca5a5; display: block; }
+    .config-link {
+      display: block; text-align: center; font-size: .72rem;
+      color: #4f8ef7; text-decoration: none; margin-top: .75rem;
+    }
+    .server-row {
+      display: flex; gap: .4rem; align-items: center; margin-bottom: .75rem;
+    }
+    .server-row input { flex: 1; }
+    .server-row button {
+      padding: .38rem .65rem; border-radius: 7px; border: 1px solid rgba(255,255,255,.12);
+      background: rgba(255,255,255,.07); color: #94a3b8; font-size: .75rem; cursor: pointer;
+    }
+    .server-row button:hover { background: rgba(255,255,255,.13); }
+    .divider { border: none; border-top: 1px solid rgba(255,255,255,.07); margin: .6rem 0; }
+  </style>
+</head>
+<body>
+  <div class="header">
+    <svg width="28" height="28" viewBox="0 0 28 28" fill="none">
+      <circle cx="14" cy="14" r="14" fill="#0f766e" opacity=".18"/>
+      <circle cx="14" cy="14" r="10" fill="#0f766e" opacity=".3"/>
+      <polygon points="11,9 21,14 11,19" fill="#14b8a6"/>
+    </svg>
+    <div>
+      <div class="header-title">VideoWatch</div>
+      <div class="header-sub">Add this site to your monitor</div>
+    </div>
+  </div>
+
+  <div class="body">
+    <!-- Server URL + token config -->
+    <div class="field">
+      <label>VideoWatch Server URL</label>
+      <div class="server-row">
+        <input type="url" id="server-url" placeholder="https://videowatch.duckdns.org" />
+        <button id="btn-save-server">Save</button>
+      </div>
+    </div>
+    <div class="field">
+      <label>API Token</label>
+      <input type="password" id="api-token" placeholder="Paste your API token…" />
+    </div>
+    <button class="btn" id="btn-save-creds" style="background:rgba(255,255,255,.08);margin-bottom:.1rem;font-size:.78rem;font-weight:600;">Save credentials</button>
+
+    <hr class="divider" />
+
+    <!-- Add site -->
+    <div class="field">
+      <label>Site URL</label>
+      <input type="url" id="site-url" readonly />
+    </div>
+    <div class="field">
+      <label>Name (optional)</label>
+      <input type="text" id="site-name" placeholder="e.g. My Favourite Channel" />
+    </div>
+    <div class="field">
+      <label>Scan every</label>
+      <select id="site-interval">
+        <option value="300">5 minutes</option>
+        <option value="600">10 minutes</option>
+        <option value="1800">30 minutes</option>
+        <option value="3600" selected>1 hour</option>
+        <option value="21600">6 hours</option>
+        <option value="86400">24 hours</option>
+      </select>
+    </div>
+    <button class="btn" id="btn-add">Add to VideoWatch</button>
+    <div class="status" id="status"></div>
+    <a class="config-link" id="dashboard-link" href="#" target="_blank">Open VideoWatch dashboard ↗</a>
+  </div>
+
+  <script src="popup.js"></script>
+</body>
+</html>

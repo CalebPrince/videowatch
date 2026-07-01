@@ -2816,6 +2816,30 @@ def public_list_videos(
     }
 
 
+@router.post("/api/public/sites")
+def public_add_site(request: Request, body: dict):
+    """Add a site via Bearer token (used by the browser extension)."""
+    owner = _api_auth(request)
+    url = (body.get("url") or "").strip()
+    if not url:
+        raise HTTPException(400, "url is required")
+    name = (body.get("name") or "").strip() or None
+    scan_interval = int(body.get("scan_interval") or 3600)
+    import uuid as _uuid
+    site_id = str(_uuid.uuid4())
+    with write_lock:
+        with get_db() as db:
+            existing = db.execute("SELECT id FROM sites WHERE url=? AND owner=?", (url, owner)).fetchone()
+            if existing:
+                raise HTTPException(409, "Site already exists")
+            db.execute(
+                "INSERT INTO sites (id, url, name, owner, added_at, scan_interval) VALUES (?,?,?,?,?,?)",
+                (site_id, url, name, owner, now_iso(), scan_interval)
+            )
+            db.commit()
+    return {"id": site_id, "url": url, "name": name}
+
+
 @router.get("/api/public/sites")
 def public_list_sites(request: Request):
     owner = _api_auth(request)
