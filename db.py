@@ -294,6 +294,17 @@ def init_db():
                 )
             """)
             db.execute("CREATE INDEX IF NOT EXISTS idx_collections_owner ON collections(owner)")
+            db.execute("""
+                CREATE TABLE IF NOT EXISTS push_subscriptions (
+                    id         INTEGER PRIMARY KEY AUTOINCREMENT,
+                    owner      TEXT NOT NULL,
+                    endpoint   TEXT NOT NULL UNIQUE,
+                    p256dh     TEXT NOT NULL,
+                    auth       TEXT NOT NULL,
+                    created_at TEXT NOT NULL
+                )
+            """)
+            db.execute("CREATE INDEX IF NOT EXISTS idx_push_owner ON push_subscriptions(owner)")
             add_column_if_missing(db, "users", "referral_code", "TEXT")
             add_column_if_missing(db, "users", "referred_by",  "TEXT")
             db.execute("""

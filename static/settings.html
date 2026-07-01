@@ -371,6 +371,14 @@
           <button class="btn btn-sm btn-outline-secondary" id="notify-test">Send test</button>
         </div>
         <div id="notify-msg" class="meta mt-2"></div>
+
+        <hr style="border-color:var(--border);margin-top:1.25rem;">
+        <h6 style="font-size:.9rem;margin-bottom:.5rem;margin-top:1rem;"><i class="bi bi-bell-fill me-1" style="color:var(--brand)"></i>Browser Push Notifications</h6>
+        <p style="font-size:.8rem;color:var(--muted);margin-bottom:.75rem;">Get an instant browser notification when new videos are found — even when this tab is in the background.</p>
+        <div style="display:flex;align-items:center;gap:.75rem;flex-wrap:wrap;">
+          <button id="btn-push-subscribe" class="btn btn-sm btn-outline-secondary"><i class="bi bi-bell me-1"></i>Enable push notifications</button>
+          <span id="push-status" style="font-size:.78rem;color:var(--muted);"></span>
+        </div>
       </section>
 
       <section id="account" class="cardx pane hidden">
@@ -1735,6 +1743,88 @@
     // ── Payments ─────────────────────────────────────────────────────────────
     const PLAN_COLORS = { free: '#64748b', pro: '#0f766e', unlimited: '#7c3aed' };
     const PLAN_LABELS = { free: 'Free', pro: 'Pro', unlimited: 'Unlimited' };
+    // ── Push Notifications ────────────────────────────────────────────────────
+    (async function initPush() {
+      const btn = document.getElementById('btn-push-subscribe');
+      const statusEl = document.getElementById('push-status');
+      if (!btn) return;
+      if (!('serviceWorker' in navigator) || !('PushManager' in window)) {
+        statusEl.textContent = 'Push notifications are not supported in this browser.';
+        btn.disabled = true;
+        return;
+      }
+
+      async function getPublicKey() {
+        const r = await api('/push/vapid-public').catch(() => null);
+        return r?.public_key || null;
+      }
+
+      function urlBase64ToUint8Array(base64String) {
+        const padding = '='.repeat((4 - base64String.length % 4) % 4);
+        const base64 = (base64String + padding).replace(/-/g, '+').replace(/_/g, '/');
+        const raw = atob(base64);
+        return Uint8Array.from([...raw].map(c => c.charCodeAt(0)));
+      }
+
+      async function updateUI(reg) {
+        const sub = await reg.pushManager.getSubscription();
+        if (sub) {
+          btn.innerHTML = '<i class="bi bi-bell-slash me-1"></i>Disable push notifications';
+          btn.className = 'btn btn-sm btn-outline-danger';
+          statusEl.textContent = 'Push notifications are enabled for this browser.';
+        } else {
+          btn.innerHTML = '<i class="bi bi-bell me-1"></i>Enable push notifications';
+          btn.className = 'btn btn-sm btn-outline-secondary';
+          statusEl.textContent = '';
+        }
+        return sub;
+      }
+
+      let _swReg = null;
+      try {
+        _swReg = await navigator.serviceWorker.register('/static/sw.js');
+        await navigator.serviceWorker.ready;
+        await updateUI(_swReg);
+      } catch(e) {
+        statusEl.textContent = 'Service worker failed to register.';
+        return;
+      }
+
+      btn.addEventListener('click', async () => {
+        btn.disabled = true;
+        const existing = await _swReg.pushManager.getSubscription();
+        if (existing) {
+          // Unsubscribe
+          await existing.unsubscribe();
+          await api('/push/subscribe', { method: 'DELETE', body: JSON.stringify({ endpoint: existing.endpoint }) }).catch(()=>{});
+          statusEl.textContent = 'Push notifications disabled.';
+        } else {
+          // Subscribe
+          const pubKey = await getPublicKey();
+          if (!pubKey) { statusEl.textContent = 'Push not configured on server.'; btn.disabled = false; return; }
+          try {
+            const perm = await Notification.requestPermission();
+            if (perm !== 'granted') { statusEl.textContent = 'Permission denied.'; btn.disabled = false; return; }
+            const sub = await _swReg.pushManager.subscribe({
+              userVisibleOnly: true,
+              applicationServerKey: urlBase64ToUint8Array(pubKey),
+            });
+            const j = sub.toJSON();
+            await api('/push/subscribe', { method: 'POST', body: JSON.stringify({
+              endpoint: j.endpoint,
+              p256dh: j.keys.p256dh,
+              auth: j.keys.auth,
+            })});
+            statusEl.textContent = 'Push notifications enabled!';
+          } catch(e) {
+            statusEl.textContent = 'Could not subscribe: ' + e.message;
+          }
+        }
+        await updateUI(_swReg);
+        btn.disabled = false;
+      });
+    })();
+
     // ── Roadmap Admin ─────────────────────────────────────────────────────────
     const _ROADMAP_STATUSES = ['planned','in-progress','done'];
     const _statusLabel = { planned:'Planned', 'in-progress':'In Progress', done:'Done' };

@@ -1083,6 +1083,16 @@ def _notify_scan_summary(site: dict, found: int, added: int):
     except Exception as e:
         log.warning(f"Per-user scan email failed: {e}")
 
+    # Web Push notification
+    if added > 0 and not site_notify_off:
+        owner = site.get("owner")
+        if owner:
+            threading.Thread(
+                target=_push_new_videos,
+                args=(owner, site_label, added, _APP_BASE_URL),
+                daemon=True,
+            ).start()
+
 def _notify_scan_failure(site: dict, attempts: int):
     """Send one alert email to the site owner when repeated scans keep failing."""
     owner = site.get("owner")
@@ -3250,6 +3260,108 @@ def admin_broadcast(request: Request, body: dict):
 
     threading.Thread(target=_blast, daemon=True).start()
     return {"ok": True, "queued": len(recipients)}
+
+
+def _get_vapid_keys():
+    """Return (private_key, public_key) VAPID strings, generating them once if missing."""
+    with get_db() as db:
+        priv = db.execute("SELECT value FROM app_settings WHERE key='vapid_private'").fetchone()
+        pub  = db.execute("SELECT value FROM app_settings WHERE key='vapid_public'").fetchone()
+    if priv and pub:
+        return priv["value"], pub["value"]
+    try:
+        from py_vapid import Vapid
+        v = Vapid()
+        v.generate_keys()
+        priv_pem = v.private_pem().decode() if isinstance(v.private_pem(), bytes) else v.private_pem()
+        pub_b64  = v.public_key_urlsafe_base64
+        with write_lock:
+            with get_db() as db:
+                db.execute("INSERT OR IGNORE INTO app_settings (key,value) VALUES ('vapid_private',?)", (priv_pem,))
+                db.execute("INSERT OR IGNORE INTO app_settings (key,value) VALUES ('vapid_public',?)", (pub_b64,))
+                db.commit()
+        return priv_pem, pub_b64
+    except Exception as e:
+        log.warning(f"VAPID key generation failed: {e}")
+        return None, None
+
+
+def _send_push(subscription: dict, payload: dict):
+    """Send a single Web Push notification. Call in a thread."""
+    try:
+        from pywebpush import webpush, WebPushException
+        import json
+        _, _ = _get_vapid_keys()
+        with get_db() as db:
+            priv = db.execute("SELECT value FROM app_settings WHERE key='vapid_private'").fetchone()
+        if not priv:
+            return
+        webpush(
+            subscription_info={
+                "endpoint": subscription["endpoint"],
+                "keys": {"p256dh": subscription["p256dh"], "auth": subscription["auth"]},
+            },
+            data=json.dumps(payload),
+            vapid_private_key=priv["value"],
+            vapid_claims={"sub": "mailto:admin@videowatch.duckdns.org"},
+        )
+    except Exception as e:
+        log.warning(f"Push send failed: {e}")
+
+
+@router.get("/api/push/vapid-public")
+def push_vapid_public():
+    _, pub = _get_vapid_keys()
+    if not pub:
+        raise HTTPException(503, "Push notifications not configured")
+    return {"public_key": pub}
+
+
+@router.post("/api/push/subscribe")
+def push_subscribe(request: Request, body: dict):
+    username = _api_auth(request)
+    endpoint = body.get("endpoint", "").strip()
+    p256dh   = body.get("p256dh", "").strip()
+    auth     = body.get("auth", "").strip()
+    if not endpoint or not p256dh or not auth:
+        raise HTTPException(400, "endpoint, p256dh and auth required")
+    with write_lock:
+        with get_db() as db:
+            db.execute(
+                "INSERT OR REPLACE INTO push_subscriptions (owner, endpoint, p256dh, auth, created_at) VALUES (?,?,?,?,?)",
+                (username, endpoint, p256dh, auth, now_iso())
+            )
+            db.commit()
+    return {"ok": True}
+
+
+@router.delete("/api/push/subscribe")
+def push_unsubscribe(request: Request, body: dict):
+    username = _api_auth(request)
+    endpoint = body.get("endpoint", "").strip()
+    with write_lock:
+        with get_db() as db:
+            db.execute("DELETE FROM push_subscriptions WHERE owner=? AND endpoint=?", (username, endpoint))
+            db.commit()
+    return {"ok": True}
+
+
+def _push_new_videos(owner: str, site_name: str, added: int, url: str):
+    """Send push to all of a user's subscribed devices when new videos are found."""
+    try:
+        from pywebpush import webpush  # noqa — just check import is available
+    except ImportError:
+        return
+    with get_db() as db:
+        subs = db.execute("SELECT * FROM push_subscriptions WHERE owner=?", (owner,)).fetchall()
+    payload = {
+        "title": f"New video on {site_name}",
+        "body": f"{added} new video{'s' if added != 1 else ''} found",
+        "url": url,
+        "tag": f"vw-site-{owner}",
+    }
+    for sub in subs:
+        threading.Thread(target=_send_push, args=(dict(sub), payload), daemon=True).start()
 
 
 @router.get("/api/user/referral")
