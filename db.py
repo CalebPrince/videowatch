@@ -266,6 +266,15 @@ def init_db():
                 )
             """)
             db.execute("""
+                CREATE TABLE IF NOT EXISTS waitlist (
+                    id         INTEGER PRIMARY KEY AUTOINCREMENT,
+                    email      TEXT NOT NULL UNIQUE,
+                    source     TEXT DEFAULT 'mobile',
+                    created_at TEXT NOT NULL
+                )
+            """)
+            db.execute("CREATE INDEX IF NOT EXISTS idx_waitlist_created ON waitlist(created_at DESC)")
+            db.execute("""
                 CREATE TABLE IF NOT EXISTS api_tokens (
                     id          INTEGER PRIMARY KEY AUTOINCREMENT,
                     owner       TEXT NOT NULL,

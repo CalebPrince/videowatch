@@ -68,6 +68,7 @@ async def auth_gate(request, call_next):
         "/api/auth/reset-password",
         "/api/auth/status",
         "/api/health",
+        "/api/waitlist",
     }
     public_pages = {"/", "/login", "/register", "/verify-email", "/forgot-password", "/reset-password", "/terms", "/sitemap.xml", "/robots.txt", "/og-export", "/googleea1223cfdcbe9db5.html", "/static/login.html", "/favicon.ico"}
 

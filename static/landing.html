@@ -701,8 +701,21 @@
     </a>
   </div>
 
-  <div style="display:inline-flex;align-items:center;gap:.5rem;background:rgba(15,118,110,.1);border:1px solid rgba(15,118,110,.25);border-radius:999px;padding:.4rem 1rem;font-size:.82rem;color:var(--brand);">
-    <i class="bi bi-bell-fill"></i> Notify me when it's available
+  <div style="max-width:440px;margin:0 auto;">
+    <div style="font-size:.88rem;color:var(--muted);margin-bottom:.75rem;">
+      <i class="bi bi-bell-fill me-1" style="color:var(--brand)"></i>Get notified when the app launches
+    </div>
+    <div id="waitlist-form" style="display:flex;gap:.5rem;flex-wrap:wrap;justify-content:center;">
+      <input id="waitlist-email" type="email" placeholder="your@email.com"
+        style="flex:1;min-width:220px;padding:.6rem 1rem;border-radius:10px;border:1.5px solid var(--border);
+               background:var(--card-bg,#fff);color:var(--ink,#0f172a);font-size:.9rem;outline:none;">
+      <button onclick="joinWaitlist()"
+        style="padding:.6rem 1.25rem;background:linear-gradient(135deg,#0f766e,#14b8a6);color:#fff;
+               border:none;border-radius:10px;font-weight:700;font-size:.9rem;cursor:pointer;white-space:nowrap;">
+        Notify me
+      </button>
+    </div>
+    <div id="waitlist-msg" style="margin-top:.6rem;font-size:.82rem;min-height:1.2em;"></div>
   </div>
 </section>
 
@@ -713,6 +726,37 @@
 
 <script>
   document.getElementById('yr').textContent = new Date().getFullYear();
+
+  async function joinWaitlist() {
+    const email = document.getElementById('waitlist-email').value.trim();
+    const msg = document.getElementById('waitlist-msg');
+    msg.style.color = '#dc2626';
+    if (!email || !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) {
+      msg.textContent = 'Please enter a valid email address.';
+      return;
+    }
+    try {
+      const r = await fetch('/api/waitlist', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email, source: 'mobile' }),
+      });
+      const data = await r.json();
+      if (!r.ok) throw new Error(data.detail || 'Something went wrong');
+      msg.style.color = '#0f766e';
+      msg.textContent = data.already_registered
+        ? "You're already on the list — we'll let you know!"
+        : "You're on the list! We'll notify you when the app launches.";
+      document.getElementById('waitlist-form').style.opacity = '.5';
+      document.getElementById('waitlist-form').style.pointerEvents = 'none';
+    } catch(e) {
+      msg.textContent = e.message;
+    }
+  }
+
+  document.getElementById('waitlist-email')?.addEventListener('keydown', e => {
+    if (e.key === 'Enter') joinWaitlist();
+  });
 
   // Theme toggle
   const html = document.documentElement;

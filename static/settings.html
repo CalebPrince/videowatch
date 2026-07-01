@@ -621,6 +621,18 @@
           </table>
         </div>
 
+        <!-- Mobile app waitlist -->
+        <div style="margin-top:1.5rem;">
+          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:.6rem;flex-wrap:wrap;gap:.5rem;">
+            <div style="font-weight:700;font-size:.85rem;"><i class="bi bi-phone me-1" style="color:var(--brand)"></i>Mobile App Waitlist</div>
+            <div style="display:flex;gap:.5rem;">
+              <span id="waitlist-count" class="meta" style="font-size:.78rem;"></span>
+              <a id="btn-waitlist-export" href="#" style="font-size:.78rem;" onclick="exportWaitlist(event)"><i class="bi bi-download me-1"></i>Export CSV</a>
+            </div>
+          </div>
+          <div id="waitlist-admin-list" style="max-height:260px;overflow-y:auto;border:1px solid var(--border);border-radius:8px;"></div>
+        </div>
+
         <!-- Transactions placeholder -->
         <div style="margin-top:1.5rem;">
           <div style="font-weight:700;font-size:.85rem;margin-bottom:.6rem;"><i class="bi bi-receipt me-1" style="color:var(--brand)"></i>Recent Transactions</div>
@@ -1484,6 +1496,17 @@
       const isSuperAdmin = role === 'super_admin';
       const isAdmin      = isSuperAdmin || role === 'admin';
 
+    function exportWaitlist(e) {
+      e.preventDefault();
+      const data = window._waitlistData || [];
+      if (!data.length) { showToast('No waitlist entries to export', 'warning'); return; }
+      const csv = ['email,source,joined'].concat(data.map(w => `${w.email},${w.source||'mobile'},${(w.created_at||'').slice(0,10)}`)).join('\n');
+      const a = document.createElement('a');
+      a.href = 'data:text/csv;charset=utf-8,' + encodeURIComponent(csv);
+      a.download = `waitlist-${new Date().toISOString().slice(0,10)}.csv`;
+      a.click();
+    }
+
     // ── Payments ─────────────────────────────────────────────────────────────
     const PLAN_COLORS = { free: '#64748b', pro: '#0f766e', unlimited: '#7c3aed' };
     const PLAN_LABELS = { free: 'Free', pro: 'Pro', unlimited: 'Unlimited' };
@@ -1520,6 +1543,23 @@
       // Users table
       _billingUsers = stats.users;
       renderBillingUsers(_billingUsers);
+
+      // Waitlist
+      try {
+        const waitlist = await api('/admin/waitlist');
+        const wList = document.getElementById('waitlist-admin-list');
+        document.getElementById('waitlist-count').textContent = `${waitlist.length} subscriber${waitlist.length !== 1 ? 's' : ''}`;
+        if (!waitlist.length) {
+          wList.innerHTML = '<div style="padding:1rem;text-align:center;color:var(--text-muted);font-size:.82rem;">No signups yet.</div>';
+        } else {
+          wList.innerHTML = waitlist.map(w => `
+            <div style="display:flex;align-items:center;justify-content:space-between;padding:.4rem .75rem;border-bottom:1px solid var(--border);font-size:.82rem;">
+              <span>${w.email}</span>
+              <span class="meta" style="font-size:.75rem;">${(w.created_at||'').slice(0,10)}</span>
+            </div>`).join('');
+        }
+        window._waitlistData = waitlist;
+      } catch { /* non-fatal */ }
 
       // Search filter
       document.getElementById('billing-user-search').oninput = e => {

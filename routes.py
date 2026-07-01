@@ -3091,6 +3091,47 @@ setInterval(()=>fetch(location.href+'?lines={lines}').then(r=>r.text()).then(h=>
 </script></body></html>""")
 
 
+@router.post("/api/waitlist")
+def join_waitlist(request: Request, body: dict):
+    _check_rate_limit(_client_ip(request), max_attempts=5, window_seconds=3600)
+    email = (body.get("email") or "").strip().lower()
+    if not email or not re.match(r'^[^@\s]+@[^@\s]+\.[^@\s]+$', email):
+        raise HTTPException(400, "A valid email address is required")
+    with write_lock:
+        with get_db() as db:
+            existing = db.execute("SELECT 1 FROM waitlist WHERE email=?", (email,)).fetchone()
+            if existing:
+                return {"ok": True, "already_registered": True}
+            db.execute(
+                "INSERT INTO waitlist (email, source, created_at) VALUES (?,?,?)",
+                (email, body.get("source", "mobile"), now_iso()),
+            )
+            db.commit()
+    return {"ok": True, "already_registered": False}
+
+
+@router.get("/api/admin/waitlist")
+def get_waitlist(request: Request):
+    if not is_super_admin(request):
+        raise HTTPException(403, "Super admin only")
+    with get_db() as db:
+        rows = db.execute(
+            "SELECT id, email, source, created_at FROM waitlist ORDER BY created_at DESC"
+        ).fetchall()
+    return [dict(r) for r in rows]
+
+
+@router.delete("/api/admin/waitlist/{entry_id}")
+def delete_waitlist_entry(entry_id: int, request: Request):
+    if not is_super_admin(request):
+        raise HTTPException(403, "Super admin only")
+    with write_lock:
+        with get_db() as db:
+            db.execute("DELETE FROM waitlist WHERE id=?", (entry_id,))
+            db.commit()
+    return {"ok": True}
+
+
 @router.get("/api/health")
 def health():
     healthy = True
