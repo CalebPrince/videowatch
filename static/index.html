@@ -3547,7 +3547,7 @@ async function renderOnboardingChecklist(st) {
     { key: 'site',  done: hasSite,  icon: 'bi-globe2',       label: 'Add your first monitored site',        action: () => document.querySelector('[data-bs-target="#addModal"]')?.click() },
     { key: 'scan',  done: hasScan,  icon: 'bi-arrow-repeat',  label: 'Run your first scan',                  action: () => document.getElementById('btn-scan')?.click() },
     { key: 'video', done: hasVideo, icon: 'bi-film',          label: 'See your first video appear',          action: null },
-    { key: 'email', done: hasEmail, icon: 'bi-envelope-check',label: 'Add & verify your email for alerts',   action: () => window.location.href = '/settings' },
+    { key: 'email', done: hasEmail, icon: 'bi-envelope-check',label: 'Add & verify your email for alerts',   action: () => window.location.href = '/settings?tab=account' },
   ];
 
   const doneCount = steps.filter(s => s.done).length;

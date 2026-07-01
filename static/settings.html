@@ -1610,6 +1610,14 @@
         document.getElementById('navbtn-payments')?.remove();
         document.getElementById('payments')?.remove();
       }
+      // Auto-open pane from URL ?tab=
+      const _tab = new URLSearchParams(window.location.search).get('tab');
+      if (_tab) {
+        setPane(_tab);
+        // Trigger load callbacks for panes that need it
+        if (_tab === 'account') { loadAccount(); loadTokens(); }
+        if (_tab === 'payments') loadPayments?.();
+      }
     })();
   </script>
 </body>
