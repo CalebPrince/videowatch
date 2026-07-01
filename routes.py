@@ -1012,6 +1012,41 @@ def is_url_allowed(url: str, allowed_hosts: set[str]) -> bool:
 
 # ── API Endpoints ─────────────────────────────────────────────────────────────
 
+@router.get("/api/admin/user-stats")
+def admin_user_stats(request: Request):
+    """Per-user usage stats (super_admin only)."""
+    if not is_super_admin(request):
+        raise HTTPException(403, "Super admin required")
+    with get_db() as db:
+        rows = db.execute("""
+            SELECT
+                u.username,
+                u.role,
+                u.email,
+                u.email_verified,
+                COALESCE(s.site_count, 0)  AS site_count,
+                COALESCE(v.video_count, 0) AS video_count,
+                COALESCE(l.scan_count, 0)  AS scan_count,
+                l.last_scan
+            FROM users u
+            LEFT JOIN (
+                SELECT owner, COUNT(*) AS site_count FROM sites GROUP BY owner
+            ) s ON s.owner = u.username
+            LEFT JOIN (
+                SELECT sites.owner, COUNT(*) AS video_count
+                FROM videos JOIN sites ON videos.site_id = sites.id
+                GROUP BY sites.owner
+            ) v ON v.owner = u.username
+            LEFT JOIN (
+                SELECT sites.owner, COUNT(*) AS scan_count, MAX(scan_log.scanned_at) AS last_scan
+                FROM scan_log JOIN sites ON scan_log.site_id = sites.id
+                GROUP BY sites.owner
+            ) l ON l.owner = u.username
+            ORDER BY v.video_count DESC NULLS LAST
+        """).fetchall()
+    return [dict(r) for r in rows]
+
+
 @router.get("/api/admin/backup")
 def download_backup(request: Request):
     """Stream a safe SQLite backup to the client (super_admin only)."""

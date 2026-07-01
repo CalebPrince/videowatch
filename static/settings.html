@@ -267,6 +267,7 @@
       <button class="navbtn" data-target="notifications" title="Webhook notifications"><i class="bi bi-bell me-1"></i>Notifications</button>
       <button class="navbtn" data-target="users" title="User accounts and roles"><i class="bi bi-people me-1"></i>Users and Roles</button>
       <button class="navbtn" id="navbtn-allsites" data-target="allsites" title="All monitored sites across all users"><i class="bi bi-diagram-3-fill me-1"></i>All Users' Sites</button>
+      <button class="navbtn" id="navbtn-userstats" data-target="userstats" title="Usage statistics per user"><i class="bi bi-bar-chart-fill me-1"></i>Usage Stats</button>
       <button class="navbtn" data-target="duplicates" title="Duplicate video candidates"><i class="bi bi-files me-1"></i>Duplicates</button>
       <button class="navbtn" data-target="maintenance" title="Maintenance actions"><i class="bi bi-tools me-1"></i>Maintenance</button>
     </aside>
@@ -375,6 +376,11 @@
           </table>
           <div id="users-empty" class="meta" style="display:none;padding:.75rem 0;">No users found.</div>
         </div>
+      </section>
+
+      <section id="userstats" class="cardx pane hidden">
+        <h6 class="mb-3"><i class="bi bi-bar-chart-fill me-2" style="color:var(--brand)"></i>Usage Stats</h6>
+        <div id="userstats-body"></div>
       </section>
 
       <section id="allsites" class="cardx pane hidden">
@@ -630,6 +636,46 @@
       });
     }
 
+    async function loadUserStats() {
+      const root = document.getElementById('userstats-body');
+      if (!root) return;
+      try {
+        const rows = await api('/admin/user-stats');
+        if (!rows.length) { root.innerHTML = '<p class="meta">No users found.</p>'; return; }
+        root.innerHTML = `
+          <table style="width:100%;border-collapse:collapse;font-size:.84rem">
+            <thead>
+              <tr style="border-bottom:2px solid var(--border)">
+                <th style="padding:.4rem .6rem;font-size:.72rem;color:var(--muted);font-weight:700;text-transform:uppercase">User</th>
+                <th style="padding:.4rem .6rem;font-size:.72rem;color:var(--muted);font-weight:700;text-transform:uppercase">Role</th>
+                <th style="padding:.4rem .6rem;font-size:.72rem;color:var(--muted);font-weight:700;text-transform:uppercase;text-align:right">Sites</th>
+                <th style="padding:.4rem .6rem;font-size:.72rem;color:var(--muted);font-weight:700;text-transform:uppercase;text-align:right">Videos</th>
+                <th style="padding:.4rem .6rem;font-size:.72rem;color:var(--muted);font-weight:700;text-transform:uppercase;text-align:right">Scans</th>
+                <th style="padding:.4rem .6rem;font-size:.72rem;color:var(--muted);font-weight:700;text-transform:uppercase">Last scan</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${rows.map(r => `
+                <tr style="border-bottom:1px solid var(--border)">
+                  <td style="padding:.55rem .6rem">
+                    <div style="font-weight:600">${r.username}</div>
+                    ${r.email ? `<div style="font-size:.74rem;color:var(--muted)">${r.email}${r.email_verified ? '' : ' <span style="color:#f59e0b">unverified</span>'}</div>` : ''}
+                  </td>
+                  <td style="padding:.55rem .6rem">
+                    <span class="role-badge ${r.role}">${r.role}</span>
+                  </td>
+                  <td style="padding:.55rem .6rem;text-align:right;font-weight:600">${r.site_count}</td>
+                  <td style="padding:.55rem .6rem;text-align:right;font-weight:600">${r.video_count}</td>
+                  <td style="padding:.55rem .6rem;text-align:right">${r.scan_count}</td>
+                  <td style="padding:.55rem .6rem;font-size:.78rem;color:var(--muted)">${r.last_scan ? r.last_scan.slice(0,16).replace('T',' ') : '—'}</td>
+                </tr>`).join('')}
+            </tbody>
+          </table>`;
+      } catch (e) {
+        root.innerHTML = `<p class="err">Failed to load: ${e.message}</p>`;
+      }
+    }
+
     async function loadAllSites() {
       const root = document.getElementById('allsites-list');
       if (!root) return;
@@ -870,7 +916,7 @@
 
       // Duplicates, Maintenance, All Users' Sites — super_admin only
       if (isSuperAdmin) {
-        await Promise.allSettled([loadDuplicates(), loadAllSites()]);
+        await Promise.allSettled([loadDuplicates(), loadAllSites(), loadUserStats()]);
       } else {
         document.querySelector('.navbtn[data-target="duplicates"]')?.remove();
         document.getElementById('duplicates')?.remove();
@@ -878,6 +924,8 @@
         document.getElementById('maintenance')?.remove();
         document.getElementById('navbtn-allsites')?.remove();
         document.getElementById('allsites')?.remove();
+        document.getElementById('navbtn-userstats')?.remove();
+        document.getElementById('userstats')?.remove();
       }
     })();
   </script>
