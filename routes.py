@@ -1765,14 +1765,12 @@ def scan_health(request: Request, limit: int = 20):
     limit = max(5, min(limit, 100))
     with get_db() as db:
         if is_super_admin(request):
-            owner_filter = ""
             params_overall = (limit,)
             params_per_site = (limit * 10,)
         else:
             owner = current_user(request)
-            owner_filter = "WHERE s.owner=?"
             params_overall = (owner, limit)
-            params_per_site = (owner, limit * 10)
+            params_per_site = (limit * 10, owner)  # limit first (subquery), owner after (WHERE)
 
         overall = db.execute(
             "SELECT COUNT(*) as runs, "
@@ -1791,8 +1789,9 @@ def scan_health(request: Request, limit: int = 20):
             "ROUND(AVG(l.found), 2) as avg_found, "
             "ROUND(AVG(l.added), 2) as avg_added, "
             "MAX(l.scanned_at) as last_scan "
-            "FROM sites s " + owner_filter + " "
+            "FROM sites s "
             "LEFT JOIN (SELECT * FROM scan_log ORDER BY id DESC LIMIT ?) l ON l.site_id=s.id "
+            + ("" if is_super_admin(request) else "WHERE s.owner=? ") +
             "GROUP BY s.id ORDER BY runs DESC, last_scan DESC",
             params_per_site,
         ).fetchall()]
