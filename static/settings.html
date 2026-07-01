@@ -273,6 +273,7 @@
       <button class="navbtn" id="navbtn-userstats" data-target="userstats" title="Usage statistics per user"><i class="bi bi-bar-chart-fill me-1"></i>Usage Stats</button>
       <button class="navbtn" id="navbtn-audit" data-target="audit" title="Audit log"><i class="bi bi-journal-text me-1"></i>Audit Log</button>
       <button class="navbtn" data-target="duplicates" title="Duplicate video candidates"><i class="bi bi-files me-1"></i>Duplicates</button>
+      <button class="navbtn" id="navbtn-analytics" data-target="analytics" title="Usage analytics"><i class="bi bi-bar-chart-line me-1"></i>Analytics</button>
       <button class="navbtn" id="navbtn-payments" data-target="payments" title="Payments and billing"><i class="bi bi-credit-card me-1"></i>Payments</button>
       <button class="navbtn" data-target="maintenance" title="Maintenance actions"><i class="bi bi-tools me-1"></i>Maintenance</button>
     </aside>
@@ -555,6 +556,58 @@
           </button>
         </div>
         <div id="maint-msg" class="meta mt-2"></div>
+      </section>
+
+      <!-- ── Analytics ── -->
+      <section id="analytics" class="cardx pane hidden">
+        <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:.75rem;margin-bottom:1.25rem;">
+          <h6 style="margin:0;"><i class="bi bi-bar-chart-line me-2" style="color:var(--brand)"></i>Analytics</h6>
+          <select id="analytics-range" style="font-size:.78rem;padding:.25rem .6rem;border:1px solid var(--border);border-radius:6px;background:var(--input-bg,#f8fafc);color:var(--text);">
+            <option value="7">Last 7 days</option>
+            <option value="30" selected>Last 30 days</option>
+            <option value="90">Last 90 days</option>
+            <option value="365">Last 365 days</option>
+          </select>
+        </div>
+
+        <!-- Totals row -->
+        <div id="analytics-totals" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:.75rem;margin-bottom:1.5rem;"></div>
+
+        <!-- Charts -->
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:1rem;margin-bottom:1.5rem;">
+          <div style="background:var(--card-bg);border:1px solid var(--border);border-radius:10px;padding:1rem;">
+            <div style="font-size:.8rem;font-weight:600;margin-bottom:.75rem;">User Signups</div>
+            <canvas id="chart-signups" height="140"></canvas>
+          </div>
+          <div style="background:var(--card-bg);border:1px solid var(--border);border-radius:10px;padding:1rem;">
+            <div style="font-size:.8rem;font-weight:600;margin-bottom:.75rem;">Waitlist Signups</div>
+            <canvas id="chart-waitlist" height="140"></canvas>
+          </div>
+          <div style="background:var(--card-bg);border:1px solid var(--border);border-radius:10px;padding:1rem;">
+            <div style="font-size:.8rem;font-weight:600;margin-bottom:.75rem;">Scans per Day</div>
+            <canvas id="chart-scans" height="140"></canvas>
+          </div>
+          <div style="background:var(--card-bg);border:1px solid var(--border);border-radius:10px;padding:1rem;">
+            <div style="font-size:.8rem;font-weight:600;margin-bottom:.75rem;">Videos Found per Day</div>
+            <canvas id="chart-videos" height="140"></canvas>
+          </div>
+        </div>
+
+        <!-- Top sites table -->
+        <div style="font-weight:700;font-size:.85rem;margin-bottom:.6rem;"><i class="bi bi-trophy me-1" style="color:var(--brand)"></i>Most Active Sites</div>
+        <div style="overflow-x:auto;">
+          <table style="width:100%;font-size:.82rem;border-collapse:collapse;" id="analytics-top-sites">
+            <thead>
+              <tr style="border-bottom:2px solid var(--border);text-align:left;">
+                <th style="padding:.4rem .6rem;">#</th>
+                <th style="padding:.4rem .6rem;">Site</th>
+                <th style="padding:.4rem .6rem;text-align:right;">Scans</th>
+                <th style="padding:.4rem .6rem;text-align:right;">Videos added</th>
+              </tr>
+            </thead>
+            <tbody id="analytics-top-sites-body"></tbody>
+          </table>
+        </div>
       </section>
 
       <!-- ── Payments ── -->
@@ -1510,6 +1563,69 @@
     // ── Payments ─────────────────────────────────────────────────────────────
     const PLAN_COLORS = { free: '#64748b', pro: '#0f766e', unlimited: '#7c3aed' };
     const PLAN_LABELS = { free: 'Free', pro: 'Pro', unlimited: 'Unlimited' };
+    // ── Analytics ─────────────────────────────────────────────────────────────
+    let _analyticsCharts = {};
+
+    async function loadAnalytics() {
+      const days = document.getElementById('analytics-range')?.value || 30;
+      const data = await api(`/admin/analytics?days=${days}`).catch(() => null);
+      if (!data) return;
+
+      // Totals row
+      const totalsEl = document.getElementById('analytics-totals');
+      const totalDefs = [
+        { label: 'Total Users', value: data.totals.users, icon: 'bi-people' },
+        { label: 'Total Sites', value: data.totals.sites, icon: 'bi-globe' },
+        { label: 'Total Videos', value: data.totals.videos, icon: 'bi-play-circle' },
+        { label: 'Total Scans', value: data.totals.scans, icon: 'bi-arrow-repeat' },
+        { label: 'Waitlist', value: data.totals.waitlist, icon: 'bi-envelope' },
+      ];
+      totalsEl.innerHTML = totalDefs.map(d => `
+        <div style="background:var(--card-bg);border:1px solid var(--border);border-radius:10px;padding:.8rem 1rem;text-align:center;">
+          <div style="font-size:1.4rem;font-weight:700;color:var(--brand)">${d.value ?? 0}</div>
+          <div style="font-size:.72rem;color:var(--text-muted)"><i class="bi ${d.icon} me-1"></i>${d.label}</div>
+        </div>`).join('');
+
+      // Helper: destroy old chart and redraw
+      const makeChart = (id, label, color, values) => {
+        if (_analyticsCharts[id]) _analyticsCharts[id].destroy();
+        const ctx = document.getElementById(id)?.getContext('2d');
+        if (!ctx) return;
+        _analyticsCharts[id] = new Chart(ctx, {
+          type: 'bar',
+          data: {
+            labels: data.dates,
+            datasets: [{ label, data: values, backgroundColor: color + '99', borderColor: color, borderWidth: 1 }]
+          },
+          options: {
+            responsive: true, maintainAspectRatio: false,
+            plugins: { legend: { display: false } },
+            scales: {
+              x: { ticks: { maxTicksLimit: 8, font: { size: 10 } }, grid: { display: false } },
+              y: { beginAtZero: true, ticks: { precision: 0, font: { size: 10 } } }
+            }
+          }
+        });
+      };
+
+      makeChart('chart-signups',  'Signups',       '#4f8ef7', data.signups);
+      makeChart('chart-waitlist', 'Waitlist',      '#a78bfa', data.waitlist);
+      makeChart('chart-scans',    'Scans',         '#34d399', data.scans);
+      makeChart('chart-videos',   'Videos Found',  '#f59e0b', data.videos_found);
+
+      // Top sites table
+      const tbody = document.getElementById('analytics-top-sites-body');
+      if (tbody) {
+        tbody.innerHTML = (data.top_sites || []).map((s, i) => `
+          <tr style="border-bottom:1px solid var(--border);">
+            <td style="padding:.35rem .6rem;color:var(--text-muted)">${i + 1}</td>
+            <td style="padding:.35rem .6rem;max-width:220px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${s.url}</td>
+            <td style="padding:.35rem .6rem;text-align:right;">${s.scans ?? 0}</td>
+            <td style="padding:.35rem .6rem;text-align:right;">${s.added ?? 0}</td>
+          </tr>`).join('') || '<tr><td colspan="4" style="padding:.6rem;color:var(--text-muted);text-align:center;">No data yet</td></tr>';
+      }
+    }
+
     let _billingUsers = [];
 
     async function loadPayments() {
@@ -1636,6 +1752,8 @@
         await Promise.allSettled([loadDuplicates(), loadAllSites(), loadUserStats(), loadAuditLog()]);
         document.getElementById('btn-audit-refresh')?.addEventListener('click', () => loadAuditLog(_auditOffset));
         document.querySelector('.navbtn[data-target="payments"]')?.addEventListener('click', loadPayments);
+        document.querySelector('.navbtn[data-target="analytics"]')?.addEventListener('click', loadAnalytics);
+        document.getElementById('analytics-range')?.addEventListener('change', loadAnalytics);
       } else {
         document.querySelector('.navbtn[data-target="duplicates"]')?.remove();
         document.getElementById('duplicates')?.remove();
@@ -1649,6 +1767,8 @@
         document.getElementById('audit')?.remove();
         document.getElementById('navbtn-payments')?.remove();
         document.getElementById('payments')?.remove();
+        document.getElementById('navbtn-analytics')?.remove();
+        document.getElementById('analytics')?.remove();
       }
       // Auto-open pane from URL ?tab=
       const _tab = new URLSearchParams(window.location.search).get('tab');
@@ -1657,8 +1777,10 @@
         // Trigger load callbacks for panes that need it
         if (_tab === 'account') { loadAccount(); loadTokens(); }
         if (_tab === 'payments') loadPayments?.();
+        if (_tab === 'analytics') loadAnalytics?.();
       }
     })();
   </script>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.3/dist/chart.umd.min.js"></script>
 </body>
 </html>

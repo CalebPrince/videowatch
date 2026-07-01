@@ -3091,6 +3091,73 @@ setInterval(()=>fetch(location.href+'?lines={lines}').then(r=>r.text()).then(h=>
 </script></body></html>""")
 
 
+@router.get("/api/admin/analytics")
+def admin_analytics(request: Request, days: int = Query(30, ge=7, le=365)):
+    if not is_super_admin(request):
+        raise HTTPException(403, "Super admin only")
+    with get_db() as db:
+        # Generate date series for the last N days
+        from datetime import timedelta
+        today = datetime.now(timezone.utc).date()
+        date_list = [(today - timedelta(days=i)).isoformat() for i in range(days - 1, -1, -1)]
+
+        # Signups per day
+        signup_rows = db.execute(
+            "SELECT DATE(created_at) as d, COUNT(*) as c FROM users "
+            "WHERE created_at >= ? GROUP BY d",
+            ((today - timedelta(days=days)).isoformat(),)
+        ).fetchall()
+        signup_map = {r["d"]: r["c"] for r in signup_rows}
+
+        # Scans per day
+        scan_rows = db.execute(
+            "SELECT DATE(scanned_at) as d, COUNT(*) as scans, "
+            "SUM(found) as found, SUM(added) as added FROM scan_log "
+            "WHERE scanned_at >= ? GROUP BY d",
+            ((today - timedelta(days=days)).isoformat(),)
+        ).fetchall()
+        scan_map  = {r["d"]: r["scans"] for r in scan_rows}
+        found_map = {r["d"]: r["found"] or 0 for r in scan_rows}
+        added_map = {r["d"]: r["added"] or 0 for r in scan_rows}
+
+        # Cumulative totals
+        total_users  = db.execute("SELECT COUNT(*) FROM users").fetchone()[0]
+        total_scans  = db.execute("SELECT COUNT(*) FROM scan_log").fetchone()[0]
+        total_videos = db.execute("SELECT COUNT(*) FROM videos").fetchone()[0]
+        total_sites  = db.execute("SELECT COUNT(*) FROM sites").fetchone()[0]
+
+        # Top scanning sites
+        top_sites = db.execute(
+            "SELECT s.name, s.url, COUNT(sl.id) as scan_count, SUM(sl.added) as videos_added "
+            "FROM scan_log sl JOIN sites s ON sl.site_id = s.id "
+            "GROUP BY sl.site_id ORDER BY scan_count DESC LIMIT 10"
+        ).fetchall()
+
+        # Waitlist signups per day
+        waitlist_rows = db.execute(
+            "SELECT DATE(created_at) as d, COUNT(*) as c FROM waitlist "
+            "WHERE created_at >= ? GROUP BY d",
+            ((today - timedelta(days=days)).isoformat(),)
+        ).fetchall()
+        waitlist_map = {r["d"]: r["c"] for r in waitlist_rows}
+
+    return {
+        "dates":         date_list,
+        "signups":       [signup_map.get(d, 0)   for d in date_list],
+        "scans":         [scan_map.get(d, 0)      for d in date_list],
+        "videos_found":  [found_map.get(d, 0)     for d in date_list],
+        "videos_added":  [added_map.get(d, 0)     for d in date_list],
+        "waitlist":      [waitlist_map.get(d, 0)  for d in date_list],
+        "totals": {
+            "users":  total_users,
+            "scans":  total_scans,
+            "videos": total_videos,
+            "sites":  total_sites,
+        },
+        "top_sites": [dict(r) for r in top_sites],
+    }
+
+
 @router.post("/api/waitlist")
 def join_waitlist(request: Request, body: dict):
     _check_rate_limit(_client_ip(request), max_attempts=5, window_seconds=3600)
