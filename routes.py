@@ -1,5 +1,7 @@
 import os
 import sys
+import csv
+import io
 import json
 import hashlib
 import base64
@@ -2500,6 +2502,54 @@ def set_video_note(video_id: str, request: Request, body: dict):
             db.execute("UPDATE videos SET note=? WHERE id=?", (note, video_id))
             db.commit()
     return {"ok": True, "note": note}
+
+
+@router.get("/api/videos/export.csv")
+def export_videos_csv(request: Request):
+    if not is_authenticated(request):
+        raise HTTPException(401)
+    owner = current_user(request)
+    with get_db() as db:
+        rows = db.execute(
+            """
+            SELECT v.id, v.title, v.url, v.platform, v.duration, v.found_at, v.released_at,
+                   v.cast_names, v.is_new, v.is_favorite, v.is_archived, v.is_ignored,
+                   v.is_watched, v.last_watched_at, v.note, s.name AS site_name, s.url AS site_url
+            FROM videos v
+            JOIN sites s ON v.site_id = s.id
+            WHERE s.owner = ?
+            ORDER BY v.found_at DESC
+            """,
+            (owner,),
+        ).fetchall()
+
+    def generate():
+        buf = io.StringIO()
+        writer = csv.writer(buf)
+        writer.writerow([
+            "id", "title", "url", "platform", "duration_sec",
+            "found_at", "released_at", "cast", "is_new", "is_favorite",
+            "is_archived", "is_ignored", "is_watched", "last_watched_at",
+            "note", "site_name", "site_url",
+        ])
+        yield buf.getvalue(); buf.seek(0); buf.truncate()
+        for r in rows:
+            writer.writerow([
+                r["id"], r["title"] or "", r["url"], r["platform"] or "",
+                r["duration"] or "", r["found_at"], r["released_at"] or "",
+                r["cast_names"] or "", int(r["is_new"] or 0), int(r["is_favorite"] or 0),
+                int(r["is_archived"] or 0), int(r["is_ignored"] or 0),
+                int(r["is_watched"] or 0), r["last_watched_at"] or "",
+                r["note"] or "", r["site_name"] or "", r["site_url"],
+            ])
+            yield buf.getvalue(); buf.seek(0); buf.truncate()
+
+    filename = f"videowatch-export-{datetime.now(timezone.utc).strftime('%Y%m%d')}.csv"
+    return StreamingResponse(
+        generate(),
+        media_type="text/csv",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
 
 
 @router.get("/api/videos/duplicates")
