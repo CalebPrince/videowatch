@@ -569,9 +569,12 @@
       #topbar-collapsible {
         display: none;
         width: 100%;
+        flex-wrap: wrap;
+        gap: .5rem;
+        padding-top: .4rem;
       }
       #topbar-collapsible.topbar-expanded {
-        display: contents;
+        display: flex;
       }
       #btn-topbar-expand {
         display: inline-flex !important;
