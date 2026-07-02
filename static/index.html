@@ -1051,9 +1051,14 @@
 
           <!-- Tab 2: Discover by keyword -->
           <div class="tab-pane fade" id="tab-discover" role="tabpanel">
-            <label class="form-label" style="font-size:.85rem;">Search keywords</label>
+
+            <!-- Popular platforms -->
+            <div style="font-size:.78rem;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;margin-bottom:.5rem;">Popular platforms</div>
+            <div id="popular-sites-grid" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(110px,1fr));gap:.5rem;margin-bottom:1.25rem;"></div>
+
+            <div style="font-size:.78rem;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;margin-bottom:.5rem;">Or search by keyword</div>
             <div class="input-group mb-3">
-              <input type="text" id="inp-discover-q" class="form-control" placeholder="e.g. cooking tutorials, news clips, sports highlights…" />
+              <input type="text" id="inp-discover-q" class="form-control" placeholder="e.g. cooking tutorials, news clips…" />
               <button class="btn btn-outline-secondary" type="button" id="btn-discover">
                 <i class="bi bi-search me-1"></i>Search
               </button>
@@ -3461,6 +3466,52 @@ function selectDiscoveredSite(url, title) {
 
   setTimeout(() => document.getElementById('btn-preview').click(), 200);
 }
+
+// ── Popular platform tiles ─────────────────────────────────────────────────
+const POPULAR_SITES = [
+  { name: 'YouTube',     domain: 'youtube.com',      placeholder: 'https://www.youtube.com/@channelname',        hint: 'Paste a channel or playlist URL' },
+  { name: 'Vimeo',       domain: 'vimeo.com',         placeholder: 'https://vimeo.com/channels/staffpicks',       hint: 'Paste a channel or user URL' },
+  { name: 'Dailymotion', domain: 'dailymotion.com',   placeholder: 'https://www.dailymotion.com/channel/...',     hint: 'Paste a channel URL' },
+  { name: 'Twitch',      domain: 'twitch.tv',         placeholder: 'https://www.twitch.tv/channelname/videos',    hint: 'Paste a channel videos URL' },
+  { name: 'Rumble',      domain: 'rumble.com',        placeholder: 'https://rumble.com/c/channelname',            hint: 'Paste a channel URL' },
+  { name: 'Odysee',      domain: 'odysee.com',        placeholder: 'https://odysee.com/@channelname',             hint: 'Paste a channel URL' },
+  { name: 'VK Video',    domain: 'vkvideo.ru',        placeholder: 'https://vkvideo.ru/@public...',               hint: 'Paste a VK Video page URL' },
+  { name: 'TikTok',      domain: 'tiktok.com',        placeholder: 'https://www.tiktok.com/@username',            hint: 'Paste a user profile URL' },
+  { name: 'Bilibili',    domain: 'bilibili.com',      placeholder: 'https://www.bilibili.com/video/...',          hint: 'Paste a channel or video list URL' },
+  { name: 'Peertube',    domain: 'peertube.tv',       placeholder: 'https://peertube.tv/c/channelname/videos',    hint: 'Paste a PeerTube channel URL' },
+  { name: 'Bitchute',    domain: 'bitchute.com',      placeholder: 'https://www.bitchute.com/channel/...',        hint: 'Paste a channel URL' },
+  { name: 'Kick',        domain: 'kick.com',          placeholder: 'https://kick.com/channelname/videos',         hint: 'Paste a channel videos URL' },
+];
+
+(function renderPopularSites() {
+  const grid = document.getElementById('popular-sites-grid');
+  if (!grid) return;
+  grid.innerHTML = POPULAR_SITES.map((s, i) => `
+    <button type="button" data-idx="${i}" class="popular-site-tile"
+      style="display:flex;flex-direction:column;align-items:center;gap:.4rem;padding:.6rem .4rem;
+             border:1px solid var(--border);border-radius:10px;background:var(--card-bg);
+             cursor:pointer;transition:background .15s,border-color .15s;font-size:.75rem;
+             font-weight:600;color:var(--ink);text-align:center;line-height:1.2;">
+      <img src="https://www.google.com/s2/favicons?domain=${s.domain}&sz=32"
+           width="24" height="24" style="border-radius:4px;"
+           onerror="this.style.display='none'">
+      <span>${s.name}</span>
+    </button>`).join('');
+
+  grid.querySelectorAll('.popular-site-tile').forEach(el => {
+    const s = POPULAR_SITES[parseInt(el.dataset.idx, 10)];
+    el.addEventListener('mouseenter', () => { el.style.background = 'var(--surface-soft)'; el.style.borderColor = 'var(--brand)'; });
+    el.addEventListener('mouseleave', () => { el.style.background = 'var(--card-bg)'; el.style.borderColor = 'var(--border)'; });
+    el.addEventListener('click', () => {
+      document.getElementById('tab-url-btn').click();
+      const urlInp = document.getElementById('inp-url');
+      urlInp.value = s.placeholder;
+      urlInp.placeholder = s.hint;
+      urlInp.focus();
+      urlInp.select();
+    });
+  });
+})();
 
 document.getElementById('btn-discover').onclick = async () => {
   const q = document.getElementById('inp-discover-q').value.trim();
