@@ -1861,7 +1861,10 @@ async def google_callback(request: Request, code: str = "", state: str = "", err
         datetime.now(timezone.utc) + timedelta(days=30)
     ).isoformat()
     _audit(request, "google_login", f"email={email}")
-    return RedirectResponse("/?google=1")
+    return HTMLResponse("""<!DOCTYPE html><html><head>
+<meta http-equiv="refresh" content="0;url=/" />
+<script>window.location.replace('/');</script>
+</head><body>Signing you in…</body></html>""")
 
 
 @router.get("/api/auth/google/config")
