@@ -356,6 +356,15 @@ def detect_platform(url: str):
             last_seg = path_segments[-1]
             if re.search(r'[a-zA-Z]{3,}', last_seg) and last_seg not in LISTING_SEGMENTS:
                 return ("direct", url, None, None)
+    elif len(path_segments) == 1:
+        # Bare slug like /video-title-abc123/ — only accept if it looks like a
+        # content slug: has at least one hyphen/digit AND letters, and is not a
+        # plain listing or nav keyword.
+        seg = path_segments[0].lower()
+        if (seg not in LISTING_SEGMENTS and seg.rstrip('s') not in LISTING_SEGMENTS
+                and re.search(r'[a-zA-Z]{3,}', seg)
+                and (re.search(r'\d', seg) or '-' in seg)):
+            return ("direct", url, None, None)
 
     if "/channels/" in url_lower:
         return ("direct", url, None, None)
@@ -1136,6 +1145,30 @@ def scrape_videos(html: str, base_url: str) -> list[dict]:
                          or img.get("data-src-large"))
             release_hint = infer_release_from_tag(tag)
             add(href, title=title_text, thumb=thumb, released_at=release_hint)
+        else:
+            # Fallback: links with a thumbnail image are likely video cards even
+            # when the URL path has no recognisable keyword (e.g. /slug-abc123/).
+            # Let detect_platform decide; it now handles 1–2 segment paths too.
+            img = tag.select_one("img[src], img[data-src], img[data-lazy-src]")
+            if img:
+                title_text = (
+                    tag.get("title") or tag.get("aria-label") or tag.get("data-title") or ""
+                ).strip()
+                if not title_text:
+                    for sel in ["[class*='title']", "[class*='name']", "h3", "h4", "h5", "span"]:
+                        el = tag.select_one(sel)
+                        if el:
+                            t = el.get_text(strip=True)
+                            if t and len(t) > 4 and re.search(r'[a-zA-Z]{3,}', t):
+                                title_text = t
+                                break
+                title_text = normalize_title(title_text.strip()[:200])
+                thumb = (
+                    img.get("src") or img.get("data-src") or
+                    img.get("data-lazy-src") or img.get("data-original")
+                )
+                release_hint = infer_release_from_tag(tag)
+                add(href, title=title_text or None, thumb=thumb, released_at=release_hint)
 
     # 4. Deep-scan JSON
     for script_tag in soup.find_all("script", type="application/json"):
