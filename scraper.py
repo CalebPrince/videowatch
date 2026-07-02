@@ -348,6 +348,14 @@ def detect_platform(url: str):
         last_seg = path_segments[-1]
         if re.search(r'[a-zA-Z]{3,}', last_seg) and last_seg not in LISTING_SEGMENTS:
             return ("direct", url, None, None)
+    elif len(path_segments) == 2:
+        # e.g. /abc123/video-title/ is a video; /tags/other-tag/ is still a listing
+        first_seg = path_segments[0].lower()
+        first_root = first_seg.rstrip('s')  # normalise plural
+        if first_seg not in LISTING_SEGMENTS and first_root not in LISTING_SEGMENTS:
+            last_seg = path_segments[-1]
+            if re.search(r'[a-zA-Z]{3,}', last_seg) and last_seg not in LISTING_SEGMENTS:
+                return ("direct", url, None, None)
 
     if "/channels/" in url_lower:
         return ("direct", url, None, None)
