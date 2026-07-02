@@ -1217,6 +1217,9 @@
       </div>
       <div class="modal-footer border-0 pt-0">
         <button class="btn btn-sm btn-outline-secondary" data-bs-dismiss="modal">Close</button>
+        <button class="btn btn-sm btn-outline-secondary" id="btn-player-download" style="display:none">
+          <i class="bi bi-download me-1"></i>Download
+        </button>
         <button class="btn btn-sm btn-brand" id="btn-player-open-external">
           <i class="bi bi-box-arrow-up-right me-1"></i>Open in new tab
         </button>
@@ -1859,6 +1862,12 @@ async function openVideoInline(video) {
   resetInlinePlayer();
   if (titleEl) titleEl.textContent = video.title || 'Play video';
   btnExternal.onclick = () => openVideoInNewTab(video);
+
+  const dlBtn = document.getElementById('btn-player-download');
+  if (dlBtn) {
+    dlBtn.style.display = '';
+    dlBtn.onclick = () => startDownload(video.id, video.title || video.url);
+  }
 
   const embedUrl = normalizeVideoUrl(video.embed_url || '');
   const directUrl = normalizeVideoUrl(video.url || '');
