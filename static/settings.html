@@ -2,6 +2,13 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
+  <link rel="manifest" href="/static/manifest.json" />
+  <meta name="theme-color" content="#0f766e" />
+  <meta name="mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <meta name="apple-mobile-web-app-title" content="VideoWatch" />
+  <link rel="apple-touch-icon" href="/api/pwa/icon?size=192" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>VideoWatch Settings</title>
   <meta name="description" content="Manage your VideoWatch account, sites, notifications and preferences." />
@@ -1912,6 +1919,7 @@
           <i class="bi bi-collection" style="color:var(--brand);flex-shrink:0;"></i>
           <span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${c.name}</span>
           <span style="font-size:.7rem;color:var(--text-muted);">${c.video_count}</span>
+          <button class="btn-icon" title="Share link" onclick="event.stopPropagation();shareCollection('${c.id}')"><i class="bi bi-share${c.share_token ? '-fill' : ''}" style="${c.share_token ? 'color:var(--brand);' : ''}"></i></button>
           <button class="btn-icon" title="Rename" onclick="event.stopPropagation();renameCollection('${c.id}','${c.name.replace(/'/g,"\\'")}')"><i class="bi bi-pencil"></i></button>
           <button class="btn-icon" title="Delete" onclick="event.stopPropagation();deleteCollection('${c.id}')"><i class="bi bi-trash"></i></button>
         </div>`).join('') : '<div style="padding:.75rem;font-size:.78rem;color:var(--text-muted);">No collections yet.</div>';
@@ -1942,6 +1950,61 @@
           </div>
         </div>`;
       }).join('') : '<div style="color:var(--text-muted);font-size:.8rem;">No videos in this collection.</div>';
+    }
+
+    async function shareCollection(id) {
+      const col = _collections.find(c => c.id === id);
+      if (!col) return;
+      const hasLink = !!col.share_token;
+      const shareUrl = hasLink ? `${location.origin}/shared/collection/${col.share_token}` : null;
+
+      const ov = document.createElement('div');
+      ov.style.cssText = 'position:fixed;inset:0;z-index:3000;background:rgba(0,0,0,.5);display:flex;align-items:center;justify-content:center;';
+      const box = document.createElement('div');
+      box.style.cssText = 'background:var(--card-bg,#fff);border-radius:14px;padding:1.25rem 1.5rem;min-width:320px;max-width:420px;width:90%;color:var(--text);box-shadow:0 24px 60px rgba(0,0,0,.3);';
+      box.innerHTML = `
+        <div style="font-weight:700;font-size:.95rem;margin-bottom:.9rem;"><i class="bi bi-share me-2" style="color:var(--brand)"></i>Share "${col.name}"</div>
+        <div id="share-body">
+          ${hasLink ? `
+            <div style="font-size:.82rem;color:var(--text-muted);margin-bottom:.5rem;">Anyone with this link can view this collection:</div>
+            <div style="display:flex;gap:.4rem;margin-bottom:.75rem;">
+              <input id="share-url-inp" type="text" readonly value="${shareUrl}" style="flex:1;font-size:.78rem;padding:.3rem .5rem;border:1px solid var(--border);border-radius:6px;background:var(--input-bg,#f8fafc);color:var(--text);" />
+              <button class="btn btn-sm btn-outline-secondary" onclick="navigator.clipboard.writeText('${shareUrl}');showToast('Link copied!','success')"><i class="bi bi-clipboard"></i></button>
+            </div>
+            <button class="btn btn-sm btn-outline-danger" id="share-revoke-btn">Revoke link</button>
+          ` : `
+            <div style="font-size:.82rem;color:var(--text-muted);margin-bottom:.9rem;">Generate a public link anyone can use to view this collection — no login required.</div>
+            <button class="btn btn-sm btn-primary" id="share-generate-btn"><i class="bi bi-link-45deg me-1"></i>Generate share link</button>
+          `}
+        </div>
+        <div style="text-align:right;margin-top:1rem;">
+          <button class="btn btn-sm btn-outline-secondary" onclick="this.closest('[style*=fixed]').remove()">Close</button>
+        </div>`;
+      ov.appendChild(box);
+      document.body.appendChild(ov);
+      ov.addEventListener('click', e => { if (e.target === ov) ov.remove(); });
+
+      box.querySelector('#share-generate-btn')?.addEventListener('click', async () => {
+        const res = await api(`/collections/${id}/share`, { method: 'POST' });
+        col.share_token = res.token;
+        const url = `${location.origin}${res.url}`;
+        box.querySelector('#share-body').innerHTML = `
+          <div style="font-size:.82rem;color:var(--text-muted);margin-bottom:.5rem;">Anyone with this link can view this collection:</div>
+          <div style="display:flex;gap:.4rem;margin-bottom:.75rem;">
+            <input type="text" readonly value="${url}" style="flex:1;font-size:.78rem;padding:.3rem .5rem;border:1px solid var(--border);border-radius:6px;background:var(--input-bg,#f8fafc);color:var(--text);" />
+            <button class="btn btn-sm btn-outline-secondary" onclick="navigator.clipboard.writeText('${url}');showToast('Link copied!','success')"><i class="bi bi-clipboard"></i></button>
+          </div>`;
+        loadCollections();
+      });
+
+      box.querySelector('#share-revoke-btn')?.addEventListener('click', async () => {
+        if (!confirm('Revoke the share link? Anyone with the old link will lose access.')) return;
+        await api(`/collections/${id}/share`, { method: 'DELETE' });
+        col.share_token = null;
+        ov.remove();
+        loadCollections();
+        showToast('Share link revoked', 'info');
+      });
     }
 
     async function renameCollection(id, currentName) {

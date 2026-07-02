@@ -1,0 +1,97 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <link rel="manifest" href="/static/manifest.json" />
+  <meta name="theme-color" content="#0f766e" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Shared Collection — VideoWatch</title>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css" />
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: system-ui, sans-serif; background: #0f0f1a; color: #e2e8f0; min-height: 100vh; }
+    .header { background: rgba(15,118,110,.12); border-bottom: 1px solid rgba(15,118,110,.25); padding: 1rem 1.5rem; display: flex; align-items: center; gap: .75rem; }
+    .brand { font-weight: 800; font-size: 1.1rem; color: #5eead4; }
+    .container { max-width: 1100px; margin: 0 auto; padding: 2rem 1.25rem; }
+    h1 { font-size: 1.5rem; font-weight: 800; margin-bottom: .25rem; }
+    .meta { font-size: .82rem; color: #64748b; margin-bottom: 1.5rem; }
+    .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: .85rem; }
+    .card { background: #1a1a2e; border-radius: 10px; overflow: hidden; text-decoration: none; color: inherit; transition: transform .15s; display: block; }
+    .card:hover { transform: translateY(-3px); }
+    .thumb { aspect-ratio: 16/9; background: #0d0d1a; position: relative; overflow: hidden; }
+    .thumb img { width: 100%; height: 100%; object-fit: cover; }
+    .thumb .no-thumb { display: flex; align-items: center; justify-content: center; height: 100%; color: #334155; font-size: 2rem; }
+    .dur { position: absolute; bottom: 4px; right: 6px; background: rgba(0,0,0,.75); color: #fff; font-size: .68rem; padding: 1px 5px; border-radius: 4px; }
+    .info { padding: .5rem .6rem; }
+    .title { font-size: .8rem; font-weight: 600; line-height: 1.35; overflow: hidden; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; margin-bottom: .2rem; }
+    .site { font-size: .7rem; color: #64748b; }
+    .empty { text-align: center; padding: 4rem 1rem; color: #475569; }
+    .error { text-align: center; padding: 4rem 1rem; }
+    .error i { font-size: 3rem; color: #f87171; display: block; margin-bottom: .75rem; }
+  </style>
+</head>
+<body>
+  <div class="header">
+    <i class="bi bi-collection-play" style="font-size:1.3rem;color:#5eead4;"></i>
+    <span class="brand">VideoWatch</span>
+    <span style="font-size:.78rem;color:#64748b;margin-left:auto;">Shared Collection</span>
+  </div>
+  <div class="container">
+    <div id="root"><div class="empty"><i class="bi bi-hourglass-split" style="font-size:2rem;display:block;margin-bottom:.5rem;"></i>Loading…</div></div>
+  </div>
+  <script>
+    const token = location.pathname.split('/').pop();
+    const API = `${location.origin}/api`;
+
+    function fmtDur(sec) {
+      if (!sec) return '';
+      const h = Math.floor(sec / 3600), m = Math.floor((sec % 3600) / 60), s = sec % 60;
+      return h ? `${h}:${String(m).padStart(2,'0')}:${String(s).padStart(2,'0')}` : `${m}:${String(s).padStart(2,'0')}`;
+    }
+
+    async function load() {
+      const root = document.getElementById('root');
+      try {
+        const r = await fetch(`${API}/shared/collection/${token}`);
+        if (!r.ok) throw new Error(r.status === 404 ? 'This collection link is invalid or has been revoked.' : 'Failed to load collection.');
+        const data = await r.json();
+        document.title = `${data.name} — VideoWatch`;
+
+        root.innerHTML = `
+          <h1><i class="bi bi-collection-play me-2" style="color:#5eead4;"></i>${data.name}</h1>
+          <div class="meta">${data.video_count} video${data.video_count !== 1 ? 's' : ''}${data.description ? ' · ' + data.description : ''}</div>
+          <div class="grid" id="grid"></div>`;
+
+        if (!data.videos.length) {
+          document.getElementById('grid').innerHTML = '<div class="empty" style="grid-column:1/-1;"><i class="bi bi-camera-video" style="font-size:2rem;display:block;margin-bottom:.5rem;"></i>No videos in this collection yet.</div>';
+          return;
+        }
+
+        const grid = document.getElementById('grid');
+        data.videos.forEach(v => {
+          const a = document.createElement('a');
+          a.className = 'card';
+          a.href = v.url;
+          a.target = '_blank';
+          a.rel = 'noopener';
+          const dur = fmtDur(v.duration);
+          a.innerHTML = `
+            <div class="thumb">
+              ${v.thumb ? `<img src="${v.thumb}" loading="lazy" alt="">` : '<div class="no-thumb"><i class="bi bi-camera-video"></i></div>'}
+              ${dur ? `<span class="dur">${dur}</span>` : ''}
+            </div>
+            <div class="info">
+              <div class="title">${v.title || 'Untitled'}</div>
+              <div class="site">${new URL(v.url).hostname.replace('www.','')}</div>
+            </div>`;
+          grid.appendChild(a);
+        });
+      } catch (err) {
+        root.innerHTML = `<div class="error"><i class="bi bi-exclamation-circle"></i>${err.message}</div>`;
+      }
+    }
+
+    load();
+  </script>
+</body>
+</html>

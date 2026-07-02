@@ -2,6 +2,13 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
+  <link rel="manifest" href="/static/manifest.json" />
+  <meta name="theme-color" content="#0f766e" />
+  <meta name="mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <meta name="apple-mobile-web-app-title" content="VideoWatch" />
+  <link rel="apple-touch-icon" href="/api/pwa/icon?size=192" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>VideoWatch</title>
   <meta name="description" content="Your VideoWatch dashboard — browse, search and manage all monitored videos across your tracked sites." />
@@ -890,6 +897,7 @@
       <button class="btn btn-sm btn-outline-secondary" onclick="bulkAction('ignore')"><i class="bi bi-eye-slash me-1"></i>Ignore</button>
       <button class="btn btn-sm btn-outline-secondary" onclick="selectAllVideos()"><i class="bi bi-check-all me-1"></i>Select all</button>
       <button class="btn btn-sm btn-outline-secondary" onclick="bulkAddToCollection()"><i class="bi bi-collection me-1"></i>Add to collection</button>
+      <button class="btn btn-sm btn-outline-secondary" onclick="bulkTag()"><i class="bi bi-tag me-1"></i>Tag</button>
       <button class="btn btn-sm btn-outline-danger ms-auto" onclick="clearBulkSelection()"><i class="bi bi-x-lg me-1"></i>Cancel</button>
     </div>
 
@@ -1901,8 +1909,18 @@ function renderTagChips(wrap, videoId, tags) {
 }
 
 let _tagPopover = null;
+let _allUserTags = null; // cached tag list for auto-suggest
+
+async function _loadUserTags() {
+  if (_allUserTags) return _allUserTags;
+  try {
+    const rows = await api('/tags');
+    _allUserTags = rows.map(r => r.tag);
+  } catch (_) { _allUserTags = []; }
+  return _allUserTags;
+}
+
 function openTagPopover(anchor, v) {
-  // Close existing popover
   if (_tagPopover) { _tagPopover.remove(); _tagPopover = null; }
 
   const pop = document.createElement('div');
@@ -1917,9 +1935,35 @@ function openTagPopover(anchor, v) {
   inp.maxLength = 40;
   pop.appendChild(inp);
 
+  // Suggestions dropdown
+  const sugg = document.createElement('div');
+  sugg.style.cssText = 'display:none;margin-top:.3rem;display:flex;flex-wrap:wrap;gap:3px;';
+  pop.appendChild(sugg);
+
   const list = document.createElement('div');
   list.className = 'tag-popover-list';
   pop.appendChild(list);
+
+  async function showSuggestions(query) {
+    const all = await _loadUserTags();
+    const q = query.trim().toLowerCase();
+    const matches = all.filter(t => !existingTags.includes(t) && (q === '' || t.includes(q))).slice(0, 8);
+    sugg.innerHTML = '';
+    if (matches.length === 0) { sugg.style.display = 'none'; return; }
+    sugg.style.display = 'flex';
+    const label = document.createElement('div');
+    label.style.cssText = 'width:100%;font-size:.7rem;color:var(--muted);margin-bottom:2px;';
+    label.textContent = q ? 'Suggestions' : 'Your tags';
+    sugg.appendChild(label);
+    matches.forEach(tag => {
+      const chip = document.createElement('span');
+      chip.className = 'tag-chip';
+      chip.textContent = tag;
+      chip.style.cursor = 'pointer';
+      chip.onclick = (e) => { e.stopPropagation(); inp.value = tag; addTag(tag); };
+      sugg.appendChild(chip);
+    });
+  }
 
   function refreshList(tags) {
     list.innerHTML = '';
@@ -1947,30 +1991,38 @@ function openTagPopover(anchor, v) {
   }
   refreshList(existingTags);
 
-  inp.addEventListener('keydown', async (e) => {
-    if (e.key !== 'Enter') return;
-    const tag = inp.value.trim().toLowerCase();
+  async function addTag(tag) {
+    tag = tag.trim().toLowerCase();
     if (!tag || existingTags.includes(tag)) { inp.value = ''; return; }
     try {
       await api(`/videos/${encodeURIComponent(v.id)}/tags`, { method: 'POST', body: JSON.stringify({ tag }) });
       existingTags.push(tag);
+      if (_allUserTags && !_allUserTags.includes(tag)) _allUserTags.push(tag);
       v.tags = [...existingTags];
       refreshList(existingTags);
       const chipsWrap = document.getElementById(`tags-${v.id}`);
       if (chipsWrap) renderTagChips(chipsWrap, v.id, existingTags);
       inp.value = '';
+      sugg.innerHTML = ''; sugg.style.display = 'none';
       renderAll();
     } catch (err) { inp.style.borderColor = 'red'; setTimeout(() => inp.style.borderColor = '', 1000); }
+  }
+
+  inp.addEventListener('input', () => showSuggestions(inp.value));
+  inp.addEventListener('focus', () => showSuggestions(inp.value));
+  inp.addEventListener('keydown', async (e) => {
+    if (e.key === 'Enter') { e.preventDefault(); await addTag(inp.value); }
   });
 
-  // Position below anchor
+  // Show suggestions immediately on open
+  showSuggestions('');
+
   document.body.appendChild(pop);
   const rect = anchor.getBoundingClientRect();
   pop.style.top  = `${rect.bottom + window.scrollY + 4}px`;
   pop.style.left = `${Math.min(rect.left + window.scrollX, window.innerWidth - 230)}px`;
   inp.focus();
 
-  // Close on outside click
   setTimeout(() => {
     document.addEventListener('click', function handler(e) {
       if (!pop.contains(e.target)) { pop.remove(); _tagPopover = null; document.removeEventListener('click', handler); }
@@ -2182,6 +2234,109 @@ async function bulkAddToCollection() {
     ov.remove();
     showToast(`Added to ${added} collection${added>1?'s':''}`, 'success');
     clearBulkSelection();
+  });
+}
+
+async function bulkTag() {
+  const ids = getCheckedVideoIds();
+  if (!ids.length) return;
+
+  const allTags = await _loadUserTags();
+
+  const ov = document.createElement('div');
+  ov.style.cssText = 'position:fixed;inset:0;z-index:3000;background:rgba(0,0,0,.6);display:flex;align-items:center;justify-content:center;';
+  const box = document.createElement('div');
+  box.style.cssText = 'background:var(--card-bg,#fff);border-radius:14px;padding:1.25rem 1.5rem;min-width:300px;max-width:380px;color:var(--text,#1e293b);box-shadow:0 24px 60px rgba(0,0,0,.3);';
+
+  const inp = document.createElement('input');
+  inp.type = 'text';
+  inp.placeholder = 'Type a tag and press Enter…';
+  inp.maxLength = 40;
+  inp.style.cssText = 'width:100%;border:1px solid var(--border);border-radius:6px;padding:.35rem .6rem;font-size:.85rem;background:var(--card-bg);color:var(--text);outline:none;margin-bottom:.5rem;';
+
+  const pending = new Set();
+  const pendingWrap = document.createElement('div');
+  pendingWrap.style.cssText = 'display:flex;flex-wrap:wrap;gap:4px;min-height:24px;margin-bottom:.5rem;';
+
+  const sugg = document.createElement('div');
+  sugg.style.cssText = 'display:flex;flex-wrap:wrap;gap:4px;margin-bottom:.75rem;';
+
+  function renderPending() {
+    pendingWrap.innerHTML = '';
+    pending.forEach(t => {
+      const chip = document.createElement('span');
+      chip.className = 'tag-chip';
+      chip.style.cursor = 'pointer';
+      chip.title = 'Click to remove';
+      chip.textContent = t + ' ×';
+      chip.onclick = () => { pending.delete(t); renderPending(); renderSugg(inp.value); };
+      pendingWrap.appendChild(chip);
+    });
+  }
+
+  function renderSugg(q) {
+    sugg.innerHTML = '';
+    const matches = allTags.filter(t => !pending.has(t) && (q === '' || t.includes(q.toLowerCase()))).slice(0, 10);
+    if (!matches.length) return;
+    const lbl = document.createElement('span');
+    lbl.style.cssText = 'font-size:.7rem;color:var(--muted);width:100%;';
+    lbl.textContent = q ? 'Suggestions' : 'Your tags';
+    sugg.appendChild(lbl);
+    matches.forEach(t => {
+      const chip = document.createElement('span');
+      chip.className = 'tag-chip';
+      chip.style.cursor = 'pointer';
+      chip.textContent = t;
+      chip.onclick = () => { pending.add(t); inp.value = ''; renderPending(); renderSugg(''); };
+      sugg.appendChild(chip);
+    });
+  }
+
+  inp.addEventListener('input', () => renderSugg(inp.value));
+  inp.addEventListener('keydown', e => {
+    if (e.key !== 'Enter') return;
+    const t = inp.value.trim().toLowerCase();
+    if (t) { pending.add(t); inp.value = ''; renderPending(); renderSugg(''); }
+  });
+
+  const hdr = document.createElement('div');
+  hdr.style.cssText = 'font-weight:700;font-size:.95rem;margin-bottom:.75rem;';
+  hdr.innerHTML = `<i class="bi bi-tag me-2" style="color:var(--brand)"></i>Tag ${ids.length} video${ids.length > 1 ? 's' : ''}`;
+
+  const btns = document.createElement('div');
+  btns.style.cssText = 'display:flex;gap:.5rem;margin-top:.25rem;';
+  btns.innerHTML = `<button id="bulk-tag-confirm" class="btn btn-sm btn-primary" style="flex:1;">Apply</button>
+    <button class="btn btn-sm btn-outline-secondary" style="flex:1;">Cancel</button>`;
+  btns.querySelector('.btn-outline-secondary').onclick = () => ov.remove();
+
+  box.appendChild(hdr);
+  box.appendChild(inp);
+  box.appendChild(pendingWrap);
+  box.appendChild(sugg);
+  box.appendChild(btns);
+  ov.appendChild(box);
+  document.body.appendChild(ov);
+  ov.addEventListener('click', e => { if (e.target === ov) ov.remove(); });
+
+  renderSugg('');
+
+  box.querySelector('#bulk-tag-confirm').addEventListener('click', async () => {
+    const t = inp.value.trim().toLowerCase();
+    if (t) pending.add(t);
+    if (!pending.size) { ov.remove(); return; }
+    const tags = [...pending];
+    let done = 0;
+    await Promise.all(ids.map(async vid => {
+      for (const tag of tags) {
+        await api(`/videos/${encodeURIComponent(vid)}/tags`, { method: 'POST', body: JSON.stringify({ tag }) }).catch(() => {});
+      }
+      done++;
+    }));
+    ov.remove();
+    _allUserTags = null; // invalidate cache
+    showToast(`Tagged ${done} video${done > 1 ? 's' : ''} with ${tags.length} tag${tags.length > 1 ? 's' : ''}`, 'success');
+    clearBulkSelection();
+    await renderVideos();
   });
 }
 

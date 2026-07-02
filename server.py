@@ -71,7 +71,9 @@ async def auth_gate(request, call_next):
         "/api/waitlist",
         "/api/roadmap",
     }
-    public_pages = {"/", "/login", "/register", "/verify-email", "/forgot-password", "/reset-password", "/terms", "/roadmap", "/sitemap.xml", "/robots.txt", "/og-export", "/googleea1223cfdcbe9db5.html", "/static/login.html", "/favicon.ico"}
+    public_pages = {"/", "/login", "/register", "/verify-email", "/forgot-password", "/reset-password", "/terms", "/roadmap", "/sitemap.xml", "/robots.txt", "/og-export", "/googleea1223cfdcbe9db5.html", "/static/login.html", "/favicon.ico", "/static/manifest.json", "/static/sw.js", "/static/og-image.svg"}
+    if path.startswith("/shared/"):
+        return await call_next(request)
 
     # Expire sessions that have passed their TTL
     expires_at = request.session.get("session_expires_at")
@@ -314,6 +316,14 @@ def roadmap_page():
     if page.exists():
         return FileResponse(str(page))
     raise HTTPException(404, "roadmap.html not found in static/")
+
+
+@app.get("/shared/collection/{token}")
+def shared_collection_page(token: str):
+    page = STATIC_DIR / "shared-collection.html"
+    if page.exists():
+        return FileResponse(str(page))
+    raise HTTPException(404)
 
 
 @app.get("/terms")

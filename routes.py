@@ -3763,6 +3763,56 @@ def remove_from_collection(cid: str, video_id: str, request: Request):
     return {"ok": True}
 
 
+@router.post("/api/collections/{cid}/share")
+def generate_share_link(cid: str, request: Request):
+    """Generate (or return existing) a public share token for a collection."""
+    username = _api_auth(request)
+    with write_lock:
+        with get_db() as db:
+            col = db.execute("SELECT * FROM collections WHERE id=?", (cid,)).fetchone()
+            if not col or col["owner"] != username:
+                raise HTTPException(404)
+            token = col["share_token"]
+            if not token:
+                import secrets
+                token = secrets.token_urlsafe(16)
+                db.execute("UPDATE collections SET share_token=? WHERE id=?", (token, cid))
+                db.commit()
+    return {"token": token, "url": f"/shared/collection/{token}"}
+
+
+@router.delete("/api/collections/{cid}/share")
+def revoke_share_link(cid: str, request: Request):
+    """Revoke the public share link for a collection."""
+    username = _api_auth(request)
+    with write_lock:
+        with get_db() as db:
+            col = db.execute("SELECT owner FROM collections WHERE id=?", (cid,)).fetchone()
+            if not col or col["owner"] != username:
+                raise HTTPException(404)
+            db.execute("UPDATE collections SET share_token=NULL WHERE id=?", (cid,))
+            db.commit()
+    return {"ok": True}
+
+
+@router.get("/api/shared/collection/{token}")
+def public_collection(token: str):
+    """Public endpoint — returns collection info + videos for a share token."""
+    with get_db() as db:
+        col = db.execute("SELECT * FROM collections WHERE share_token=?", (token,)).fetchone()
+        if not col:
+            raise HTTPException(404, "Collection not found or link has been revoked")
+        videos = [dict(r) for r in db.execute(
+            """SELECT v.id, v.title, v.url, v.thumb, v.duration, v.platform, v.released_at
+               FROM videos v
+               JOIN collection_videos cv ON cv.video_id=v.id
+               WHERE cv.collection_id=?
+               ORDER BY cv.added_at DESC""",
+            (col["id"],)
+        ).fetchall()]
+    return {"name": col["name"], "description": col.get("description"), "video_count": len(videos), "videos": videos}
+
+
 @router.get("/api/videos/history")
 def watch_history(request: Request, limit: int = Query(100, ge=1, le=500), offset: int = Query(0, ge=0)):
     """Return videos the current user has marked as watched, newest-watched first."""
@@ -3840,6 +3890,36 @@ def download_backup(filename: str, request: Request):
         raise HTTPException(404, "Backup not found")
     from fastapi.responses import FileResponse as FR
     return FR(str(path), filename=safe, media_type="application/octet-stream")
+
+
+@router.get("/api/pwa/icon")
+def pwa_icon(size: int = 192):
+    """Generate a simple PNG icon for the PWA manifest."""
+    try:
+        from PIL import Image, ImageDraw
+        import io
+        size = max(16, min(size, 1024))
+        img = Image.new("RGBA", (size, size), (0, 0, 0, 0))
+        draw = ImageDraw.Draw(img)
+        # Rounded background
+        pad = size // 8
+        draw.rounded_rectangle([0, 0, size - 1, size - 1], radius=size // 5, fill="#0f766e")
+        # Simple "V" play shape
+        cx, cy = size // 2, size // 2
+        r = size // 3
+        draw.ellipse([cx - r, cy - r, cx + r, cy + r], fill="#ffffff")
+        tri = [(cx - r // 2, cy - r // 2), (cx - r // 2, cy + r // 2), (cx + r // 2, cy)]
+        draw.polygon(tri, fill="#0f766e")
+        buf = io.BytesIO()
+        img.save(buf, format="PNG")
+        buf.seek(0)
+        from fastapi.responses import Response
+        return Response(content=buf.read(), media_type="image/png",
+                        headers={"Cache-Control": "public, max-age=86400"})
+    except ImportError:
+        # Pillow not installed — redirect to SVG
+        from fastapi.responses import RedirectResponse
+        return RedirectResponse("/static/og-image.svg")
 
 
 @router.get("/api/health")
