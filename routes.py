@@ -2620,6 +2620,30 @@ def _enqueue_scan_all(owner: str | None = None):
         _enqueue_scan(site)
 
 
+@router.get("/api/scan/queue")
+def get_scan_queue(request: Request):
+    """Return the current scan queue and the running job."""
+    if not is_authenticated(request):
+        raise HTTPException(401, "Not authenticated")
+    with _scan_queue_lock:
+        running = _scan_running
+        queued  = list(_scan_queue_items)
+    def _fmt(job):
+        s = job.get("site", {})
+        return {
+            "site_id":  s.get("id"),
+            "name":     s.get("name") or s.get("url", ""),
+            "url":      s.get("url", ""),
+            "engine":   s.get("scan_engine", "basic"),
+            "attempt":  job.get("attempt", 0),
+        }
+    return {
+        "running": _fmt(running) if running else None,
+        "queued":  [_fmt(j) for j in queued],
+        "total":   len(queued) + (1 if running else 0),
+    }
+
+
 def _run_scan_all_sync():
     if sys.platform.startswith("win"):
         try:
