@@ -4076,6 +4076,7 @@ function _timeAgo(date) {
       <button id="vp-fav-btn"   class="btn btn-sm btn-outline-secondary" style="font-size:.78rem;" onclick="vpToggle('favorite')"></button>
       <button id="vp-watch-btn" class="btn btn-sm btn-outline-secondary" style="font-size:.78rem;" onclick="vpToggle('watched')"></button>
       <button id="vp-arch-btn"  class="btn btn-sm btn-outline-secondary" style="font-size:.78rem;" onclick="vpToggle('archive')"></button>
+      <button id="vp-dl-btn" class="btn btn-sm btn-outline-secondary" style="font-size:.78rem;" onclick="if(_vpVideo)startDownload(_vpVideo.id,_vpVideo.title||_vpVideo.url)"><i class="bi bi-download me-1"></i>Download</button>
       <span id="vp-duration" style="margin-left:auto;font-size:.75rem;color:#64748b;"></span>
     </div>
   </div>

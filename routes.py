@@ -866,10 +866,7 @@ async def _resolve_video_source_impl(url: str, expected_title: str | None = None
 
 
 async def _download_media_file(video_id: str, resolved_url: str, headers: dict[str, str]) -> dict:
-    # Use yt-dlp based downloader for IDM‑style parallel downloads.
-    from .downloader import download_video as yt_download
-    # yt-dlp handles parallel fragment downloading and resume support.
-    saved_path = yt_download(resolved_url)
+    raise HTTPException(status_code=501, detail="Use /api/downloads instead")
     if not saved_path:
         raise HTTPException(status_code=502, detail="yt‑dlp failed to download video")
     filename = saved_path.name
