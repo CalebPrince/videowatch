@@ -369,13 +369,12 @@ def detect_platform(url: str):
             if re.search(r'[a-zA-Z]{3,}', last_seg) and last_seg not in LISTING_SEGMENTS:
                 return ("direct", url, None, None)
     elif len(path_segments) == 1:
-        # Bare slug like /video-title-abc123/ — only accept if it looks like a
-        # content slug: has at least one hyphen/digit AND letters, and is not a
-        # plain listing or nav keyword.
+        # Bare slug like /videotitle/ or /video-title-123/ — accept any slug
+        # that isn't a known listing/nav keyword. The thumbnail-presence guard
+        # in the link loop already filters out navigation links.
         seg = path_segments[0].lower()
         if (seg not in LISTING_SEGMENTS and seg.rstrip('s') not in LISTING_SEGMENTS
-                and re.search(r'[a-zA-Z]{3,}', seg)
-                and (re.search(r'\d', seg) or '-' in seg)):
+                and re.search(r'[a-zA-Z]{3,}', seg)):
             return ("direct", url, None, None)
 
     if "/channels/" in url_lower:
