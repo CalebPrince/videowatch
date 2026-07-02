@@ -1611,6 +1611,69 @@ def auth_logout(request: Request):
     return {"ok": True, "authenticated": False}
 
 
+@router.get("/api/auth/sessions")
+def list_sessions(request: Request):
+    if not is_authenticated(request):
+        raise HTTPException(status_code=401, detail="Not authenticated")
+    username = request.session.get("auth_user") or ""
+    if request.session.get("server_token"):
+        with get_db() as db:
+            row = db.execute(
+                "SELECT username FROM user_sessions WHERE token=?",
+                (request.session["server_token"],)
+            ).fetchone()
+            if row:
+                username = row["username"]
+    if not username:
+        raise HTTPException(status_code=401, detail="Not authenticated")
+    current_token = request.session.get("server_token", "")
+    with get_db() as db:
+        rows = db.execute(
+            "SELECT token, created_at, last_seen, expires_at FROM user_sessions WHERE username=? ORDER BY last_seen DESC",
+            (username,)
+        ).fetchall()
+    sessions = []
+    for r in rows:
+        sessions.append({
+            "token": r["token"],
+            "label": "Browser session",
+            "device_type": "desktop",
+            "created_at": r["created_at"],
+            "last_seen": r["last_seen"],
+            "expires_at": r["expires_at"],
+            "is_current": r["token"] == current_token,
+        })
+    return {"sessions": sessions}
+
+
+@router.delete("/api/auth/sessions/{token}")
+def revoke_session(token: str, request: Request):
+    if not is_authenticated(request):
+        raise HTTPException(status_code=401, detail="Not authenticated")
+    username = request.session.get("auth_user") or ""
+    if request.session.get("server_token"):
+        with get_db() as db:
+            row = db.execute(
+                "SELECT username FROM user_sessions WHERE token=?",
+                (request.session["server_token"],)
+            ).fetchone()
+            if row:
+                username = row["username"]
+    if not username:
+        raise HTTPException(status_code=401, detail="Not authenticated")
+    with write_lock:
+        with get_db() as db:
+            row = db.execute(
+                "SELECT username FROM user_sessions WHERE token=?", (token,)
+            ).fetchone()
+            if not row or row["username"] != username:
+                raise HTTPException(status_code=404, detail="Session not found")
+            db.execute("DELETE FROM user_sessions WHERE token=?", (token,))
+            db.commit()
+    _audit(request, "revoke_session", token[:8] + "…")
+    return {"ok": True}
+
+
 @router.post("/api/auth/register")
 def auth_register(body: RegisterIn, request: Request):
     _check_rate_limit(_client_ip(request), max_attempts=3, window_seconds=300)

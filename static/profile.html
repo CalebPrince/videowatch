@@ -1,0 +1,657 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>My Profile — VideoWatch</title>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" />
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.css" />
+  <style>
+    :root {
+      --brand: #0f766e;
+      --brand-light: #14b8a6;
+      --bg: #0f0f1a;
+      --card-bg: #1e1e2e;
+      --border: #2a2a3c;
+      --text: #e2e8f0;
+      --muted: #64748b;
+      --danger: #dc2626;
+      --input-bg: #16162a;
+      --hover-bg: #25253a;
+    }
+    html, body { background: var(--bg); color: var(--text); font-family: system-ui, sans-serif; min-height: 100vh; }
+
+    /* topbar */
+    .topbar { background: var(--card-bg); border-bottom: 1px solid var(--border); padding: .65rem 1.25rem; display: flex; align-items: center; gap: .75rem; position: sticky; top: 0; z-index: 100; }
+    .topbar-logo { font-weight: 900; font-size: 1.1rem; background: linear-gradient(135deg, var(--brand), var(--brand-light)); -webkit-background-clip: text; -webkit-text-fill-color: transparent; text-decoration: none; }
+    .topbar-back { color: var(--muted); text-decoration: none; font-size: .85rem; display: flex; align-items: center; gap: .3rem; }
+    .topbar-back:hover { color: var(--text); }
+
+    /* layout */
+    .profile-wrap { max-width: 720px; margin: 0 auto; padding: 2rem 1rem 4rem; }
+
+    /* avatar */
+    .avatar-ring { width: 80px; height: 80px; border-radius: 50%; background: linear-gradient(135deg, var(--brand), var(--brand-light)); display: flex; align-items: center; justify-content: center; font-size: 2rem; font-weight: 900; color: #fff; flex-shrink: 0; }
+    .profile-header { display: flex; align-items: center; gap: 1.25rem; margin-bottom: 2rem; flex-wrap: wrap; }
+    .profile-header-info { flex: 1; min-width: 0; }
+    .profile-header-name { font-size: 1.4rem; font-weight: 800; margin: 0 0 .2rem; }
+    .profile-header-email { font-size: .85rem; color: var(--muted); margin: 0; }
+
+    /* plan badge */
+    .plan-badge { display: inline-block; padding: .15rem .6rem; border-radius: 999px; font-size: .75rem; font-weight: 700; margin-top: .3rem; }
+
+    /* cards */
+    .pcard { background: var(--card-bg); border: 1px solid var(--border); border-radius: 14px; padding: 1.25rem 1.5rem; margin-bottom: 1.25rem; }
+    .pcard-title { font-weight: 700; font-size: .95rem; margin: 0 0 1rem; display: flex; align-items: center; gap: .45rem; color: var(--brand-light); }
+    .pcard-title i { font-size: 1rem; }
+
+    /* form */
+    .form-control, .form-select { background: var(--input-bg) !important; color: var(--text) !important; border: 1px solid var(--border) !important; font-size: .85rem; }
+    .form-control::placeholder { color: var(--muted) !important; }
+    .form-control:focus, .form-select:focus { box-shadow: 0 0 0 2px rgba(15,118,110,.35) !important; border-color: var(--brand) !important; }
+    .form-label { font-size: .82rem; font-weight: 600; color: var(--text); margin-bottom: .3rem; }
+    .form-check-input { background-color: var(--input-bg); border-color: var(--border); }
+    .form-check-input:checked { background-color: var(--brand); border-color: var(--brand); }
+
+    /* buttons */
+    .btn-brand { background: linear-gradient(135deg, var(--brand), var(--brand-light)); border: none; color: #fff; font-weight: 600; }
+    .btn-brand:hover { opacity: .9; color: #fff; }
+    .btn-brand-outline { border: 1px solid var(--brand); color: var(--brand-light); background: transparent; font-size: .82rem; }
+    .btn-brand-outline:hover { background: rgba(15,118,110,.1); color: var(--brand-light); }
+    .btn-outline-secondary { border-color: var(--border); color: var(--muted); background: transparent; font-size: .82rem; }
+    .btn-outline-secondary:hover { background: var(--hover-bg); color: var(--text); border-color: var(--border); }
+    .btn-outline-danger { border-color: #7f1d1d; color: #f87171; background: transparent; font-size: .82rem; }
+    .btn-outline-danger:hover { background: rgba(220,38,38,.1); color: #f87171; }
+
+    /* divider */
+    hr { border-color: var(--border); margin: 1.25rem 0; }
+    .meta { color: var(--muted); }
+
+    /* session rows */
+    .session-row { display: flex; align-items: flex-start; justify-content: space-between; gap: .75rem; padding: .6rem 0; border-bottom: 1px solid var(--border); font-size: .82rem; }
+    .session-row:last-child { border-bottom: none; }
+    .session-badge { display: inline-block; background: rgba(15,118,110,.18); color: var(--brand-light); border-radius: 4px; font-size: .7rem; font-weight: 700; padding: .05rem .35rem; margin-left: .4rem; }
+    .session-current { background: rgba(245,158,11,.18); color: #fbbf24; }
+
+    /* limit bars */
+    .limit-bar-bg { height: 5px; background: var(--border); border-radius: 3px; overflow: hidden; margin-top: 3px; }
+    .limit-bar-fill { height: 100%; border-radius: 3px; transition: width .4s; }
+
+    /* toast */
+    #toast { position: fixed; bottom: 1.5rem; right: 1.5rem; z-index: 9999; min-width: 200px; display: none; }
+
+    /* danger zone */
+    .danger-section { border: 1px solid #7f1d1d; border-radius: 10px; padding: 1rem 1.25rem; background: rgba(127,29,29,.07); }
+
+    /* token reveal */
+    .token-reveal-box { background: var(--hover-bg); border: 1px solid var(--border); border-radius: 6px; padding: .5rem .75rem; font-family: monospace; font-size: .8rem; word-break: break-all; }
+
+    @media (max-width: 600px) {
+      .pcard { padding: 1rem; }
+      .profile-wrap { padding: 1rem .75rem 4rem; }
+    }
+  </style>
+</head>
+<body>
+
+<nav class="topbar">
+  <a href="/" class="topbar-logo"><i class="bi bi-play-circle-fill me-1" style="-webkit-text-fill-color:initial;color:var(--brand-light);"></i>VideoWatch</a>
+  <a href="/" class="topbar-back ms-auto"><i class="bi bi-arrow-left"></i> Back to videos</a>
+</nav>
+
+<div class="profile-wrap">
+
+  <!-- Header -->
+  <div class="profile-header">
+    <div class="avatar-ring" id="profile-avatar">?</div>
+    <div class="profile-header-info">
+      <p class="profile-header-name" id="profile-username">Loading…</p>
+      <p class="profile-header-email" id="profile-email-display"></p>
+      <span id="profile-plan-badge" class="plan-badge" style="display:none;"></span>
+    </div>
+  </div>
+
+  <!-- Account Info -->
+  <div class="pcard">
+    <div class="pcard-title"><i class="bi bi-person-fill"></i> Account Info</div>
+
+    <div class="mb-3">
+      <div class="d-flex align-items-center gap-2 flex-wrap">
+        <span id="account-email-text" class="meta" style="font-size:.85rem;"></span>
+        <button class="btn btn-sm btn-outline-secondary" id="btn-edit-email" style="padding:.1rem .5rem;font-size:.75rem;"><i class="bi bi-pencil"></i> Edit</button>
+      </div>
+      <div id="email-edit-form" style="display:none;margin-top:.6rem;">
+        <div class="d-flex gap-2 flex-wrap align-items-center">
+          <input id="email-inp" type="email" class="form-control form-control-sm" placeholder="your@email.com" style="max-width:260px;">
+          <button class="btn btn-sm btn-brand" id="btn-save-email">Save</button>
+          <button class="btn btn-sm btn-outline-secondary" id="btn-cancel-email">Cancel</button>
+        </div>
+        <div id="email-msg" class="meta mt-1" style="font-size:.78rem;"></div>
+      </div>
+    </div>
+
+    <hr>
+
+    <!-- Plan card -->
+    <div id="plan-card">
+      <div class="d-flex align-items-center justify-content-between mb-1 flex-wrap gap-2">
+        <div>
+          <div style="font-size:.72rem;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;">Current plan</div>
+          <div id="plan-badge-large" style="margin-top:.3rem;"></div>
+        </div>
+        <div id="plan-upgrade-btn" style="display:none;">
+          <a href="/settings#payments" style="font-size:.78rem;font-weight:600;color:var(--brand-light);text-decoration:none;border:1px solid var(--brand);border-radius:6px;padding:.25rem .65rem;">
+            <i class="bi bi-arrow-up-circle me-1"></i>Upgrade
+          </a>
+        </div>
+      </div>
+      <div id="plan-limits" style="display:grid;grid-template-columns:1fr 1fr;gap:.5rem;font-size:.8rem;margin-top:.5rem;"></div>
+    </div>
+  </div>
+
+  <!-- Active Sessions -->
+  <div class="pcard">
+    <div class="pcard-title"><i class="bi bi-shield-check"></i> Active Sessions
+      <button class="btn btn-sm btn-outline-secondary ms-auto" id="btn-refresh-sessions" style="font-size:.75rem;padding:.15rem .5rem;"><i class="bi bi-arrow-clockwise"></i></button>
+    </div>
+    <p class="meta" style="font-size:.8rem;margin-bottom:.75rem;">All devices and browsers currently signed in to your account. Revoke any session you don't recognise.</p>
+    <div id="sessions-list"><div class="meta" style="font-size:.82rem;">Loading…</div></div>
+  </div>
+
+  <!-- Security -->
+  <div class="pcard">
+    <div class="pcard-title"><i class="bi bi-lock-fill"></i> Security</div>
+    <div class="d-flex align-items-center justify-content-between mb-2">
+      <span style="font-size:.85rem;font-weight:600;">Password</span>
+      <button class="btn btn-sm btn-outline-secondary" id="btn-toggle-pwd">Change</button>
+    </div>
+    <div id="pwd-form" style="display:none;">
+      <div class="mb-2">
+        <label class="form-label">Current password</label>
+        <input type="password" id="pwd-current" class="form-control form-control-sm" autocomplete="current-password" />
+      </div>
+      <div class="mb-2">
+        <label class="form-label">New password</label>
+        <input type="password" id="pwd-new" class="form-control form-control-sm" autocomplete="new-password" />
+      </div>
+      <div class="mb-3">
+        <label class="form-label">Confirm new password</label>
+        <input type="password" id="pwd-confirm" class="form-control form-control-sm" autocomplete="new-password" />
+      </div>
+      <div id="pwd-msg" class="meta mb-2" style="font-size:.78rem;"></div>
+      <div class="d-flex gap-2">
+        <button class="btn btn-sm btn-brand" id="btn-pwd-save">Save password</button>
+        <button class="btn btn-sm btn-outline-secondary" id="btn-pwd-cancel">Cancel</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Notifications -->
+  <div class="pcard">
+    <div class="pcard-title"><i class="bi bi-bell-fill"></i> Notifications</div>
+
+    <div class="mb-3">
+      <div class="d-flex align-items-center gap-2 mb-2">
+        <div class="form-check form-switch mb-0">
+          <input class="form-check-input" type="checkbox" id="notify-enabled" role="switch">
+          <label class="form-check-label" for="notify-enabled" style="font-size:.85rem;">Webhook notifications</label>
+        </div>
+      </div>
+      <label class="form-label">Webhook URL</label>
+      <input type="url" id="notify-webhook" class="form-control form-control-sm" placeholder="https://..." />
+      <label class="form-label mt-2">Digest minutes <span class="meta">(0 = instant)</span></label>
+      <input type="number" id="notify-digest" class="form-control form-control-sm" min="0" value="0" style="max-width:120px;" />
+      <div class="d-flex gap-2 mt-3">
+        <button class="btn btn-sm btn-brand" id="notify-save">Save</button>
+        <button class="btn btn-sm btn-outline-secondary" id="notify-test">Send test</button>
+      </div>
+      <div id="notify-msg" class="meta mt-2" style="font-size:.78rem;"></div>
+    </div>
+
+    <hr>
+
+    <div>
+      <div style="font-size:.85rem;font-weight:600;margin-bottom:.4rem;"><i class="bi bi-bell me-1"></i>Browser Push</div>
+      <p class="meta" style="font-size:.8rem;margin-bottom:.75rem;">Get instant alerts when new videos are found, even when this tab is in the background.</p>
+      <div style="display:flex;align-items:center;gap:.75rem;flex-wrap:wrap;">
+        <button id="btn-push-subscribe" class="btn btn-sm btn-outline-secondary"><i class="bi bi-bell me-1"></i>Enable push notifications</button>
+        <span id="push-status" class="meta" style="font-size:.78rem;"></span>
+      </div>
+    </div>
+  </div>
+
+  <!-- API Tokens -->
+  <div class="pcard">
+    <div class="pcard-title"><i class="bi bi-key-fill"></i> API Tokens
+      <button class="btn btn-sm btn-brand-outline ms-auto" id="btn-new-token"><i class="bi bi-plus me-1"></i>New token</button>
+    </div>
+    <p class="meta" style="font-size:.8rem;margin-bottom:.75rem;">Use tokens to access the API from scripts or external tools. Tokens are shown once.</p>
+
+    <div id="new-token-form" style="display:none;" class="mb-3">
+      <div class="d-flex gap-2 flex-wrap">
+        <input id="token-label-inp" class="form-control form-control-sm" placeholder="Label (e.g. Home script)" maxlength="60" style="max-width:260px;">
+        <button class="btn btn-sm btn-brand" id="btn-token-create">Create</button>
+        <button class="btn btn-sm btn-outline-secondary" id="btn-token-cancel">Cancel</button>
+      </div>
+    </div>
+
+    <div id="new-token-reveal" style="display:none;" class="mb-3">
+      <div class="meta mb-1" style="font-size:.78rem;">Copy this token now — it won't be shown again.</div>
+      <div class="token-reveal-box d-flex gap-2 align-items-center">
+        <code id="token-value-display" style="flex:1;font-size:.8rem;word-break:break-all;"></code>
+        <button class="btn btn-sm btn-outline-secondary" id="btn-copy-token"><i class="bi bi-clipboard"></i></button>
+      </div>
+    </div>
+
+    <div id="tokens-list"></div>
+  </div>
+
+  <!-- Danger Zone -->
+  <div class="pcard">
+    <div class="pcard-title text-danger"><i class="bi bi-exclamation-triangle-fill" style="color:#f87171;"></i> <span style="color:#f87171;">Danger Zone</span></div>
+    <div class="danger-section">
+      <p class="meta" style="font-size:.82rem;margin-bottom:1rem;">Permanently delete your account and all associated data — sites, videos, tags, and scan history. This cannot be undone.</p>
+      <button class="btn btn-sm btn-outline-danger" id="btn-delete-account">
+        <i class="bi bi-trash3 me-1"></i>Delete my account
+      </button>
+      <div id="delete-account-msg" class="meta mt-2" style="font-size:.78rem;"></div>
+    </div>
+  </div>
+
+</div><!-- /profile-wrap -->
+
+<!-- Confirm delete modal -->
+<div id="delete-modal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:9999;align-items:center;justify-content:center;">
+  <div style="background:var(--card-bg);border-radius:16px;padding:2rem;max-width:420px;width:90%;box-shadow:0 24px 60px rgba(0,0,0,.35);">
+    <h6 style="font-weight:800;margin-bottom:.5rem;color:#dc2626;"><i class="bi bi-exclamation-triangle-fill me-1"></i>Delete account</h6>
+    <p style="font-size:.88rem;color:var(--muted);margin-bottom:1.25rem;">This will permanently delete your account and all your data. Enter your password to confirm.</p>
+    <input type="password" id="delete-confirm-pw" class="form-control form-control-sm mb-3" placeholder="Your current password" autocomplete="current-password" />
+    <div id="delete-modal-err" class="meta mb-2" style="font-size:.82rem;display:none;color:#f87171;"></div>
+    <div class="d-flex gap-2 justify-content-end">
+      <button class="btn btn-sm btn-outline-secondary" id="btn-delete-cancel">Cancel</button>
+      <button class="btn btn-sm btn-danger" id="btn-delete-confirm"><i class="bi bi-trash3 me-1"></i>Delete permanently</button>
+    </div>
+  </div>
+</div>
+
+<!-- Toast -->
+<div id="toast" class="alert mb-0" role="alert" style="box-shadow:0 8px 32px rgba(0,0,0,.35);border-radius:10px;"></div>
+
+<script>
+  // ── Helpers ──────────────────────────────────────────────────────────────────
+  function showToast(msg, type = 'success') {
+    const t = document.getElementById('toast');
+    t.className = `alert alert-${type === 'danger' ? 'danger' : type === 'warning' ? 'warning' : 'success'} mb-0`;
+    t.textContent = msg;
+    t.style.display = 'block';
+    clearTimeout(t._hide);
+    t._hide = setTimeout(() => { t.style.display = 'none'; }, 3500);
+  }
+
+  function escHtml(s) { return (s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+
+  async function api(path, opts = {}) {
+    const url = `/api${path}${(!opts.method || opts.method === 'GET') ? (path.includes('?') ? '&' : '?') + '_=' + Date.now() : ''}`;
+    const res = await fetch(url, {
+      credentials: 'include',
+      headers: { 'Content-Type': 'application/json', ...(opts.headers || {}) },
+      ...opts,
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({ detail: res.statusText }));
+      throw new Error(err.detail || `HTTP ${res.status}`);
+    }
+    return res.json();
+  }
+
+  // ── Profile header ────────────────────────────────────────────────────────────
+  const _PLAN_META = {
+    free:      { label: 'Free',      color: '#64748b', sites: 3,   videos: 100,  interval: '5 min' },
+    pro:       { label: 'Pro',       color: '#0f766e', sites: 25,  videos: 5000, interval: '2 min' },
+    unlimited: { label: 'Unlimited', color: '#7c3aed', sites: null, videos: null, interval: '1 min' },
+  };
+
+  async function loadProfile() {
+    try {
+      const [st, userRow, sitesRes, videosRes] = await Promise.all([
+        api('/auth/status'),
+        api('/user/notifications').catch(() => ({})),
+        api('/sites').catch(() => ({ sites: [] })),
+        api('/videos?per_page=1').catch(() => ({ total: 0 })),
+      ]);
+
+      const username = st.user || '—';
+      const role = st.role || 'viewer';
+      document.getElementById('profile-username').textContent = username;
+      document.getElementById('profile-avatar').textContent = username.charAt(0).toUpperCase();
+
+      // Email
+      const email = userRow.email || '';
+      const verified = userRow.email_verified;
+      const emailText = email ? `${email}${verified ? ' ✓' : ' (unverified)'}` : 'No email set';
+      document.getElementById('profile-email-display').textContent = emailText;
+      document.getElementById('account-email-text').textContent = emailText;
+      if (email) document.getElementById('email-inp').value = email;
+
+      // Notifications
+      document.getElementById('notify-enabled').checked = !!userRow.notify_enabled;
+      document.getElementById('notify-webhook').value = userRow.webhook_url || '';
+      document.getElementById('notify-digest').value = userRow.digest_minutes ?? 0;
+
+      // Plan
+      if (role === 'super_admin' || role === 'admin') {
+        const label = role === 'super_admin' ? 'Super Admin' : 'Admin';
+        document.getElementById('plan-badge-large').innerHTML =
+          `<span class="plan-badge" style="background:#7c3aed22;color:#a78bfa;border:1px solid #7c3aed44;">${label}</span>`;
+        document.getElementById('plan-limits').innerHTML =
+          `<div style="grid-column:1/-1;color:var(--muted);">No plan limits apply to administrator accounts.</div>`;
+        document.getElementById('profile-plan-badge').textContent = label;
+        document.getElementById('profile-plan-badge').style.cssText += 'background:#7c3aed22;color:#a78bfa;border:1px solid #7c3aed44;display:inline-block;';
+        return;
+      }
+
+      const plan = (userRow.plan || 'free').toLowerCase();
+      const meta = _PLAN_META[plan] || _PLAN_META.free;
+
+      document.getElementById('plan-badge-large').innerHTML =
+        `<span class="plan-badge" style="background:${meta.color}22;color:${meta.color};border:1px solid ${meta.color}44;">${meta.label}</span>`;
+      document.getElementById('profile-plan-badge').textContent = meta.label;
+      document.getElementById('profile-plan-badge').style.cssText += `background:${meta.color}22;color:${meta.color};border:1px solid ${meta.color}44;display:inline-block;`;
+      if (plan === 'free') document.getElementById('plan-upgrade-btn').style.display = '';
+
+      const siteCount  = (sitesRes.sites || sitesRes || []).length;
+      const videoCount = videosRes.total || 0;
+
+      const limitBar = (label, used, max) => {
+        const isUnlimited = max === null;
+        const pct = isUnlimited ? 0 : Math.min(100, Math.round((used / max) * 100));
+        const col = pct >= 90 ? '#dc2626' : pct >= 70 ? '#d97706' : '#0f766e';
+        return `<div>
+          <div style="font-weight:600;margin-bottom:.2rem;">${label}</div>
+          ${isUnlimited
+            ? `<div style="font-size:.72rem;color:#16a34a;font-weight:600;">Unlimited</div>`
+            : `<div style="font-size:.72rem;color:var(--muted);">${used} / ${max} (${pct}%)</div>
+               <div class="limit-bar-bg"><div class="limit-bar-fill" style="width:${pct}%;background:${col};"></div></div>`
+          }
+        </div>`;
+      };
+
+      document.getElementById('plan-limits').innerHTML =
+        limitBar('Sites', siteCount, meta.sites) +
+        limitBar('Videos', videoCount, meta.videos) +
+        `<div style="grid-column:1/-1;margin-top:.25rem;"><span style="font-weight:600;">Scan interval:</span> <span style="color:var(--muted);">${meta.interval} min</span></div>`;
+
+    } catch (e) { console.warn('loadProfile error', e); }
+  }
+
+  // ── Active Sessions ───────────────────────────────────────────────────────────
+  async function loadSessions() {
+    const list = document.getElementById('sessions-list');
+    try {
+      const data = await api('/auth/sessions');
+      const sessions = data.sessions || [];
+      if (!sessions.length) {
+        list.innerHTML = '<div class="meta" style="font-size:.82rem;">No active sessions found.</div>';
+        return;
+      }
+      list.innerHTML = sessions.map(s => {
+        const isCurrent = s.is_current;
+        const created = s.created_at ? s.created_at.slice(0, 16).replace('T', ' ') : '—';
+        const lastSeen = s.last_seen ? s.last_seen.slice(0, 16).replace('T', ' ') : '—';
+        return `<div class="session-row">
+          <div>
+            <div style="font-weight:600;">
+              <i class="bi bi-${s.device_type === 'mobile' ? 'phone' : 'display'} me-1" style="color:var(--muted);"></i>
+              ${escHtml(s.label || 'Browser session')}
+              ${isCurrent ? '<span class="session-badge session-current">This device</span>' : ''}
+            </div>
+            <div class="meta" style="font-size:.76rem;margin-top:.2rem;">
+              Created ${created} &nbsp;·&nbsp; Last seen ${lastSeen}
+            </div>
+          </div>
+          ${isCurrent ? '' : `<button class="btn btn-sm btn-outline-danger" onclick="revokeSession('${escHtml(s.token)}')">Revoke</button>`}
+        </div>`;
+      }).join('');
+    } catch (e) {
+      list.innerHTML = `<div class="meta" style="color:#f87171;font-size:.82rem;">${escHtml(e.message)}</div>`;
+    }
+  }
+
+  async function revokeSession(token) {
+    if (!confirm('Revoke this session? That device will be logged out.')) return;
+    try {
+      await api(`/auth/sessions/${token}`, { method: 'DELETE' });
+      showToast('Session revoked.', 'success');
+      await loadSessions();
+    } catch (e) { showToast(e.message, 'danger'); }
+  }
+
+  document.getElementById('btn-refresh-sessions').onclick = loadSessions;
+
+  // ── Email ─────────────────────────────────────────────────────────────────────
+  document.getElementById('btn-edit-email').onclick = () => {
+    document.getElementById('email-edit-form').style.display = '';
+    document.getElementById('email-inp').focus();
+  };
+  document.getElementById('btn-cancel-email').onclick = () => {
+    document.getElementById('email-edit-form').style.display = 'none';
+    document.getElementById('email-msg').textContent = '';
+  };
+  document.getElementById('btn-save-email').onclick = async () => {
+    const email = document.getElementById('email-inp').value.trim();
+    const msg = document.getElementById('email-msg');
+    msg.textContent = '';
+    try {
+      const res = await api('/user/email', { method: 'PATCH', body: JSON.stringify({ email }) });
+      document.getElementById('email-edit-form').style.display = 'none';
+      const label = email + ' (unverified)';
+      document.getElementById('account-email-text').textContent = label;
+      document.getElementById('profile-email-display').textContent = label;
+      showToast(res.verification_sent ? 'Email updated — check your inbox to verify.' : 'Email updated.', 'success');
+    } catch (e) {
+      msg.style.color = '#f87171';
+      msg.textContent = e.message;
+    }
+  };
+
+  // ── Password ──────────────────────────────────────────────────────────────────
+  document.getElementById('btn-toggle-pwd').onclick = () => {
+    const f = document.getElementById('pwd-form');
+    const vis = f.style.display !== 'none';
+    f.style.display = vis ? 'none' : '';
+    if (!vis) document.getElementById('pwd-current').focus();
+  };
+  document.getElementById('btn-pwd-cancel').onclick = () => {
+    document.getElementById('pwd-form').style.display = 'none';
+    ['pwd-current','pwd-new','pwd-confirm'].forEach(id => document.getElementById(id).value = '');
+    document.getElementById('pwd-msg').textContent = '';
+  };
+  document.getElementById('btn-pwd-save').onclick = async () => {
+    const current = document.getElementById('pwd-current').value;
+    const newPwd  = document.getElementById('pwd-new').value;
+    const confirm = document.getElementById('pwd-confirm').value;
+    const msg = document.getElementById('pwd-msg');
+    msg.style.color = '#f87171';
+    msg.textContent = '';
+    if (!current || !newPwd || !confirm) { msg.textContent = 'All fields are required.'; return; }
+    if (newPwd !== confirm) { msg.textContent = 'New passwords do not match.'; return; }
+    if (newPwd.length < 8)  { msg.textContent = 'New password must be at least 8 characters.'; return; }
+    try {
+      await api('/auth/change-password', { method: 'POST', body: JSON.stringify({ current_password: current, new_password: newPwd, confirm_password: confirm }) });
+      document.getElementById('pwd-form').style.display = 'none';
+      ['pwd-current','pwd-new','pwd-confirm'].forEach(id => document.getElementById(id).value = '');
+      showToast('Password changed successfully.', 'success');
+    } catch(e) { msg.textContent = e.message; }
+  };
+
+  // ── Notifications ─────────────────────────────────────────────────────────────
+  async function saveNotifications() {
+    const msg = document.getElementById('notify-msg');
+    msg.textContent = '';
+    try {
+      await api('/user/notifications', { method: 'PUT', body: JSON.stringify({
+        notify_enabled: document.getElementById('notify-enabled').checked,
+        webhook_url:    document.getElementById('notify-webhook').value.trim(),
+        digest_minutes: parseInt(document.getElementById('notify-digest').value) || 0,
+      })});
+      showToast('Notification settings saved.', 'success');
+    } catch(e) {
+      msg.style.color = '#f87171';
+      msg.textContent = e.message;
+    }
+  }
+  document.getElementById('notify-save').onclick = saveNotifications;
+  document.getElementById('notify-test').onclick = async () => {
+    const msg = document.getElementById('notify-msg');
+    msg.textContent = '';
+    try {
+      await api('/user/notifications/test', { method: 'POST' });
+      showToast('Test notification sent!', 'success');
+    } catch(e) {
+      msg.style.color = '#f87171';
+      msg.textContent = e.message;
+    }
+  };
+
+  // ── Push Notifications ────────────────────────────────────────────────────────
+  (async function initPush() {
+    const btn = document.getElementById('btn-push-subscribe');
+    const statusEl = document.getElementById('push-status');
+    if (!('serviceWorker' in navigator) || !('PushManager' in window)) {
+      statusEl.textContent = 'Push not supported in this browser.';
+      btn.disabled = true;
+      return;
+    }
+    async function getPublicKey() {
+      const r = await api('/push/vapid-public').catch(() => null);
+      return r?.public_key || null;
+    }
+    function urlBase64ToUint8Array(b64) {
+      const padding = '='.repeat((4 - b64.length % 4) % 4);
+      const base64 = (b64 + padding).replace(/-/g, '+').replace(/_/g, '/');
+      const raw = atob(base64);
+      return Uint8Array.from([...raw].map(c => c.charCodeAt(0)));
+    }
+    async function updateUI(reg) {
+      const sub = await reg.pushManager.getSubscription();
+      if (sub) {
+        btn.innerHTML = '<i class="bi bi-bell-slash me-1"></i>Disable push notifications';
+        btn.className = 'btn btn-sm btn-outline-danger';
+        statusEl.textContent = 'Push notifications are enabled for this browser.';
+      } else {
+        btn.innerHTML = '<i class="bi bi-bell me-1"></i>Enable push notifications';
+        btn.className = 'btn btn-sm btn-outline-secondary';
+        statusEl.textContent = '';
+      }
+      return sub;
+    }
+    let _swReg = null;
+    try {
+      _swReg = await navigator.serviceWorker.register('/static/sw.js');
+      await navigator.serviceWorker.ready;
+      await updateUI(_swReg);
+    } catch(e) { statusEl.textContent = 'Service worker failed.'; return; }
+
+    btn.addEventListener('click', async () => {
+      btn.disabled = true;
+      const existing = await _swReg.pushManager.getSubscription();
+      if (existing) {
+        await existing.unsubscribe();
+        await api('/push/subscribe', { method: 'DELETE', body: JSON.stringify({ endpoint: existing.endpoint }) }).catch(()=>{});
+      } else {
+        const pubKey = await getPublicKey();
+        if (!pubKey) { statusEl.textContent = 'Push not configured on server.'; btn.disabled = false; return; }
+        try {
+          const perm = await Notification.requestPermission();
+          if (perm !== 'granted') { statusEl.textContent = 'Permission denied.'; btn.disabled = false; return; }
+          const sub = await _swReg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: urlBase64ToUint8Array(pubKey) });
+          const j = sub.toJSON();
+          await api('/push/subscribe', { method: 'POST', body: JSON.stringify({ endpoint: j.endpoint, p256dh: j.keys.p256dh, auth: j.keys.auth }) });
+        } catch(e) { statusEl.textContent = 'Could not subscribe: ' + e.message; }
+      }
+      await updateUI(_swReg);
+      btn.disabled = false;
+    });
+  })();
+
+  // ── API Tokens ────────────────────────────────────────────────────────────────
+  async function loadTokens() {
+    const list = document.getElementById('tokens-list');
+    try {
+      const tokens = await api('/user/tokens');
+      if (!tokens.length) { list.innerHTML = '<div class="meta" style="font-size:.82rem;">No tokens yet.</div>'; return; }
+      list.innerHTML = '';
+      tokens.forEach(t => {
+        const row = document.createElement('div');
+        row.style.cssText = 'display:flex;align-items:center;justify-content:space-between;gap:.5rem;padding:.4rem 0;border-bottom:1px solid var(--border);font-size:.82rem;';
+        const info = document.createElement('div');
+        info.innerHTML = `<strong>${escHtml(t.label)}</strong> <span class="meta">— created ${t.created_at.slice(0,10)}${t.last_used_at ? ', last used '+t.last_used_at.slice(0,10) : ''}</span>`;
+        const del = document.createElement('button');
+        del.className = 'btn btn-sm btn-outline-danger';
+        del.innerHTML = '<i class="bi bi-trash3"></i>';
+        del.title = 'Revoke token';
+        del.onclick = async () => {
+          if (!confirm('Revoke this token?')) return;
+          await api(`/user/tokens/${t.id}`, { method: 'DELETE' });
+          await loadTokens();
+        };
+        row.appendChild(info);
+        row.appendChild(del);
+        list.appendChild(row);
+      });
+    } catch(e) { list.innerHTML = `<div class="meta" style="color:#f87171;font-size:.82rem;">${escHtml(e.message)}</div>`; }
+  }
+
+  document.getElementById('btn-new-token').onclick = () => {
+    document.getElementById('new-token-form').style.display = '';
+    document.getElementById('new-token-reveal').style.display = 'none';
+    document.getElementById('token-label-inp').value = '';
+    document.getElementById('token-label-inp').focus();
+  };
+  document.getElementById('btn-token-cancel').onclick = () => { document.getElementById('new-token-form').style.display = 'none'; };
+  document.getElementById('btn-token-create').onclick = async () => {
+    const label = document.getElementById('token-label-inp').value.trim() || 'My token';
+    try {
+      const res = await api('/user/tokens', { method: 'POST', body: JSON.stringify({ label }) });
+      document.getElementById('new-token-form').style.display = 'none';
+      document.getElementById('token-value-display').textContent = res.token;
+      document.getElementById('new-token-reveal').style.display = '';
+      await loadTokens();
+    } catch(e) { showToast(e.message, 'danger'); }
+  };
+  document.getElementById('btn-copy-token').onclick = () => {
+    navigator.clipboard.writeText(document.getElementById('token-value-display').textContent)
+      .then(() => showToast('Token copied!', 'success'));
+  };
+
+  // ── Danger Zone ───────────────────────────────────────────────────────────────
+  document.getElementById('btn-delete-account').onclick = () => {
+    const modal = document.getElementById('delete-modal');
+    modal.style.display = 'flex';
+    document.getElementById('delete-confirm-pw').value = '';
+    document.getElementById('delete-modal-err').style.display = 'none';
+  };
+  document.getElementById('btn-delete-cancel').onclick = () => {
+    document.getElementById('delete-modal').style.display = 'none';
+  };
+  document.getElementById('delete-modal').addEventListener('click', e => {
+    if (e.target === document.getElementById('delete-modal')) document.getElementById('delete-modal').style.display = 'none';
+  });
+  document.getElementById('btn-delete-confirm').onclick = async () => {
+    const pw = document.getElementById('delete-confirm-pw').value;
+    const errEl = document.getElementById('delete-modal-err');
+    errEl.style.display = 'none';
+    if (!pw) { errEl.textContent = 'Password is required.'; errEl.style.display = ''; return; }
+    try {
+      await api('/user/delete-account', { method: 'DELETE', body: JSON.stringify({ password: pw }) });
+      window.location.href = '/';
+    } catch(e) { errEl.textContent = e.message; errEl.style.display = ''; }
+  };
+
+  // ── Init ──────────────────────────────────────────────────────────────────────
+  loadProfile();
+  loadSessions();
+  loadTokens();
+</script>
+</body>
+</html>
