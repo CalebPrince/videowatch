@@ -980,10 +980,17 @@ def scrape_videos(html: str, base_url: str, video_url_pattern: str = "") -> list
             "duration":    None,
         })
 
+    _ERROR_PAGE_RE = re.compile(
+        r'/(404|403|500|error|not[_-]?found|page[_-]?not[_-]?found)'
+        r'(\.(php|html?|asp|aspx|cfm))?/?$', re.I
+    )
+
     def add(url, title=None, thumb=None, released_at=None,
             cast_names=None, duration=None):
         url = url.strip()
         if not url or url.startswith(("blob:", "data:", "javascript:")):
+            return
+        if _ERROR_PAGE_RE.search(url):
             return
         url = normalize_url(url)
         if not url or url in seen:
