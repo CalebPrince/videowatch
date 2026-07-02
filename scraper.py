@@ -58,6 +58,8 @@ def normalize_url(url: str) -> str:
     qs = {k: v for k, v in qs.items() if k.lower() not in STRIP_PARAMS}
     clean_qs = urlencode([(k, v[0]) for k, v in sorted(qs.items())])
     path = p.path.rstrip("/") or "/"
+    # Normalize /video/{id}/{slug} → /video/{id} to deduplicate slug variants
+    path = re.sub(r'^(/(?:video|scene|movie|episode|clip)s?/\d+)/[^/]+$', r'\1', path)
     return urlunparse(p._replace(query=clean_qs, path=path, fragment=""))
 
 def page_url(base: str, page_num: int) -> str:
