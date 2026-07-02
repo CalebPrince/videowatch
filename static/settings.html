@@ -311,6 +311,7 @@
         </button>
       </div>
       <div class="brand"><i class="bi bi-sliders"></i> Settings</div>
+      <button class="navbtn" data-target="profile" title="My profile and active sessions"><i class="bi bi-person-circle me-1"></i>My Profile</button>
       <button class="navbtn active" data-target="general" title="General settings"><i class="bi bi-gear me-1"></i>General</button>
       <button class="navbtn" data-target="sites" title="Sites and scan rules"><i class="bi bi-diagram-3 me-1"></i>Sites and Rules</button>
       <button class="navbtn" data-target="health" title="Scan health metrics"><i class="bi bi-activity me-1"></i>Scan Health</button>
@@ -338,6 +339,30 @@
         </div>
         <span class="pill" id="auth-role">Role: --</span>
       </div>
+
+      <section id="profile" class="cardx pane hidden">
+        <h6><i class="bi bi-person-circle me-2" style="color:var(--brand)"></i>My Profile</h6>
+
+        <!-- Avatar header -->
+        <div style="display:flex;align-items:center;gap:1rem;margin-bottom:1.25rem;flex-wrap:wrap;">
+          <div id="profile-avatar" style="width:64px;height:64px;border-radius:50%;background:linear-gradient(135deg,var(--brand),#14b8a6);display:flex;align-items:center;justify-content:center;font-size:1.6rem;font-weight:900;color:#fff;flex-shrink:0;">?</div>
+          <div>
+            <div id="profile-username" style="font-size:1.1rem;font-weight:800;margin-bottom:.15rem;"></div>
+            <div id="profile-email-line" class="meta" style="font-size:.82rem;margin-bottom:.3rem;"></div>
+            <span id="profile-plan-badge" style="display:none;padding:.15rem .6rem;border-radius:999px;font-size:.75rem;font-weight:700;"></span>
+          </div>
+        </div>
+
+        <hr style="border-color:var(--border);">
+
+        <!-- Active Sessions -->
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:.5rem;flex-wrap:wrap;gap:.5rem;">
+          <h6 style="margin:0;font-size:.9rem;"><i class="bi bi-shield-check me-1" style="color:var(--brand)"></i>Active Sessions</h6>
+          <button class="btn btn-sm btn-outline-secondary" id="btn-refresh-sessions" style="font-size:.75rem;"><i class="bi bi-arrow-clockwise me-1"></i>Refresh</button>
+        </div>
+        <p class="meta" style="font-size:.8rem;margin-bottom:.75rem;">All devices and browsers currently signed in to your account. Revoke any session you don't recognise.</p>
+        <div id="sessions-list"><div class="meta">Loading…</div></div>
+      </section>
 
       <section id="general" class="cardx pane">
         <h6>General</h6>
@@ -1592,6 +1617,69 @@
       navigator.clipboard.writeText(val).then(() => showToast('Token copied!', 'success'));
     };
 
+    // ── My Profile / Active Sessions ──────────────────────────────────────────
+    async function loadProfilePane() {
+      try {
+        const [st, userRow] = await Promise.all([
+          api('/auth/status'),
+          api('/user/notifications').catch(() => ({})),
+        ]);
+        const username = st.user || '—';
+        document.getElementById('profile-avatar').textContent = username.charAt(0).toUpperCase();
+        document.getElementById('profile-username').textContent = username;
+        const email = userRow.email || '';
+        const verified = userRow.email_verified;
+        document.getElementById('profile-email-line').textContent = email
+          ? `${email}${verified ? ' ✓' : ' (unverified)'}` : 'No email set';
+        const role = st.role || 'viewer';
+        const planMeta = { free: { label:'Free', color:'#64748b' }, pro: { label:'Pro', color:'#0f766e' }, unlimited: { label:'Unlimited', color:'#7c3aed' } };
+        const plan = (userRow.plan || (role === 'super_admin' || role === 'admin' ? role : 'free')).toLowerCase();
+        const pm = planMeta[plan] || { label: role === 'super_admin' ? 'Super Admin' : role === 'admin' ? 'Admin' : 'Free', color: role.includes('admin') ? '#7c3aed' : '#64748b' };
+        const badge = document.getElementById('profile-plan-badge');
+        badge.textContent = pm.label;
+        badge.style.cssText = `display:inline-block;padding:.15rem .6rem;border-radius:999px;font-size:.75rem;font-weight:700;background:${pm.color}22;color:${pm.color};border:1px solid ${pm.color}44;`;
+      } catch(e) { /* non-fatal */ }
+      await loadSessions();
+    }
+
+    async function loadSessions() {
+      const list = document.getElementById('sessions-list');
+      if (!list) return;
+      try {
+        const data = await api('/auth/sessions');
+        const sessions = data.sessions || [];
+        if (!sessions.length) { list.innerHTML = '<div class="meta">No active sessions found.</div>'; return; }
+        list.innerHTML = sessions.map(s => {
+          const created  = s.created_at  ? s.created_at.slice(0,16).replace('T',' ')  : '—';
+          const lastSeen = s.last_seen   ? s.last_seen.slice(0,16).replace('T',' ')   : '—';
+          return `<div style="display:flex;align-items:flex-start;justify-content:space-between;gap:.75rem;padding:.6rem 0;border-bottom:1px solid var(--border);font-size:.82rem;">
+            <div>
+              <div style="font-weight:600;">
+                <i class="bi bi-display me-1" style="color:var(--muted);"></i>${escHtml(s.label||'Browser session')}
+                ${s.is_current ? '<span style="display:inline-block;background:rgba(245,158,11,.15);color:#b45309;border-radius:4px;font-size:.7rem;font-weight:700;padding:.05rem .35rem;margin-left:.35rem;">This device</span>' : ''}
+              </div>
+              <div class="meta" style="margin-top:.2rem;">Created ${created} &nbsp;·&nbsp; Last seen ${lastSeen}</div>
+            </div>
+            ${s.is_current ? '' : `<button class="btn btn-sm btn-outline-danger" style="font-size:.75rem;white-space:nowrap;" onclick="revokeSession('${escHtml(s.token)}')">Revoke</button>`}
+          </div>`;
+        }).join('');
+      } catch(e) {
+        list.innerHTML = `<div class="err">${escHtml(e.message)}</div>`;
+      }
+    }
+
+    window.revokeSession = async function(token) {
+      if (!confirm('Revoke this session? That device will be signed out.')) return;
+      try {
+        await api(`/auth/sessions/${token}`, { method: 'DELETE' });
+        showToast('Session revoked.', 'success');
+        await loadSessions();
+      } catch(e) { showToast(e.message, 'danger'); }
+    };
+
+    document.getElementById('btn-refresh-sessions')?.addEventListener('click', loadSessions);
+    document.querySelector('.navbtn[data-target="profile"]').addEventListener('click', () => loadProfilePane());
+
     document.querySelector('.navbtn[data-target="account"]').addEventListener('click', () => { loadAccount(); loadTokens(); });
     document.querySelector('.navbtn[data-target="history"]')?.addEventListener('click', () => loadHistory());
     document.querySelector('.navbtn[data-target="collections"]')?.addEventListener('click', () => loadCollections());
@@ -2417,9 +2505,9 @@
       const _tab = new URLSearchParams(window.location.search).get('tab');
       if (_tab) {
         setPane(_tab);
-        // Trigger load callbacks for panes that need it
-        if (_tab === 'account') { loadAccount(); loadTokens(); }
-        if (_tab === 'history') loadHistory?.();
+        if (_tab === 'profile')  loadProfilePane();
+        if (_tab === 'account')  { loadAccount(); loadTokens(); }
+        if (_tab === 'history')  loadHistory?.();
         if (_tab === 'payments') loadPayments?.();
         if (_tab === 'analytics') loadAnalytics?.();
       }
