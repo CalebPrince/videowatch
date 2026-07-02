@@ -48,6 +48,12 @@ def short_id(text: str) -> str:
 def now_iso() -> str:
     return datetime.now(timezone.utc).isoformat()
 
+def _video_dedup_key(url: str) -> str:
+    """For deduplication only: strip slug after numeric ID so /video/123/slug-a and /video/123/slug-b match."""
+    p = urlparse(url)
+    path = re.sub(r'^(/(?:video|scene|movie|episode|clip)s?/\d+)/[^/]+$', r'\1', p.path.rstrip("/"))
+    return f"{p.netloc}{path}"
+
 def normalize_url(url: str) -> str:
     """Strip fragments, sort query params, remove common tracking params."""
     STRIP_PARAMS = {"utm_source", "utm_medium", "utm_campaign", "utm_content",
@@ -58,8 +64,6 @@ def normalize_url(url: str) -> str:
     qs = {k: v for k, v in qs.items() if k.lower() not in STRIP_PARAMS}
     clean_qs = urlencode([(k, v[0]) for k, v in sorted(qs.items())])
     path = p.path.rstrip("/") or "/"
-    # Normalize /video/{id}/{slug} → /video/{id} to deduplicate slug variants
-    path = re.sub(r'^(/(?:video|scene|movie|episode|clip)s?/\d+)/[^/]+$', r'\1', path)
     return urlunparse(p._replace(query=clean_qs, path=path, fragment=""))
 
 def page_url(base: str, page_num: int) -> str:
@@ -993,13 +997,14 @@ def scrape_videos(html: str, base_url: str, video_url_pattern: str = "") -> list
         if _ERROR_PAGE_RE.search(url):
             return
         url = normalize_url(url)
-        if not url or url in seen:
+        if not url:
             return
         try:
             url = normalize_url(urljoin(base_url, url))
         except Exception:
             return
-        if url in seen:
+        dedup_key = _video_dedup_key(url)
+        if dedup_key in seen:
             return
         info = detect_platform(url)
         if not info:
@@ -1010,7 +1015,7 @@ def scrape_videos(html: str, base_url: str, video_url_pattern: str = "") -> list
             target_host = urlparse(url).netloc.lower()
             if target_host != base_host:
                 return
-        seen.add(url)
+        seen.add(dedup_key)
         found.append({
             "url":         canonical,
             "title":       _format_discovered_title(title or "", platform),

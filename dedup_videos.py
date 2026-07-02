@@ -10,8 +10,11 @@ from pathlib import Path
 DB_PATH = str(Path(__file__).resolve().parent / "videowatch.db")
 
 def canonical_key(url: str) -> str:
-    """Strip slug after numeric ID: /video/71709/some-slug → /video/71709"""
-    return re.sub(r'^(https?://[^/]+/(?:video|scene|movie|episode|clip)s?/\d+)/.*$', r'\1', url.rstrip('/'))
+    """Dedup key: strip slug after numeric ID so slug variants match."""
+    from urllib.parse import urlparse
+    p = urlparse(url)
+    path = re.sub(r'^(/(?:video|scene|movie|episode|clip)s?/\d+)/[^/]+$', r'\1', p.path.rstrip("/"))
+    return f"{p.netloc}{path}"
 
 def score(row: dict) -> int:
     """Higher score = more complete row. Prefer to keep this one."""
