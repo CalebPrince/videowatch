@@ -1046,6 +1046,12 @@
               <option value="86400">24 hours</option>
             </select>
 
+            <label class="form-label mt-3" style="font-size:.85rem;">Scan engine</label>
+            <select id="inp-engine" class="form-select form-select-sm">
+              <option value="basic">⚙ Basic (Playwright)</option>
+              <option value="apify">☁ Apify (cloud, JS-heavy sites)</option>
+            </select>
+
             <div id="add-error" class="text-danger mt-2" style="font-size:.82rem;display:none;"></div>
           </div>
 
@@ -3591,6 +3597,7 @@ document.getElementById('btn-add').onclick = async () => {
         group_name:    document.getElementById('inp-group').value.trim(),
         max_pages:     addPagesVal,
         scan_interval: parseInt(document.getElementById('inp-interval').value, 10),
+        scan_engine:   document.getElementById('inp-engine').value,
       }),
     });
     document.getElementById('inp-url').value  = '';
