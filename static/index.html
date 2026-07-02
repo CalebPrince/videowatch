@@ -795,11 +795,26 @@
             </button>
           </li>
           <li>
+            <button class="dropdown-item" id="btn-notifications-open" type="button" title="Notification settings">
+              <i class="bi bi-bell me-1"></i> Notifications
+            </button>
+          </li>
+          <li>
+            <a class="dropdown-item" href="/settings" title="Open full settings page">
+              <i class="bi bi-sliders me-1"></i> Full settings
+            </a>
+          </li>
+          <li>
             <button class="dropdown-item" type="button" data-bs-toggle="modal" data-bs-target="#downloadsModal" onclick="loadDownloads()">
               <i class="bi bi-download me-1"></i> Downloads
             </button>
           </li>
           <li><hr class="dropdown-divider"></li>
+          <li>
+            <button class="dropdown-item" id="btn-change-password-open" type="button" title="Change account password">
+              <i class="bi bi-shield-lock me-1"></i> Change password
+            </button>
+          </li>
           <li>
             <button class="dropdown-item text-danger" id="btn-logout" type="button" title="Sign out">
               <i class="bi bi-box-arrow-right me-1"></i> Logout
