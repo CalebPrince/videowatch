@@ -1859,7 +1859,7 @@ async def _scan_with_apify(site: dict, push_func=None) -> list[dict]:
                 "pageFunction": page_function,
                 "maxPagesPerCrawl": max_pages,
                 "maxConcurrency": 1,
-                "waitUntil": "networkidle2",
+                "waitUntil": ["networkidle2"],
             },
         )
         if run_res.status_code not in (200, 201):
