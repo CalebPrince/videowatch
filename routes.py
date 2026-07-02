@@ -1023,9 +1023,71 @@ def _ensure_default_admin_user():
         log.warning(f"Could not migrate default admin / site owners: {e}")
 
 
+def _create_server_session(request: Request, username: str, role: str, ttl_days: int = 30) -> str:
+    """Create a server-side session row and store the token in the cookie session."""
+    token = secrets.token_urlsafe(32)
+    now = datetime.now(timezone.utc)
+    from datetime import timedelta as _td
+    expires_at = (now + _td(days=ttl_days)).isoformat()
+    with write_lock:
+        with get_db() as db:
+            db.execute(
+                "INSERT INTO user_sessions (token, username, role, expires_at, created_at, last_seen) "
+                "VALUES (?,?,?,?,?,?)",
+                (token, username, role, expires_at, now.isoformat(), now.isoformat()),
+            )
+            db.commit()
+    request.session["server_token"] = token
+    return token
+
+
+def _validate_server_session(request: Request) -> bool:
+    """Return True if the server-side session token in the cookie is still valid."""
+    token = request.session.get("server_token")
+    if not token:
+        return False
+    now = datetime.now(timezone.utc)
+    with get_db() as db:
+        row = db.execute(
+            "SELECT username, role, expires_at FROM user_sessions WHERE token=?", (token,)
+        ).fetchone()
+    if not row:
+        return False
+    try:
+        if now > datetime.fromisoformat(row["expires_at"]):
+            _delete_server_session(token)
+            return False
+    except Exception:
+        return False
+    # Refresh last_seen periodically (non-blocking best-effort)
+    try:
+        with write_lock:
+            with get_db() as db:
+                db.execute("UPDATE user_sessions SET last_seen=? WHERE token=?",
+                           (now.isoformat(), token))
+                db.commit()
+    except Exception:
+        pass
+    # Re-sync cookie fields from DB in case they drifted
+    request.session["auth_user"] = row["username"]
+    request.session["auth_role"] = row["role"]
+    return True
+
+
+def _delete_server_session(token: str):
+    with write_lock:
+        with get_db() as db:
+            db.execute("DELETE FROM user_sessions WHERE token=?", (token,))
+            db.commit()
+
+
 def is_authenticated(request: Request) -> bool:
     if not auth_enabled():
         return True
+    # If the session has a server_token, validate it against the DB
+    if request.session.get("server_token"):
+        return _validate_server_session(request)
+    # Legacy: cookie-only sessions (before server-side sessions were added)
     return bool(request.session.get("auth_user"))
 
 
@@ -1521,10 +1583,12 @@ def auth_login(body: LoginIn, request: Request):
             raise HTTPException(403, "Please verify your email before logging in. Check your inbox.")
 
     from datetime import timedelta
-    ttl = timedelta(days=30) if body.remember_me else timedelta(hours=24)
+    ttl_days = 30 if body.remember_me else 1
+    role = _sanitize_role(row.get("role") if row else None) or "viewer"
     request.session["auth_user"] = body.username
-    request.session["auth_role"] = _sanitize_role(row.get("role") if row else None) or "viewer"
-    request.session["session_expires_at"] = (datetime.now(timezone.utc) + ttl).isoformat()
+    request.session["auth_role"] = role
+    request.session["session_expires_at"] = (datetime.now(timezone.utc) + timedelta(days=ttl_days)).isoformat()
+    _create_server_session(request, body.username, role, ttl_days=ttl_days)
     _audit(request, "login", f"role={request.session['auth_role']} remember_me={body.remember_me}")
     # Email login notification if user has a verified email
     if row and row.get("email") and row.get("email_verified"):
@@ -1540,6 +1604,9 @@ def auth_login(body: LoginIn, request: Request):
 @router.post("/api/auth/logout")
 def auth_logout(request: Request):
     _audit(request, "logout", "")
+    token = request.session.get("server_token")
+    if token:
+        _delete_server_session(token)
     request.session.clear()
     return {"ok": True, "authenticated": False}
 
@@ -1866,6 +1933,7 @@ async def google_callback(request: Request, code: str = "", state: str = "", err
     request.session["session_expires_at"] = (
         datetime.now(timezone.utc) + timedelta(days=30)
     ).isoformat()
+    _create_server_session(request, username, role, ttl_days=30)
     _audit(request, "google_login", f"email={email}")
     is_mobile = request.session.pop("oauth_mobile", False)
     if is_mobile:

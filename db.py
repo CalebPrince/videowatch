@@ -354,6 +354,17 @@ def init_db():
                 )
             """)
             db.execute("CREATE INDEX IF NOT EXISTS idx_downloads_owner ON downloads(owner)")
+            db.execute("""
+                CREATE TABLE IF NOT EXISTS user_sessions (
+                    token       TEXT PRIMARY KEY,
+                    username    TEXT NOT NULL,
+                    role        TEXT NOT NULL,
+                    expires_at  TEXT NOT NULL,
+                    created_at  TEXT NOT NULL,
+                    last_seen   TEXT NOT NULL
+                )
+            """)
+            db.execute("CREATE INDEX IF NOT EXISTS idx_user_sessions_user ON user_sessions(username)")
             db.execute(
                 "INSERT OR IGNORE INTO app_settings (key, value) VALUES (?, ?)",
                 ("autoscan_enabled", "0"),
