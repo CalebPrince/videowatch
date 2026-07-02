@@ -2614,7 +2614,7 @@ async function renderSidebar() {
         try {
           await api(`/sites/${s.id}`, { method: 'PATCH', body: JSON.stringify({ scan_interval: parseInt(intervalSel.value, 10) }) });
           showToast(`Scan interval updated`, 'success');
-          await renderSites();
+          await renderSidebar();
         } catch (err) { showToast(err.message, 'danger'); }
       });
       actions.children[1].onclick = e => { e.stopPropagation(); openSettings(s); };
