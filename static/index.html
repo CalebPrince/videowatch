@@ -798,6 +798,11 @@
               <i class="bi bi-sliders me-1"></i> Full settings
             </a>
           </li>
+          <li>
+            <button class="dropdown-item" type="button" data-bs-toggle="modal" data-bs-target="#downloadsModal" onclick="loadDownloads()">
+              <i class="bi bi-download me-1"></i> Downloads
+            </button>
+          </li>
           <li><hr class="dropdown-divider"></li>
           <li>
             <button class="dropdown-item" id="btn-change-password-open" type="button" title="Change account password">
@@ -936,6 +941,21 @@
   </div>
 </div>
 <div id="toast-container" aria-live="polite" aria-atomic="true"></div>
+
+<!-- ── Downloads Modal ── -->
+<div class="modal fade" id="downloadsModal" tabindex="-1">
+  <div class="modal-dialog modal-dialog-centered modal-lg">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title"><i class="bi bi-download me-2"></i>Downloads</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body" id="downloads-list" style="max-height:65vh;overflow-y:auto;">
+        <div class="text-center text-muted py-4" id="downloads-empty">No downloads yet.</div>
+      </div>
+    </div>
+  </div>
+</div>
 
 <!-- ── Add Modal ── -->
 <div class="modal fade" id="addModal" tabindex="-1">
@@ -2976,6 +2996,17 @@ async function renderVideos() {
     colBtn.onclick = (e) => { e.preventDefault(); e.stopPropagation(); openCollectionPopover(colBtn, v); };
     meta.appendChild(colBtn);
 
+    // Download button
+    const dlBtn = document.createElement('button');
+    dlBtn.className = 'btn-icon';
+    dlBtn.title = 'Download video';
+    dlBtn.innerHTML = '<i class="bi bi-download"></i>';
+    dlBtn.onclick = async (e) => {
+      e.preventDefault(); e.stopPropagation();
+      await startDownload(v.id, v.title || v.url);
+    };
+    meta.appendChild(dlBtn);
+
     // Tag chips
     const chipsWrap = document.createElement('div');
     chipsWrap.className = 'tag-chips-wrap';
@@ -4228,6 +4259,103 @@ function showKbHelp() {
   document.body.appendChild(ov);
   ov.addEventListener('keydown', e => { if (e.key === 'Escape' || e.key === '?') ov.remove(); });
 }
+
+// ── Downloads ──────────────────────────────────────────────────────────────
+let _dlPollTimer = null;
+
+async function startDownload(videoId, title) {
+  try {
+    await api('/downloads', { method: 'POST', body: JSON.stringify({ video_id: videoId }) });
+    showToast(`Download queued: ${title || videoId}`);
+    // Open downloads modal
+    const modal = bootstrap.Modal.getOrCreate(document.getElementById('downloadsModal'));
+    modal.show();
+    loadDownloads();
+  } catch (e) {
+    showToast('Download failed: ' + e.message, 'danger');
+  }
+}
+
+async function loadDownloads() {
+  clearInterval(_dlPollTimer);
+  await renderDownloads();
+  // Poll while any download is active
+  _dlPollTimer = setInterval(async () => {
+    const hasActive = await renderDownloads();
+    if (!hasActive) clearInterval(_dlPollTimer);
+  }, 2000);
+}
+
+async function renderDownloads() {
+  const list = document.getElementById('downloads-list');
+  const empty = document.getElementById('downloads-empty');
+  let items;
+  try { items = await api('/downloads'); } catch { return false; }
+
+  if (!items.length) {
+    list.innerHTML = '<div class="text-center text-muted py-4">No downloads yet.</div>';
+    return false;
+  }
+
+  let hasActive = false;
+  list.innerHTML = items.map(d => {
+    const isDone    = d.status === 'done';
+    const isFailed  = d.status === 'failed';
+    const isPending = d.status === 'queued' || d.status === 'downloading';
+    if (isPending) hasActive = true;
+
+    const pct = d.progress || 0;
+    const size = d.file_size ? (d.file_size / 1024 / 1024).toFixed(1) + ' MB' : '';
+
+    const bar = isPending ? `
+      <div style="height:4px;background:#e2e8f0;border-radius:2px;margin:.4rem 0;">
+        <div style="height:4px;background:var(--brand);border-radius:2px;width:${pct}%;transition:width .3s;"></div>
+      </div>
+      <small class="text-muted">${d.status === 'queued' ? 'Queued…' : `Downloading ${pct}%`}</small>` : '';
+
+    const actions = isDone ? `
+      <a href="/api/downloads/${d.id}/file" class="btn btn-sm btn-outline-secondary" download title="Save file">
+        <i class="bi bi-cloud-download"></i> Save
+      </a>
+      <button class="btn btn-sm btn-outline-danger" onclick="deleteDownload('${d.id}')" title="Delete">
+        <i class="bi bi-trash"></i>
+      </button>` :
+      isFailed ? `
+      <span class="text-danger small me-2"><i class="bi bi-exclamation-circle"></i> ${d.error || 'Failed'}</span>
+      <button class="btn btn-sm btn-outline-danger" onclick="deleteDownload('${d.id}')" title="Delete">
+        <i class="bi bi-trash"></i>
+      </button>` :
+      `<button class="btn btn-sm btn-outline-secondary" onclick="deleteDownload('${d.id}')" title="Cancel">
+        <i class="bi bi-x-lg"></i> Cancel
+      </button>`;
+
+    return `<div class="d-flex align-items-start gap-3 py-2 border-bottom" style="gap:.75rem!important">
+      ${d.thumb ? `<img src="${d.thumb}" style="width:72px;height:48px;object-fit:cover;border-radius:6px;flex-shrink:0;">` :
+        `<div style="width:72px;height:48px;background:#e2e8f0;border-radius:6px;flex-shrink:0;display:flex;align-items:center;justify-content:center;"><i class="bi bi-film text-muted"></i></div>`}
+      <div style="flex:1;min-width:0;">
+        <div style="font-size:.85rem;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${d.title || d.video_url || d.video_id}</div>
+        ${bar}
+        ${isDone ? `<small class="text-muted">${size} · Ready</small>` : ''}
+      </div>
+      <div class="d-flex align-items-center gap-1 flex-shrink-0">${actions}</div>
+    </div>`;
+  }).join('');
+
+  return hasActive;
+}
+
+async function deleteDownload(dlId) {
+  try {
+    await api(`/downloads/${dlId}`, { method: 'DELETE' });
+    await renderDownloads();
+  } catch (e) {
+    showToast('Could not delete: ' + e.message, 'danger');
+  }
+}
+
+document.getElementById('downloadsModal').addEventListener('hidden.bs.modal', () => {
+  clearInterval(_dlPollTimer);
+});
 </script>
 
 </body>

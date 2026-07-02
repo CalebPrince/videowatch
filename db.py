@@ -338,6 +338,22 @@ def init_db():
                     FOREIGN KEY (video_id)      REFERENCES videos(id)      ON DELETE CASCADE
                 )
             """)
+            db.execute("""
+                CREATE TABLE IF NOT EXISTS downloads (
+                    id          TEXT PRIMARY KEY,
+                    video_id    TEXT NOT NULL,
+                    owner       TEXT NOT NULL,
+                    status      TEXT NOT NULL DEFAULT 'queued',
+                    progress    INTEGER DEFAULT 0,
+                    file_path   TEXT,
+                    file_size   INTEGER,
+                    error       TEXT,
+                    created_at  TEXT NOT NULL,
+                    updated_at  TEXT NOT NULL,
+                    FOREIGN KEY (video_id) REFERENCES videos(id) ON DELETE CASCADE
+                )
+            """)
+            db.execute("CREATE INDEX IF NOT EXISTS idx_downloads_owner ON downloads(owner)")
             db.execute(
                 "INSERT OR IGNORE INTO app_settings (key, value) VALUES (?, ?)",
                 ("autoscan_enabled", "0"),

@@ -28,6 +28,8 @@ from playwright_stealth import Stealth
 # Directory to store video files inside the current project workspace
 VIDEOS_DIR = Path(__file__).resolve().parent / "videos"
 VIDEOS_DIR.mkdir(exist_ok=True)
+DOWNLOADS_DIR = Path(__file__).resolve().parent / "downloads"
+DOWNLOADS_DIR.mkdir(exist_ok=True)
 
 # Directory for automated DB backups
 BACKUPS_DIR = Path(__file__).resolve().parent / "backups"
@@ -4672,3 +4674,240 @@ async def discover_sites(q: str = Query(...)):
         log.warning(f"Site discovery search failed: {e}")
 
     return {"query": query, "results": results}
+
+
+# ── Video Downloads (yt-dlp) ───────────────────────────────────────────────────
+
+import subprocess
+import uuid as _uuid
+
+_dl_lock   = threading.Lock()
+_dl_queue: queue.Queue = queue.Queue()
+_dl_active: dict = {}   # download_id -> True while running
+
+_YOUTUBE_DOMAINS = {"youtube.com", "youtu.be", "www.youtube.com", "m.youtube.com"}
+
+
+def _is_youtube(url: str) -> bool:
+    try:
+        return urlparse(url).netloc.lstrip("www.") in _YOUTUBE_DOMAINS
+    except Exception:
+        return False
+
+
+def _dl_worker():
+    """Single background thread that processes the download queue."""
+    while True:
+        dl_id = _dl_queue.get()
+        try:
+            with get_db() as db:
+                row = db.execute("SELECT * FROM downloads WHERE id=?", (dl_id,)).fetchone()
+            if not row:
+                continue
+
+            video_id = row["video_id"]
+            with get_db() as db:
+                vrow = db.execute("SELECT url, title FROM videos WHERE id=?", (video_id,)).fetchone()
+            if not vrow:
+                _dl_set_status(dl_id, "failed", error="Video not found")
+                continue
+
+            url   = vrow["url"]
+            title = vrow["title"] or dl_id
+            safe  = re.sub(r'[^\w\-]', '_', title)[:60]
+            out   = DOWNLOADS_DIR / f"{dl_id}_{safe}.%(ext)s"
+
+            _dl_set_status(dl_id, "downloading", progress=0)
+
+            cmd = [
+                "yt-dlp",
+                "--no-playlist",
+                "--merge-output-format", "mp4",
+                "--output", str(out),
+                "--progress",
+                "--newline",
+                url,
+            ]
+
+            proc = subprocess.Popen(
+                cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True
+            )
+            _dl_active[dl_id] = proc
+
+            for line in proc.stdout:
+                line = line.strip()
+                # Parse progress lines: [download]  45.3% ...
+                m = re.search(r'\[download\]\s+([\d.]+)%', line)
+                if m:
+                    pct = int(float(m.group(1)))
+                    _dl_set_status(dl_id, "downloading", progress=pct)
+
+            proc.wait()
+            _dl_active.pop(dl_id, None)
+
+            if proc.returncode != 0:
+                _dl_set_status(dl_id, "failed", error="yt-dlp exited with errors")
+                continue
+
+            # Find the output file (yt-dlp fills in the extension)
+            matches = list(DOWNLOADS_DIR.glob(f"{dl_id}_*.mp4")) + \
+                      list(DOWNLOADS_DIR.glob(f"{dl_id}_*"))
+            if not matches:
+                _dl_set_status(dl_id, "failed", error="Output file not found")
+                continue
+
+            fp = matches[0]
+            size = fp.stat().st_size
+            with write_lock:
+                with get_db() as db:
+                    db.execute(
+                        "UPDATE downloads SET status='done', progress=100, file_path=?, "
+                        "file_size=?, updated_at=? WHERE id=?",
+                        (fp.name, size, datetime.now(timezone.utc).isoformat(), dl_id),
+                    )
+                    db.commit()
+        except Exception as e:
+            log.exception(f"Download worker error for {dl_id}: {e}")
+            _dl_set_status(dl_id, "failed", error=str(e))
+        finally:
+            _dl_queue.task_done()
+
+
+def _dl_set_status(dl_id: str, status: str, progress: int = None, error: str = None):
+    with write_lock:
+        with get_db() as db:
+            db.execute(
+                "UPDATE downloads SET status=?, progress=COALESCE(?,progress), "
+                "error=?, updated_at=? WHERE id=?",
+                (status, progress, error, datetime.now(timezone.utc).isoformat(), dl_id),
+            )
+            db.commit()
+
+
+# Start worker thread once
+_dl_thread = threading.Thread(target=_dl_worker, daemon=True, name="dl-worker")
+_dl_thread.start()
+
+
+@router.post("/api/downloads")
+def start_download(request: Request, body: dict):
+    if not is_authenticated(request):
+        raise HTTPException(401)
+    video_id = body.get("video_id", "")
+    if not video_id:
+        raise HTTPException(400, "video_id required")
+
+    with get_db() as db:
+        vrow = db.execute("SELECT url FROM videos WHERE id=?", (video_id,)).fetchone()
+    if not vrow:
+        raise HTTPException(404, "Video not found")
+
+    # Warn but still allow YouTube (user's choice)
+    owner = request.session.get("auth_user", "")
+    dl_id = str(_uuid.uuid4())
+    now   = datetime.now(timezone.utc).isoformat()
+    with write_lock:
+        with get_db() as db:
+            # Cancel existing queued/failed downloads for the same video+owner
+            db.execute(
+                "DELETE FROM downloads WHERE video_id=? AND owner=? AND status IN ('queued','failed')",
+                (video_id, owner),
+            )
+            db.execute(
+                "INSERT INTO downloads (id, video_id, owner, status, progress, created_at, updated_at) "
+                "VALUES (?,?,?,'queued',0,?,?)",
+                (dl_id, video_id, owner, now, now),
+            )
+            db.commit()
+
+    _dl_queue.put(dl_id)
+    return {"id": dl_id, "status": "queued"}
+
+
+@router.get("/api/downloads")
+def list_downloads(request: Request):
+    if not is_authenticated(request):
+        raise HTTPException(401)
+    owner = request.session.get("auth_user", "")
+    with get_db() as db:
+        rows = db.execute("""
+            SELECT d.*, v.title, v.thumb, v.url as video_url
+            FROM downloads d
+            JOIN videos v ON v.id = d.video_id
+            WHERE d.owner=?
+            ORDER BY d.created_at DESC
+            LIMIT 100
+        """, (owner,)).fetchall()
+    return [dict(r) for r in rows]
+
+
+@router.get("/api/downloads/{dl_id}")
+def get_download(request: Request, dl_id: str):
+    if not is_authenticated(request):
+        raise HTTPException(401)
+    owner = request.session.get("auth_user", "")
+    with get_db() as db:
+        row = db.execute(
+            "SELECT * FROM downloads WHERE id=? AND owner=?", (dl_id, owner)
+        ).fetchone()
+    if not row:
+        raise HTTPException(404)
+    return dict(row)
+
+
+@router.delete("/api/downloads/{dl_id}")
+def delete_download(request: Request, dl_id: str):
+    if not is_authenticated(request):
+        raise HTTPException(401)
+    owner = request.session.get("auth_user", "")
+    with get_db() as db:
+        row = db.execute(
+            "SELECT * FROM downloads WHERE id=? AND owner=?", (dl_id, owner)
+        ).fetchone()
+    if not row:
+        raise HTTPException(404)
+
+    # Kill process if running
+    proc = _dl_active.pop(dl_id, None)
+    if proc:
+        try:
+            proc.terminate()
+        except Exception:
+            pass
+
+    # Delete file
+    if row["file_path"]:
+        fp = DOWNLOADS_DIR / row["file_path"]
+        if fp.exists():
+            fp.unlink(missing_ok=True)
+
+    with write_lock:
+        with get_db() as db:
+            db.execute("DELETE FROM downloads WHERE id=?", (dl_id,))
+            db.commit()
+    return {"ok": True}
+
+
+@router.get("/api/downloads/{dl_id}/file")
+def serve_download(request: Request, dl_id: str):
+    """Stream the downloaded file to the browser."""
+    if not is_authenticated(request):
+        raise HTTPException(401)
+    owner = request.session.get("auth_user", "")
+    with get_db() as db:
+        row = db.execute(
+            "SELECT * FROM downloads WHERE id=? AND owner=? AND status='done'",
+            (dl_id, owner),
+        ).fetchone()
+    if not row or not row["file_path"]:
+        raise HTTPException(404)
+    fp = DOWNLOADS_DIR / row["file_path"]
+    if not fp.exists():
+        raise HTTPException(404, "File not found on disk")
+
+    from fastapi.responses import FileResponse
+    return FileResponse(
+        path=str(fp),
+        media_type="video/mp4",
+        filename=fp.name,
+    )
