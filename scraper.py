@@ -64,10 +64,22 @@ def page_url(base: str, page_num: int) -> str:
     if page_num == 1:
         return base
     parsed = urlparse(base)
+    # /page/N/ or /p/N/ already in path → replace the number
     if re.search(r'/(page|p)/\d+', parsed.path):
         new_path = re.sub(r'/(page|p)/\d+', f'/page/{page_num}', parsed.path)
         return urlunparse(parsed._replace(path=new_path))
+    # existing ?page= / ?p= / ?pg= / ?paged= query param → update it
     qs = parse_qs(parsed.query)
+    for qkey in ("page", "p", "pg", "paged"):
+        if qkey in qs:
+            qs[qkey] = [str(page_num)]
+            flat_qs = "&".join(f"{k}={v[0]}" for k, v in qs.items())
+            return urlunparse(parsed._replace(query=flat_qs))
+    # path ends with /N/ (already numbered) → replace the number
+    if re.search(r'/\d+/?$', parsed.path):
+        new_path = re.sub(r'/\d+(/?)$', f'/{page_num}\\1', parsed.path)
+        return urlunparse(parsed._replace(path=new_path))
+    # default: append ?page=N
     qs["page"] = [str(page_num)]
     flat_qs = "&".join(f"{k}={v[0]}" for k, v in qs.items())
     return urlunparse(parsed._replace(query=flat_qs))
@@ -1536,7 +1548,7 @@ AGE_GATE_SELECTORS = [
 ]
 
 # How many consecutive empty pages to tolerate before stopping pagination.
-MAX_CONSECUTIVE_EMPTY = 2
+MAX_CONSECUTIVE_EMPTY = 3
 
 # Adaptive auto-scroll: scroll until the page height stops growing (lazy-load
 # settled) instead of waiting a fixed time.
