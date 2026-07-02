@@ -1441,14 +1441,16 @@ def _add_site_impl(body: SiteIn, request: Request):
 
             # Enforce plan site limit (super_admin is exempt)
             limits = _plan_limits(owner)
+            site_count = db.execute("SELECT COUNT(*) FROM sites WHERE owner=?", (owner,)).fetchone()[0]
             if not is_super_admin(request):
                 if limits["sites"] is not None:
-                    site_count = db.execute("SELECT COUNT(*) FROM sites WHERE owner=?", (owner,)).fetchone()[0]
                     if site_count >= limits["sites"]:
                         raise HTTPException(403, f"Free plan is limited to {limits['sites']} monitored sites. Upgrade to add more.")
 
             # Enforce plan minimum scan interval
-            scan_interval = max(limits["min_interval"], max(60, body.scan_interval))
+            # First site gets 5-minute interval regardless of plan (onboarding UX)
+            effective_min = 300 if site_count == 0 else limits["min_interval"]
+            scan_interval = max(effective_min, max(60, body.scan_interval))
 
             if db.execute("SELECT id FROM sites WHERE url=? AND owner=?", (url, owner)).fetchone():
                 raise HTTPException(409, "Site already monitored")
