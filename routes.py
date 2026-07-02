@@ -2073,6 +2073,14 @@ def list_videos(request: Request,
             order = "ORDER BY COALESCE(videos.last_watched_at, '') DESC"
         elif sort == "found":
             order = "ORDER BY videos.found_at DESC"
+        elif sort == "oldest":
+            order = "ORDER BY SUBSTR(COALESCE(videos.released_at, videos.found_at), 1, 19) ASC"
+        elif sort == "duration_desc":
+            order = "ORDER BY COALESCE(videos.duration, 0) DESC"
+        elif sort == "duration_asc":
+            order = "ORDER BY COALESCE(videos.duration, 0) ASC"
+        elif sort == "title_asc":
+            order = "ORDER BY LOWER(videos.title) ASC"
         else:
             order = "ORDER BY SUBSTR(COALESCE(videos.released_at, videos.found_at), 1, 19) DESC"
 
