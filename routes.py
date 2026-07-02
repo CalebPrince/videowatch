@@ -3327,6 +3327,29 @@ def delete_waitlist_entry(entry_id: int, request: Request):
     return {"ok": True}
 
 
+@router.post("/api/push/expo-token")
+def register_expo_token(body: dict, request: Request):
+    """Register an Expo push token for the current user (mobile app)."""
+    if not is_authenticated(request):
+        raise HTTPException(401)
+    token = (body.get("token") or "").strip()
+    if not token or not token.startswith("ExponentPushToken["):
+        raise HTTPException(400, "Invalid Expo push token")
+    owner = current_user(request)
+    with write_lock:
+        with get_db() as db:
+            db.execute(
+                "INSERT OR IGNORE INTO app_settings (key, value) VALUES (?, ?)",
+                (f"expo_token:{owner}", token)
+            )
+            db.execute(
+                "UPDATE app_settings SET value=? WHERE key=?",
+                (token, f"expo_token:{owner}")
+            )
+            db.commit()
+    return {"ok": True}
+
+
 @router.get("/api/admin/rate-limits")
 def admin_rate_limits(request: Request):
     """Return current in-memory rate-limit hit counts per IP."""
