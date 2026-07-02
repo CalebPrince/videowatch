@@ -347,6 +347,17 @@
           <span class="pill" id="autoscan-state">Auto-scan: --</span>
         </div>
         <div class="meta mt-2">Auto-scan can also be controlled from the dashboard quick actions.</div>
+
+        <hr style="border-color:var(--border);margin-top:1.25rem;">
+        <h6 style="font-size:.9rem;margin-bottom:.25rem;"><i class="bi bi-cloud me-1" style="color:var(--brand)"></i>Apify Integration</h6>
+        <p class="meta" style="font-size:.8rem;margin-bottom:.75rem;">Apify is a cloud scraping platform that handles JS-heavy and Cloudflare-protected sites. Enter your API token to enable the Apify scan engine per site. <a href="https://console.apify.com/account/integrations" target="_blank" rel="noopener" style="color:var(--brand);">Get your token ↗</a></p>
+        <div id="apify-token-status" class="meta" style="font-size:.78rem;margin-bottom:.5rem;"></div>
+        <div class="d-flex gap-2 align-items-center flex-wrap">
+          <input type="password" id="apify-token-inp" class="form-control form-control-sm" placeholder="apify_api_…" style="max-width:320px;font-family:monospace;font-size:.82rem;">
+          <button class="btn btn-sm btn-brand-solid" id="btn-save-apify-token">Save</button>
+          <button class="btn btn-sm btn-outline-secondary" id="btn-clear-apify-token">Clear</button>
+        </div>
+        <div id="apify-token-msg" class="meta mt-2"></div>
       </section>
 
       <section id="sites" class="cardx pane hidden">
@@ -950,7 +961,44 @@
 
       const auto = await api('/scan/automation');
       document.getElementById('autoscan-state').textContent = `Auto-scan: ${auto.enabled ? 'enabled' : 'paused'}`;
+
+      // Apify token status
+      try {
+        const apify = await api('/settings/apify-token');
+        const statusEl = document.getElementById('apify-token-status');
+        if (statusEl) {
+          statusEl.textContent = apify.configured
+            ? `Token configured: ${apify.masked}`
+            : 'No token configured — Apify engine unavailable.';
+        }
+      } catch {}
     }
+
+    // Apify token save / clear
+    document.getElementById('btn-save-apify-token')?.addEventListener('click', async () => {
+      const inp = document.getElementById('apify-token-inp');
+      const msg = document.getElementById('apify-token-msg');
+      const token = inp.value.trim();
+      if (!token) { msg.textContent = 'Enter a token first.'; msg.className = 'err'; return; }
+      try {
+        await api('/settings/apify-token', { method: 'POST', body: JSON.stringify({ token }) });
+        msg.textContent = 'Token saved.';
+        msg.className = 'ok';
+        inp.value = '';
+        await loadGeneral();
+      } catch (e) { msg.textContent = e.message; msg.className = 'err'; }
+    });
+
+    document.getElementById('btn-clear-apify-token')?.addEventListener('click', async () => {
+      const msg = document.getElementById('apify-token-msg');
+      if (!confirm('Clear the Apify API token?')) return;
+      try {
+        await api('/settings/apify-token', { method: 'POST', body: JSON.stringify({ token: '' }) });
+        msg.textContent = 'Token cleared.';
+        msg.className = 'ok';
+        await loadGeneral();
+      } catch (e) { msg.textContent = e.message; msg.className = 'err'; }
+    });
 
     async function loadHealth() {
       const h = await api('/scan/health?limit=20');
@@ -1110,6 +1158,10 @@
               <option value="balanced" ${(!s.scan_profile || s.scan_profile === 'balanced') ? 'selected' : ''}>balanced</option>
               <option value="deep" ${s.scan_profile === 'deep' ? 'selected' : ''}>deep</option>
             </select>
+            <select data-k="engine" title="Scan engine">
+              <option value="basic" ${(!s.scan_engine || s.scan_engine === 'basic') ? 'selected' : ''}>⚙ Basic</option>
+              <option value="apify" ${s.scan_engine === 'apify' ? 'selected' : ''}>☁ Apify</option>
+            </select>
           </div>
           <div class="dupe-actions">
             <button class="btn btn-sm btn-outline-secondary">Save rules</button>
@@ -1129,6 +1181,7 @@
                 rule_exclude_keywords: row.querySelector('[data-k="exc"]').value.trim(),
                 rule_min_duration: parseInt(row.querySelector('[data-k="dur"]').value || '0', 10),
                 scan_profile: row.querySelector('[data-k="prof"]').value,
+                scan_engine: row.querySelector('[data-k="engine"]').value,
               }),
             });
             msgEl.textContent = 'Saved';

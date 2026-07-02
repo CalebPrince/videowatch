@@ -1809,6 +1809,108 @@ def _scan_site_sync(site: dict) -> list[dict]:
 
     return all_videos
 
+# ── Apify scan engine ────────────────────────────────────────────────────────
+
+async def _scan_with_apify(site: dict, push_func=None) -> list[dict]:
+    """Fetch JS-rendered HTML via Apify web-scraper Actor, then extract videos with the existing parser."""
+    async def push(msg: str):
+        if push_func:
+            await push_func(msg)
+
+    site_id = site["id"]
+    base_url = site["url"]
+    max_pages = _effective_max_pages(site)
+
+    from db import get_db
+    with get_db() as _db:
+        row = _db.execute("SELECT value FROM app_settings WHERE key='apify_api_token'").fetchone()
+    api_token = (row["value"].strip() if row else "")
+    if not api_token:
+        log.warning("Apify API token not configured — cannot use Apify engine")
+        await push(f"PAGE_ERROR|{site_id}|1|Apify token not configured")
+        return []
+
+    # Build start URLs (same paging logic used by the basic engine)
+    start_urls: list[dict] = []
+    for page_num in range(1, max_pages + 1):
+        paged = page_url(base_url, page_num)
+        start_urls.append({"url": paged})
+        if page_num > 1 and paged == base_url:
+            break
+
+    page_function = (
+        "async function pageFunction(context) {\n"
+        "  const { page, request } = context;\n"
+        "  try { await page.waitForTimeout(3000); } catch(e) {}\n"
+        "  const html = await page.content();\n"
+        "  return { html, url: request.url };\n"
+        "}"
+    )
+
+    headers = {"Authorization": f"Bearer {api_token}", "Content-Type": "application/json"}
+    actor_id = "apify~web-scraper"
+
+    async with httpx.AsyncClient(timeout=30.0) as client:
+        run_res = await client.post(
+            f"https://api.apify.com/v2/acts/{actor_id}/runs",
+            headers=headers,
+            json={
+                "startUrls": start_urls,
+                "pageFunction": page_function,
+                "maxPagesPerCrawl": max_pages,
+                "maxConcurrency": 1,
+                "waitUntil": "networkidle2",
+            },
+        )
+        if run_res.status_code not in (200, 201):
+            log.warning(f"Apify run start failed {run_res.status_code}: {run_res.text[:200]}")
+            await push(f"PAGE_ERROR|{site_id}|1|Apify error {run_res.status_code}")
+            return []
+
+        run_data = run_res.json()["data"]
+        run_id = run_data["id"]
+        dataset_id = run_data["defaultDatasetId"]
+        log.info(f"  Apify run started: {run_id}")
+
+        # Poll until SUCCEEDED or terminal failure (max 5 min)
+        for _ in range(60):
+            await asyncio.sleep(5)
+            status_res = await client.get(
+                f"https://api.apify.com/v2/actor-runs/{run_id}",
+                headers=headers,
+            )
+            status = status_res.json()["data"]["status"]
+            log.info(f"  Apify run {run_id} status: {status}")
+            if status == "SUCCEEDED":
+                break
+            if status in ("FAILED", "ABORTED", "TIMED-OUT"):
+                log.warning(f"Apify run {run_id} ended with: {status}")
+                await push(f"PAGE_ERROR|{site_id}|1|Apify run {status}")
+                return []
+        else:
+            log.warning(f"Apify run {run_id} timed out waiting for completion")
+            return []
+
+        items_res = await client.get(
+            f"https://api.apify.com/v2/datasets/{dataset_id}/items",
+            headers=headers,
+            params={"format": "json", "limit": 200},
+        )
+        items = items_res.json() if items_res.status_code == 200 else []
+
+    all_videos: list[dict] = []
+    for item in items:
+        html = item.get("html", "")
+        url = item.get("url", base_url)
+        if not html:
+            continue
+        vids = scrape_videos(html, url, site.get("video_url_pattern") or "")
+        log.info(f"  Apify page {url}: {len(vids)} video(s)")
+        all_videos.extend(vids)
+
+    return all_videos
+
+
 # ── Main Scraper Function ─────────────────────────────────────────────────────
 
 async def scan_site(site: dict, push_func=None):
@@ -1878,6 +1980,19 @@ async def scan_site(site: dict, push_func=None):
                 await push(f"PAGE_ERROR|{site_id}|1|{e}")
             await push(f"PAGE_DONE|{site_id}|1|{len(all_videos)}")
             skip_playwright = True
+
+    # ── Apify engine shortcut ────────────────────────────────────────────────
+    if not skip_playwright and site.get("scan_engine") == "apify":
+        log.info(f"  Using Apify web-scraper engine for {base_url}")
+        await push(f"PAGE|{site_id}|1|{max_pages}|{base_url}")
+        try:
+            apify_videos = await _scan_with_apify(site, push_func)
+            all_videos.extend(apify_videos)
+        except Exception as e:
+            log.error(f"  Apify scan error: {e}")
+            await push(f"PAGE_ERROR|{site_id}|1|{e}")
+        await push(f"PAGE_DONE|{site_id}|1|{len(all_videos)}")
+        skip_playwright = True
 
     # ── Playwright crawl (non-channel sites) ─────────────────────────────────
     if not skip_playwright:

@@ -126,6 +126,9 @@ def init_db():
                 add_column_if_missing(db, "sites", col, defval)
                 add_column_if_missing(db, "videos", col, defval)
 
+            # Sites-only columns
+            add_column_if_missing(db, "sites", "scan_engine", "TEXT DEFAULT 'basic'")
+
             # Legacy schema used UNIQUE(url), which prevents the same video URL from
             # appearing under different monitored sites. Rebuild table to UNIQUE(site_id, url).
             idx_rows = db.execute("PRAGMA index_list(videos)").fetchall()

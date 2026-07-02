@@ -385,6 +385,7 @@ class SiteIn(BaseModel):
     rule_min_duration: int = 0
     video_url_pattern: str = ""
     scan_profile: str = "balanced"
+    scan_engine: str = "basic"
     notify_enabled: bool = True
 
 class SitePatch(BaseModel):
@@ -397,6 +398,7 @@ class SitePatch(BaseModel):
     rule_min_duration: int | None = None
     video_url_pattern: str | None = None
     scan_profile: str | None = None
+    scan_engine: str | None = None
     notify_enabled: bool | None = None
 
 class MarkSeenIn(BaseModel):
@@ -1519,10 +1521,13 @@ def _add_site_impl(body: SiteIn, request: Request):
                 raise HTTPException(409, "Site already monitored")
             site_id = short_id(f"{owner}:{url}")
             notify_enabled = 1 if body.notify_enabled else 0
+            engine = (body.scan_engine or "basic").strip().lower()
+            if engine not in {"basic", "apify"}:
+                engine = "basic"
             db.execute(
                 "INSERT INTO sites (id, url, name, group_name, added_at, max_pages, scan_interval, "
-                "rule_include_keywords, rule_exclude_keywords, rule_min_duration, scan_profile, notify_enabled, owner, video_url_pattern) "
-                "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                "rule_include_keywords, rule_exclude_keywords, rule_min_duration, scan_profile, scan_engine, notify_enabled, owner, video_url_pattern) "
+                "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
                 (
                     site_id,
                     url,
@@ -1535,6 +1540,7 @@ def _add_site_impl(body: SiteIn, request: Request):
                     (body.rule_exclude_keywords or "").strip(),
                     rule_min_duration,
                     profile,
+                    engine,
                     notify_enabled,
                     owner,
                     (body.video_url_pattern or "").strip(),
@@ -1671,6 +1677,40 @@ def revoke_session(token: str, request: Request):
             db.execute("DELETE FROM user_sessions WHERE token=?", (token,))
             db.commit()
     _audit(request, "revoke_session", token[:8] + "…")
+    return {"ok": True}
+
+
+@router.get("/api/settings/apify-token")
+def get_apify_token(request: Request):
+    if not is_authenticated(request):
+        raise HTTPException(401, "Not authenticated")
+    with get_db() as db:
+        row = db.execute("SELECT value FROM app_settings WHERE key='apify_api_token'").fetchone()
+    token = row["value"] if row else ""
+    masked = ("•" * (len(token) - 4) + token[-4:]) if len(token) > 4 else ("•" * len(token))
+    return {"configured": bool(token), "masked": masked}
+
+
+class ApifyTokenIn(BaseModel):
+    token: str
+
+@router.post("/api/settings/apify-token")
+def set_apify_token(body: ApifyTokenIn, request: Request):
+    if not is_authenticated(request):
+        raise HTTPException(401, "Not authenticated")
+    role = current_role(request)
+    if role not in ("admin", "super_admin"):
+        raise HTTPException(403, "Admin required")
+    t = (body.token or "").strip()
+    with write_lock:
+        with get_db() as db:
+            db.execute(
+                "INSERT INTO app_settings (key, value) VALUES ('apify_api_token', ?) "
+                "ON CONFLICT(key) DO UPDATE SET value=excluded.value",
+                (t,),
+            )
+            db.commit()
+    _audit(request, "apify_token_set", "configured" if t else "cleared")
     return {"ok": True}
 
 
@@ -2177,6 +2217,9 @@ def update_site(site_id: str, body: SitePatch, request: Request):
             if body.scan_profile is not None:
                 prof = body.scan_profile.strip().lower()
                 updates["scan_profile"] = prof if prof in {"fast", "balanced", "deep"} else "balanced"
+            if body.scan_engine is not None:
+                eng = body.scan_engine.strip().lower()
+                updates["scan_engine"] = eng if eng in {"basic", "apify"} else "basic"
             if body.notify_enabled is not None:
                 updates["notify_enabled"] = 1 if body.notify_enabled else 0
             if updates:
