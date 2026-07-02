@@ -1991,9 +1991,11 @@ def list_videos(request: Request,
                 include_ignored: bool = False,
                 favorites_only: bool = False,
                 unwatched_only: bool = False,
+                watched_only: bool = False,
                 archived_only: bool = False,
                 ignored_only: bool = False,
-                tag: str = ""):
+                tag: str = "",
+                sort: str = ""):
     offset = (page - 1) * per_page
     with get_db() as db:
         filters = []
@@ -2051,6 +2053,8 @@ def list_videos(request: Request,
             filters.append("COALESCE(videos.is_favorite, 0)=1")
         if unwatched_only:
             filters.append("COALESCE(videos.is_watched, 0)=0")
+        if watched_only:
+            filters.append("COALESCE(videos.is_watched, 0)=1")
         if archived_only:
             filters.append("COALESCE(videos.is_archived, 0)=1")
         if ignored_only:
@@ -2062,7 +2066,12 @@ def list_videos(request: Request,
             params.extend([tag.strip().lower(), current_user(request) or ""])
 
         where = ("WHERE " + " AND ".join(filters)) if filters else ""
-        order = """ORDER BY SUBSTR(COALESCE(videos.released_at, videos.found_at), 1, 19) DESC"""
+        if sort == "last_watched":
+            order = "ORDER BY COALESCE(videos.last_watched_at, '') DESC"
+        elif sort == "found":
+            order = "ORDER BY videos.found_at DESC"
+        else:
+            order = "ORDER BY SUBSTR(COALESCE(videos.released_at, videos.found_at), 1, 19) DESC"
 
         total = db.execute(
             f"SELECT COUNT(*) FROM videos LEFT JOIN sites ON videos.site_id = sites.id {where}",
