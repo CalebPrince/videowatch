@@ -1758,6 +1758,118 @@ def auth_status(request: Request):
     }
 
 
+
+# ── Google OAuth ──────────────────────────────────────────────────────────────
+_GOOGLE_CLIENT_ID     = os.environ.get("GOOGLE_CLIENT_ID", "")
+_GOOGLE_CLIENT_SECRET = os.environ.get("GOOGLE_CLIENT_SECRET", "")
+_GOOGLE_REDIRECT_URI  = os.environ.get(
+    "GOOGLE_REDIRECT_URI",
+    "https://videowatch.duckdns.org/auth/google/callback"
+)
+_GOOGLE_AUTH_URL  = "https://accounts.google.com/o/oauth2/v2/auth"
+_GOOGLE_TOKEN_URL = "https://oauth2.googleapis.com/token"
+_GOOGLE_USERINFO  = "https://www.googleapis.com/oauth2/v3/userinfo"
+
+
+@router.get("/auth/google")
+def google_login(request: Request):
+    if not _GOOGLE_CLIENT_ID:
+        raise HTTPException(503, "Google OAuth not configured")
+    state = secrets.token_urlsafe(16)
+    request.session["oauth_state"] = state
+    params = {
+        "client_id":     _GOOGLE_CLIENT_ID,
+        "redirect_uri":  _GOOGLE_REDIRECT_URI,
+        "response_type": "code",
+        "scope":         "openid email profile",
+        "state":         state,
+        "access_type":   "online",
+    }
+    from urllib.parse import urlencode as _urlencode
+    url = _GOOGLE_AUTH_URL + "?" + _urlencode(params)
+    from fastapi.responses import RedirectResponse
+    return RedirectResponse(url)
+
+
+@router.get("/auth/google/callback")
+async def google_callback(request: Request, code: str = "", state: str = "", error: str = ""):
+    from fastapi.responses import RedirectResponse
+    if error or not code:
+        return RedirectResponse("/static/login.html?error=google_denied")
+    if state != request.session.get("oauth_state"):
+        return RedirectResponse("/static/login.html?error=invalid_state")
+    request.session.pop("oauth_state", None)
+
+    # Exchange code for token
+    async with httpx.AsyncClient() as client:
+        token_res = await client.post(_GOOGLE_TOKEN_URL, data={
+            "code":          code,
+            "client_id":     _GOOGLE_CLIENT_ID,
+            "client_secret": _GOOGLE_CLIENT_SECRET,
+            "redirect_uri":  _GOOGLE_REDIRECT_URI,
+            "grant_type":    "authorization_code",
+        })
+        if token_res.status_code != 200:
+            return RedirectResponse("/static/login.html?error=token_exchange")
+        token_data = token_res.json()
+
+        user_res = await client.get(_GOOGLE_USERINFO, headers={
+            "Authorization": f"Bearer {token_data['access_token']}"
+        })
+        if user_res.status_code != 200:
+            return RedirectResponse("/static/login.html?error=userinfo")
+        guser = user_res.json()
+
+    email    = guser.get("email", "").lower().strip()
+    name     = guser.get("name") or guser.get("given_name") or email.split("@")[0]
+    google_id = guser.get("sub", "")
+
+    if not email:
+        return RedirectResponse("/static/login.html?error=no_email")
+
+    # Find or create user
+    with write_lock:
+        with get_db() as db:
+            row = db.execute("SELECT * FROM users WHERE email=?", (email,)).fetchone()
+            if row:
+                username = row["username"]
+                role     = row["role"]
+            else:
+                # Create new account from Google profile
+                username = re.sub(r"[^a-z0-9_]", "", name.lower().replace(" ", "_"))[:20] or "user"
+                # Ensure unique username
+                base = username
+                i = 1
+                while db.execute("SELECT 1 FROM users WHERE username=?", (username,)).fetchone():
+                    username = f"{base}{i}"; i += 1
+                salt = secrets.token_hex(16)
+                # Random password — user can't log in with password, only Google
+                pw_hash = hashlib.sha256((salt + secrets.token_hex(32)).encode()).hexdigest()
+                now = datetime.now(timezone.utc).isoformat()
+                db.execute("""
+                    INSERT INTO users (username, password_salt, password_hash, role, active,
+                                       created_at, updated_at, email, email_verified)
+                    VALUES (?, ?, ?, 'viewer', 1, ?, ?, ?, 1)
+                """, (username, salt, pw_hash, now, now, email))
+                role = "viewer"
+            db.commit()
+
+    from datetime import timedelta
+    request.session["auth_user"] = username
+    request.session["auth_role"] = role
+    request.session["session_expires_at"] = (
+        datetime.now(timezone.utc) + timedelta(days=30)
+    ).isoformat()
+    _audit(request, "google_login", f"email={email}")
+    return RedirectResponse("/?google=1")
+
+
+@router.get("/api/auth/google/config")
+def google_oauth_config():
+    """Returns whether Google OAuth is configured so the frontend can show/hide the button."""
+    return {"enabled": bool(_GOOGLE_CLIENT_ID)}
+
+
 @router.post("/api/auth/complete-onboarding")
 def complete_onboarding(request: Request):
     if not is_authenticated(request):
