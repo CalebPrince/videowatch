@@ -343,25 +343,37 @@
       <section id="profile" class="cardx pane hidden">
         <h6><i class="bi bi-person-circle me-2" style="color:var(--brand)"></i>My Profile</h6>
 
-        <!-- Avatar header -->
-        <div style="display:flex;align-items:center;gap:1rem;margin-bottom:1.25rem;flex-wrap:wrap;">
-          <div id="profile-avatar" style="width:64px;height:64px;border-radius:50%;background:linear-gradient(135deg,var(--brand),#14b8a6);display:flex;align-items:center;justify-content:center;font-size:1.6rem;font-weight:900;color:#fff;flex-shrink:0;">?</div>
-          <div>
-            <div id="profile-username" style="font-size:1.1rem;font-weight:800;margin-bottom:.15rem;"></div>
-            <div id="profile-email-line" class="meta" style="font-size:.82rem;margin-bottom:.3rem;"></div>
-            <span id="profile-plan-badge" style="display:none;padding:.15rem .6rem;border-radius:999px;font-size:.75rem;font-weight:700;"></span>
+        <!-- Identity card — read-only summary, editable fields live in My Account -->
+        <div style="display:flex;align-items:center;gap:1rem;padding:.85rem 1rem;border:1px solid var(--border);border-radius:12px;margin-bottom:1.25rem;background:rgba(15,118,110,.04);flex-wrap:wrap;">
+          <div id="profile-avatar" style="width:56px;height:56px;border-radius:50%;background:linear-gradient(135deg,var(--brand),#14b8a6);display:flex;align-items:center;justify-content:center;font-size:1.4rem;font-weight:900;color:#fff;flex-shrink:0;">?</div>
+          <div style="flex:1;min-width:0;">
+            <div style="display:flex;align-items:center;gap:.6rem;flex-wrap:wrap;">
+              <span id="profile-username" style="font-size:1rem;font-weight:800;"></span>
+              <span id="profile-role-badge" style="padding:.15rem .55rem;border-radius:999px;font-size:.7rem;font-weight:700;"></span>
+            </div>
+            <div id="profile-email-line" class="meta" style="font-size:.8rem;margin-top:.2rem;"></div>
+            <div style="margin-top:.4rem;">
+              <a href="/settings?tab=account" class="meta" style="font-size:.75rem;color:var(--brand);text-decoration:none;"><i class="bi bi-pencil me-1"></i>Edit in My Account</a>
+            </div>
           </div>
+          <div id="profile-stats" style="display:flex;gap:1.25rem;flex-shrink:0;flex-wrap:wrap;"></div>
         </div>
-
-        <hr style="border-color:var(--border);">
 
         <!-- Active Sessions -->
         <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:.5rem;flex-wrap:wrap;gap:.5rem;">
           <h6 style="margin:0;font-size:.9rem;"><i class="bi bi-shield-check me-1" style="color:var(--brand)"></i>Active Sessions</h6>
           <button class="btn btn-sm btn-outline-secondary" id="btn-refresh-sessions" style="font-size:.75rem;"><i class="bi bi-arrow-clockwise me-1"></i>Refresh</button>
         </div>
-        <p class="meta" style="font-size:.8rem;margin-bottom:.75rem;">All devices and browsers currently signed in to your account. Revoke any session you don't recognise.</p>
+        <p class="meta" style="font-size:.8rem;margin-bottom:.75rem;">Every device and browser currently signed in to your account. Revoke any session you don't recognise.</p>
         <div id="sessions-list"><div class="meta">Loading…</div></div>
+
+        <hr style="border-color:var(--border);margin-top:1.5rem;">
+
+        <!-- Quick links to related account sections -->
+        <div style="display:flex;gap:.6rem;flex-wrap:wrap;">
+          <a href="/settings?tab=account" class="btn btn-sm btn-outline-secondary" style="font-size:.78rem;"><i class="bi bi-person-gear me-1"></i>My Account</a>
+          <a href="/settings?tab=notifications" class="btn btn-sm btn-outline-secondary" style="font-size:.78rem;"><i class="bi bi-bell me-1"></i>Notifications</a>
+        </div>
       </section>
 
       <section id="general" class="cardx pane">
@@ -1620,24 +1632,41 @@
     // ── My Profile / Active Sessions ──────────────────────────────────────────
     async function loadProfilePane() {
       try {
-        const [st, userRow] = await Promise.all([
+        const [st, userRow, sitesRes, videosRes] = await Promise.all([
           api('/auth/status'),
           api('/user/notifications').catch(() => ({})),
+          api('/sites').catch(() => ({ sites: [] })),
+          api('/videos?per_page=1').catch(() => ({ total: 0 })),
         ]);
         const username = st.user || '—';
         document.getElementById('profile-avatar').textContent = username.charAt(0).toUpperCase();
         document.getElementById('profile-username').textContent = username;
         const email = userRow.email || '';
-        const verified = userRow.email_verified;
         document.getElementById('profile-email-line').textContent = email
-          ? `${email}${verified ? ' ✓' : ' (unverified)'}` : 'No email set';
+          ? `${email}${userRow.email_verified ? ' ✓' : ' (unverified)'}` : 'No email set';
+
         const role = st.role || 'viewer';
-        const planMeta = { free: { label:'Free', color:'#64748b' }, pro: { label:'Pro', color:'#0f766e' }, unlimited: { label:'Unlimited', color:'#7c3aed' } };
-        const plan = (userRow.plan || (role === 'super_admin' || role === 'admin' ? role : 'free')).toLowerCase();
-        const pm = planMeta[plan] || { label: role === 'super_admin' ? 'Super Admin' : role === 'admin' ? 'Admin' : 'Free', color: role.includes('admin') ? '#7c3aed' : '#64748b' };
-        const badge = document.getElementById('profile-plan-badge');
-        badge.textContent = pm.label;
-        badge.style.cssText = `display:inline-block;padding:.15rem .6rem;border-radius:999px;font-size:.75rem;font-weight:700;background:${pm.color}22;color:${pm.color};border:1px solid ${pm.color}44;`;
+        const roleMap = {
+          super_admin: { label: 'Super Admin', color: '#7c3aed' },
+          admin:       { label: 'Admin',       color: '#4f46e5' },
+          viewer:      { label: 'Viewer',      color: '#0f766e' },
+        };
+        const rm = roleMap[role] || roleMap.viewer;
+        const roleBadge = document.getElementById('profile-role-badge');
+        roleBadge.textContent = rm.label;
+        roleBadge.style.cssText = `background:${rm.color}18;color:${rm.color};border:1px solid ${rm.color}33;padding:.15rem .55rem;border-radius:999px;font-size:.7rem;font-weight:700;`;
+
+        const siteCount  = (sitesRes.sites || sitesRes || []).length;
+        const videoCount = videosRes.total || 0;
+        document.getElementById('profile-stats').innerHTML = `
+          <div style="text-align:center;">
+            <div style="font-size:1.3rem;font-weight:800;color:var(--brand);">${siteCount}</div>
+            <div class="meta" style="font-size:.72rem;">Sites</div>
+          </div>
+          <div style="text-align:center;">
+            <div style="font-size:1.3rem;font-weight:800;color:var(--brand);">${videoCount}</div>
+            <div class="meta" style="font-size:.72rem;">Videos</div>
+          </div>`;
       } catch(e) { /* non-fatal */ }
       await loadSessions();
     }
