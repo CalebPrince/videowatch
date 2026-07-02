@@ -1784,6 +1784,7 @@ def google_login(request: Request):
         "scope":         "openid email profile",
         "state":         state,
         "access_type":   "online",
+        "prompt":        "select_account",
     }
     from urllib.parse import urlencode as _urlencode
     url = _GOOGLE_AUTH_URL + "?" + _urlencode(params)
