@@ -1167,6 +1167,14 @@
             <button class="btn btn-sm btn-outline-secondary">Save rules</button>
             <span class="meta"></span>
           </div>
+          <div class="dupe-actions" style="margin-top:.4rem;gap:.5rem;">
+            <span class="cookie-status meta" style="font-size:.75rem;"></span>
+            <label class="btn btn-sm btn-outline-secondary" style="cursor:pointer;margin:0;">
+              🍪 Import cookies
+              <input type="file" accept=".json" class="cookie-file-inp" style="display:none;">
+            </label>
+            <button class="btn btn-sm btn-outline-danger cookie-clear-btn" style="display:none;">Clear cookies</button>
+          </div>
         `;
 
         const saveBtn = row.querySelector('button');
@@ -1191,6 +1199,54 @@
             msgEl.className = 'err';
           }
         };
+
+        // Cookie status + upload/clear
+        const cookieStatus = row.querySelector('.cookie-status');
+        const cookieFileInp = row.querySelector('.cookie-file-inp');
+        const cookieClearBtn = row.querySelector('.cookie-clear-btn');
+
+        async function refreshCookieStatus() {
+          try {
+            const r = await api(`/sites/${s.id}/cookies`);
+            if (r.configured) {
+              cookieStatus.textContent = `🍪 ${r.count} cookie(s) loaded`;
+              cookieClearBtn.style.display = '';
+            } else {
+              cookieStatus.textContent = 'No cookies';
+              cookieClearBtn.style.display = 'none';
+            }
+          } catch {}
+        }
+        refreshCookieStatus();
+
+        cookieFileInp.addEventListener('change', async () => {
+          const file = cookieFileInp.files[0];
+          if (!file) return;
+          try {
+            const text = await file.text();
+            const cookies = JSON.parse(text);
+            if (!Array.isArray(cookies)) throw new Error('Expected a JSON array of cookies');
+            await api(`/sites/${s.id}/cookies`, { method: 'POST', body: JSON.stringify({ cookies }) });
+            cookieStatus.textContent = `🍪 ${cookies.length} cookie(s) loaded`;
+            cookieClearBtn.style.display = '';
+            showToast('Cookies imported', 'success');
+          } catch (e) {
+            showToast('Cookie import failed: ' + e.message, 'danger');
+          }
+          cookieFileInp.value = '';
+        });
+
+        cookieClearBtn.addEventListener('click', async () => {
+          if (!confirm('Clear cookies for this site?')) return;
+          try {
+            await api(`/sites/${s.id}/cookies`, { method: 'DELETE' });
+            cookieStatus.textContent = 'No cookies';
+            cookieClearBtn.style.display = 'none';
+            showToast('Cookies cleared', 'success');
+          } catch (e) {
+            showToast(e.message, 'danger');
+          }
+        });
 
         list.appendChild(row);
       });

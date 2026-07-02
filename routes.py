@@ -1714,6 +1714,62 @@ def set_apify_token(body: ApifyTokenIn, request: Request):
     return {"ok": True}
 
 
+# ── Per-site cookie management ────────────────────────────────────────────────
+
+@router.get("/api/sites/{site_id}/cookies")
+def get_site_cookies(site_id: str, request: Request):
+    if not is_authenticated(request):
+        raise HTTPException(401, "Not authenticated")
+    from scraper import cookie_path
+    cp = cookie_path(site_id)
+    if not cp.exists():
+        return {"configured": False, "count": 0}
+    try:
+        cookies = json.loads(cp.read_text())
+        return {"configured": True, "count": len(cookies)}
+    except Exception:
+        return {"configured": False, "count": 0}
+
+
+class SiteCookiesIn(BaseModel):
+    cookies: list[dict]
+
+@router.post("/api/sites/{site_id}/cookies")
+def set_site_cookies(site_id: str, body: SiteCookiesIn, request: Request):
+    if not is_authenticated(request):
+        raise HTTPException(401, "Not authenticated")
+    with get_db() as db:
+        row = db.execute("SELECT owner FROM sites WHERE id=?", (site_id,)).fetchone()
+    if not row:
+        raise HTTPException(404, "Site not found")
+    if not is_super_admin(request) and row["owner"] != current_user(request):
+        raise HTTPException(403, "Not authorised")
+    from scraper import cookie_path, COOKIES_DIR
+    COOKIES_DIR.mkdir(exist_ok=True)
+    cp = cookie_path(site_id)
+    cp.write_text(json.dumps(body.cookies, indent=2))
+    _audit(request, "site_cookies_set", f"site={site_id} count={len(body.cookies)}")
+    return {"ok": True, "count": len(body.cookies)}
+
+
+@router.delete("/api/sites/{site_id}/cookies")
+def delete_site_cookies(site_id: str, request: Request):
+    if not is_authenticated(request):
+        raise HTTPException(401, "Not authenticated")
+    with get_db() as db:
+        row = db.execute("SELECT owner FROM sites WHERE id=?", (site_id,)).fetchone()
+    if not row:
+        raise HTTPException(404, "Site not found")
+    if not is_super_admin(request) and row["owner"] != current_user(request):
+        raise HTTPException(403, "Not authorised")
+    from scraper import cookie_path
+    cp = cookie_path(site_id)
+    if cp.exists():
+        cp.unlink()
+    _audit(request, "site_cookies_cleared", f"site={site_id}")
+    return {"ok": True}
+
+
 @router.post("/api/auth/register")
 def auth_register(body: RegisterIn, request: Request):
     _check_rate_limit(_client_ip(request), max_attempts=3, window_seconds=300)
