@@ -66,9 +66,20 @@ for key, group in groups.items():
     merged_cast      = best['cast_names'] or next((r['cast_names'] for r in others if r['cast_names']), None)
     merged_duration  = best['duration'] or next((r['duration'] for r in others if r['duration']), None)
 
-    # Normalize the URL on the keeper to the canonical form
     canonical = canonical_key(best['url'])
 
+    # Move collection memberships from dupes to keeper before deleting
+    for other in others:
+        cur.execute("""
+            INSERT OR IGNORE INTO collection_videos (collection_id, video_id, added_at)
+            SELECT collection_id, ?, added_at FROM collection_videos WHERE video_id = ?
+        """, (best['id'], other['id']))
+
+    # Delete dupes first to free up the canonical URL
+    other_ids = [r['id'] for r in others]
+    cur.execute(f"DELETE FROM videos WHERE id IN ({','.join('?'*len(other_ids))})", other_ids)
+
+    # Now safe to update keeper with canonical URL and merged data
     cur.execute("""
         UPDATE videos SET
             url          = ?,
@@ -86,17 +97,6 @@ for key, group in groups.items():
           int(merged_watched), int(merged_favorite), int(merged_archived),
           merged_note, merged_released, merged_cast, merged_duration,
           best['id']))
-
-    # Move collection memberships from dupes to keeper
-    for other in others:
-        cur.execute("""
-            INSERT OR IGNORE INTO collection_videos (collection_id, video_id, added_at)
-            SELECT collection_id, ?, added_at FROM collection_videos WHERE video_id = ?
-        """, (best['id'], other['id']))
-
-    # Delete dupes (cascade removes collection_videos rows)
-    other_ids = [r['id'] for r in others]
-    cur.execute(f"DELETE FROM videos WHERE id IN ({','.join('?'*len(other_ids))})", other_ids)
     merged += 1
 
 conn.commit()
