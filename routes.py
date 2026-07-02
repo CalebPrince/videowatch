@@ -1772,11 +1772,12 @@ _GOOGLE_USERINFO  = "https://www.googleapis.com/oauth2/v3/userinfo"
 
 
 @router.get("/auth/google")
-def google_login(request: Request):
+def google_login(request: Request, mobile: str = ""):
     if not _GOOGLE_CLIENT_ID:
         raise HTTPException(503, "Google OAuth not configured")
     state = secrets.token_urlsafe(16)
     request.session["oauth_state"] = state
+    request.session["oauth_mobile"] = bool(mobile)
     params = {
         "client_id":     _GOOGLE_CLIENT_ID,
         "redirect_uri":  _GOOGLE_REDIRECT_URI,
@@ -1795,10 +1796,15 @@ def google_login(request: Request):
 @router.get("/auth/google/callback")
 async def google_callback(request: Request, code: str = "", state: str = "", error: str = ""):
     from fastapi.responses import RedirectResponse
+    is_mobile = request.session.get("oauth_mobile", False)
+    def _err(reason: str):
+        if is_mobile:
+            return RedirectResponse(f"videowatch://auth/callback?error={reason}")
+        return RedirectResponse(f"/static/login.html?error={reason}")
     if error or not code:
-        return RedirectResponse("/static/login.html?error=google_denied")
+        return _err("google_denied")
     if state != request.session.get("oauth_state"):
-        return RedirectResponse("/static/login.html?error=invalid_state")
+        return _err("invalid_state")
     request.session.pop("oauth_state", None)
 
     # Exchange code for token
@@ -1811,14 +1817,14 @@ async def google_callback(request: Request, code: str = "", state: str = "", err
             "grant_type":    "authorization_code",
         })
         if token_res.status_code != 200:
-            return RedirectResponse("/static/login.html?error=token_exchange")
+            return _err("token_exchange")
         token_data = token_res.json()
 
         user_res = await client.get(_GOOGLE_USERINFO, headers={
             "Authorization": f"Bearer {token_data['access_token']}"
         })
         if user_res.status_code != 200:
-            return RedirectResponse("/static/login.html?error=userinfo")
+            return _err("userinfo")
         guser = user_res.json()
 
     email    = guser.get("email", "").lower().strip()
@@ -1826,7 +1832,7 @@ async def google_callback(request: Request, code: str = "", state: str = "", err
     google_id = guser.get("sub", "")
 
     if not email:
-        return RedirectResponse("/static/login.html?error=no_email")
+        return _err("no_email")
 
     # Find or create user
     with write_lock:
@@ -1862,6 +1868,10 @@ async def google_callback(request: Request, code: str = "", state: str = "", err
         datetime.now(timezone.utc) + timedelta(days=30)
     ).isoformat()
     _audit(request, "google_login", f"email={email}")
+    is_mobile = request.session.pop("oauth_mobile", False)
+    if is_mobile:
+        from fastapi.responses import RedirectResponse as _RR
+        return _RR("videowatch://auth/callback?success=1")
     return HTMLResponse("""<!DOCTYPE html><html><head>
 <meta http-equiv="refresh" content="0;url=/" />
 <script>window.location.replace('/');</script>
