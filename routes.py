@@ -1440,8 +1440,8 @@ def _add_site_impl(body: SiteIn, request: Request):
             owner = current_user(request) or (expected_auth_user().strip() or "admin")
 
             # Enforce plan site limit (super_admin is exempt)
+            limits = _plan_limits(owner)
             if not is_super_admin(request):
-                limits = _plan_limits(owner)
                 if limits["sites"] is not None:
                     site_count = db.execute("SELECT COUNT(*) FROM sites WHERE owner=?", (owner,)).fetchone()[0]
                     if site_count >= limits["sites"]:
