@@ -381,6 +381,7 @@ class SiteIn(BaseModel):
     rule_include_keywords: str = ""
     rule_exclude_keywords: str = ""
     rule_min_duration: int = 0
+    video_url_pattern: str = ""
     scan_profile: str = "balanced"
     notify_enabled: bool = True
 
@@ -392,6 +393,7 @@ class SitePatch(BaseModel):
     rule_include_keywords: str | None = None
     rule_exclude_keywords: str | None = None
     rule_min_duration: int | None = None
+    video_url_pattern: str | None = None
     scan_profile: str | None = None
     notify_enabled: bool | None = None
 
@@ -1458,8 +1460,8 @@ def _add_site_impl(body: SiteIn, request: Request):
             notify_enabled = 1 if body.notify_enabled else 0
             db.execute(
                 "INSERT INTO sites (id, url, name, group_name, added_at, max_pages, scan_interval, "
-                "rule_include_keywords, rule_exclude_keywords, rule_min_duration, scan_profile, notify_enabled, owner) "
-                "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                "rule_include_keywords, rule_exclude_keywords, rule_min_duration, scan_profile, notify_enabled, owner, video_url_pattern) "
+                "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
                 (
                     site_id,
                     url,
@@ -1474,6 +1476,7 @@ def _add_site_impl(body: SiteIn, request: Request):
                     profile,
                     notify_enabled,
                     owner,
+                    (body.video_url_pattern or "").strip(),
                 ))
             # Auto-enable auto-scan when the very first site is added
             site_count = db.execute("SELECT COUNT(*) FROM sites").fetchone()[0]
@@ -1913,6 +1916,8 @@ def update_site(site_id: str, body: SitePatch, request: Request):
                 updates["rule_exclude_keywords"] = body.rule_exclude_keywords.strip()
             if body.rule_min_duration is not None:
                 updates["rule_min_duration"] = max(0, body.rule_min_duration)
+            if body.video_url_pattern is not None:
+                updates["video_url_pattern"] = body.video_url_pattern.strip()
             if body.scan_profile is not None:
                 prof = body.scan_profile.strip().lower()
                 updates["scan_profile"] = prof if prof in {"fast", "balanced", "deep"} else "balanced"

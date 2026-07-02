@@ -1109,6 +1109,10 @@
         <label class="form-label mt-3" style="font-size:.85rem;">Minimum duration (seconds)</label>
         <input type="number" id="set-rule-min-duration" min="0" class="form-control" placeholder="0" />
 
+        <label class="form-label mt-3" style="font-size:.85rem;">Video URL pattern <span class="text-muted" style="font-size:.75rem;">(regex — matches links to treat as videos)</span></label>
+        <input type="text" id="set-video-url-pattern" class="form-control font-monospace" placeholder="e.g. /channels/[^/]+/[^/]+" />
+        <div class="form-text">Leave blank to use automatic detection. Example: <code>/v/</code> matches any URL containing <code>/v/</code>.</div>
+
         <div class="form-check form-switch mt-3">
           <input class="form-check-input" type="checkbox" id="set-notify-enabled" checked>
           <label class="form-check-label" for="set-notify-enabled" style="font-size:.85rem;">Enable notifications for this site</label>
@@ -3227,6 +3231,7 @@ function openSettings(s) {
   document.getElementById('set-pages-val').textContent = setPagesVal;
   document.getElementById('set-interval').value = String(s.scan_interval || 300);
   document.getElementById('set-profile').value = s.scan_profile || 'balanced';
+  document.getElementById('set-video-url-pattern').value = s.video_url_pattern || '';
   document.getElementById('set-rule-include').value = s.rule_include_keywords || '';
   document.getElementById('set-rule-exclude').value = s.rule_exclude_keywords || '';
   document.getElementById('set-rule-min-duration').value = Number(s.rule_min_duration || 0);
@@ -3254,6 +3259,7 @@ document.getElementById('btn-settings-save').onclick = async () => {
         max_pages:     setPagesVal,
         scan_interval: parseInt(document.getElementById('set-interval').value, 10),
         scan_profile: document.getElementById('set-profile').value,
+        video_url_pattern: document.getElementById('set-video-url-pattern').value.trim(),
         rule_include_keywords: document.getElementById('set-rule-include').value.trim(),
         rule_exclude_keywords: document.getElementById('set-rule-exclude').value.trim(),
         rule_min_duration: parseInt(document.getElementById('set-rule-min-duration').value || '0', 10),

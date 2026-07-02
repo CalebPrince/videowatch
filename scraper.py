@@ -958,7 +958,7 @@ async def _scrape_vk_with_playwright(channel_url: str, push=None) -> list[dict]:
 
 # ── Parsing Logic ─────────────────────────────────────────────────────────────
 
-def scrape_videos(html: str, base_url: str) -> list[dict]:
+def scrape_videos(html: str, base_url: str, video_url_pattern: str = "") -> list[dict]:
     soup = BeautifulSoup(html, "lxml")
     found = []
     seen = set()
@@ -1083,6 +1083,7 @@ def scrape_videos(html: str, base_url: str) -> list[dict]:
         return None
 
     VK_VIDEO_LINK_RE = re.compile(r'/video-?\d+_\d+', re.I)
+    custom_re = re.compile(video_url_pattern, re.I) if video_url_pattern else None
 
     for tag in soup.find_all("a", href=True):
         href = tag["href"]
@@ -1091,6 +1092,21 @@ def scrape_videos(html: str, base_url: str) -> list[dict]:
         if href.startswith(("#", "javascript:", "mailto:", "tel:")):
             continue
         if LISTING_RE.match(href):
+            continue
+        # Custom video URL pattern defined per-site by admin
+        if custom_re and custom_re.search(href):
+            title_text = (tag.get("title") or tag.get("aria-label") or tag.get("data-title") or "").strip()
+            if not title_text:
+                for sel in ["[class*='title']", "[class*='name']", "h3", "h4", "span"]:
+                    el = tag.select_one(sel)
+                    if el:
+                        t = el.get_text(strip=True)
+                        if t and len(t) > 4:
+                            title_text = t; break
+            img = tag.select_one("img")
+            thumb = (img.get("src") or img.get("data-src") or img.get("data-lazy-src")) if img else None
+            add(href, title=normalize_title(title_text[:200]) or None, thumb=thumb,
+                released_at=infer_release_from_tag(tag))
             continue
         # VK Video individual video links (e.g. /video-123456_789)
         if VK_VIDEO_LINK_RE.search(href):
@@ -1753,7 +1769,7 @@ def _scan_site_sync(site: dict) -> list[dict]:
                         if curl_html:
                             html = curl_html
 
-                    videos = scrape_videos(html, url)
+                    videos = scrape_videos(html, url, site.get("video_url_pattern") or "")
                     log.info(f"  [sync] Page {page_num}: {len(videos)} video(s)")
                     if not videos:
                         consecutive_empty += 1
@@ -1886,7 +1902,7 @@ async def scan_site(site: dict, push_func=None):
                                 except asyncio.TimeoutError:
                                     log.warning(f"  curl_cffi timed out for {url} — using Playwright result")
 
-                            videos = scrape_videos(html, url)
+                            videos = scrape_videos(html, url, site.get("video_url_pattern") or "")
                             log.info(f"  Page {page_num}: {len(videos)} video(s)")
                             await push(f"PAGE_DONE|{site_id}|{page_num}|{len(videos)}")
                             if not videos:

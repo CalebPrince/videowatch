@@ -108,6 +108,7 @@ def init_db():
                 ("rule_exclude_keywords", "TEXT DEFAULT ''"),
                 ("rule_min_duration", "INTEGER DEFAULT 0"),
                 ("scan_profile", "TEXT DEFAULT 'balanced'"),
+                ("video_url_pattern", "TEXT DEFAULT ''"),
                 ("released_at",   "TEXT"),
                 ("cast_names",    "TEXT"),
                 ("duration",      "INTEGER"),
