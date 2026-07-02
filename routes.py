@@ -376,7 +376,7 @@ class SiteIn(BaseModel):
     url:           str
     name:          str = ""
     group_name:    str = ""
-    max_pages:     int = 1
+    max_pages:     int = 10
     scan_interval: int = 300   # seconds
     rule_include_keywords: str = ""
     rule_exclude_keywords: str = ""

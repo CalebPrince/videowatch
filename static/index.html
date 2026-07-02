@@ -1011,7 +1011,7 @@
             <label class="form-label mt-3" style="font-size:.85rem;">Pages per scan</label>
             <div class="pages-control">
               <button type="button" id="add-pages-minus">−</button>
-              <span class="pages-val" id="add-pages-val">1</span>
+              <span class="pages-val" id="add-pages-val">10</span>
               <button type="button" id="add-pages-plus">+</button>
               <span style="font-size:.8rem;color:var(--muted)">page(s) · max 20</span>
             </div>
@@ -3289,7 +3289,7 @@ document.getElementById('btn-clear-rescan').onclick = async () => {
 };
 
 // ── Add site modal ───────────────────────────────────────────────────────────
-let addPagesVal = 1;
+let addPagesVal = 10;
 
 document.getElementById('add-pages-minus').onclick = () => {
   if (addPagesVal > 1) document.getElementById('add-pages-val').textContent = --addPagesVal;
@@ -3298,7 +3298,7 @@ document.getElementById('add-pages-plus').onclick = () => {
   if (addPagesVal < 20) document.getElementById('add-pages-val').textContent = ++addPagesVal;
 };
 document.getElementById('addModal').addEventListener('show.bs.modal', () => {
-  addPagesVal = 1;
+  addPagesVal = 10;
   document.getElementById('add-pages-val').textContent = 1;
   previewPagesVal = 1;
   document.getElementById('preview-pages-val').textContent = 1;
