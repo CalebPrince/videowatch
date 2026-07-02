@@ -345,6 +345,17 @@ def settings_page(request: Request):
         return FileResponse(str(page))
     raise HTTPException(404, "settings.html not found in static/")
 
+
+@app.get("/profile")
+def profile_page(request: Request):
+    if routes.auth_enabled() and not routes.is_authenticated(request):
+        return RedirectResponse(url="/", status_code=302)
+
+    page = STATIC_DIR / "profile.html"
+    if page.exists():
+        return FileResponse(str(page))
+    raise HTTPException(404, "profile.html not found in static/")
+
 if __name__ == "__main__":
     import uvicorn
     host = os.environ.get("HOST", "127.0.0.1")          # <-- changed default host
