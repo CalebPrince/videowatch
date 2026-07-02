@@ -3006,15 +3006,15 @@ async function renderVideos() {
     meta.appendChild(colBtn);
 
     // Download button
-    const dlBtn = document.createElement('button');
-    dlBtn.className = 'btn-icon';
-    dlBtn.title = 'Download video';
-    dlBtn.innerHTML = '<i class="bi bi-download"></i>';
-    dlBtn.onclick = async (e) => {
+    const cardDlBtn = document.createElement('button');
+    cardDlBtn.className = 'btn-icon';
+    cardDlBtn.title = 'Download video';
+    cardDlBtn.innerHTML = '<i class="bi bi-download"></i>';
+    cardDlBtn.onclick = async (e) => {
       e.preventDefault(); e.stopPropagation();
       await startDownload(v.id, v.title || v.url);
     };
-    meta.appendChild(dlBtn);
+    meta.appendChild(cardDlBtn);
 
     // Tag chips
     const chipsWrap = document.createElement('div');
