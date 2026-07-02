@@ -1439,12 +1439,13 @@ def _add_site_impl(body: SiteIn, request: Request):
         with get_db() as db:
             owner = current_user(request) or (expected_auth_user().strip() or "admin")
 
-            # Enforce plan site limit
-            limits = _plan_limits(owner)
-            if limits["sites"] is not None:
-                site_count = db.execute("SELECT COUNT(*) FROM sites WHERE owner=?", (owner,)).fetchone()[0]
-                if site_count >= limits["sites"]:
-                    raise HTTPException(403, f"Free plan is limited to {limits['sites']} monitored sites. Upgrade to add more.")
+            # Enforce plan site limit (super_admin is exempt)
+            if not is_super_admin(request):
+                limits = _plan_limits(owner)
+                if limits["sites"] is not None:
+                    site_count = db.execute("SELECT COUNT(*) FROM sites WHERE owner=?", (owner,)).fetchone()[0]
+                    if site_count >= limits["sites"]:
+                        raise HTTPException(403, f"Free plan is limited to {limits['sites']} monitored sites. Upgrade to add more.")
 
             # Enforce plan minimum scan interval
             scan_interval = max(limits["min_interval"], max(60, body.scan_interval))
