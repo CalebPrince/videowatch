@@ -1654,6 +1654,18 @@ async def _fetch_page(context: BrowserContext, url: str, first_page: bool = Fals
 
     await page.wait_for_timeout(1000)
 
+    # Wait for video card elements to render (JS-heavy sites)
+    _VIDEO_SELECTORS = (
+        "a[href*='/video/'], a[href*='/scene/'], a[href*='/watch/'],"
+        "[class*='video-card'], [class*='videoCard'], [class*='video_card'],"
+        "[class*='scene-card'], [class*='sceneCard'],"
+        ".video-item, .scene-item, .post-item, .video-box, article.video"
+    )
+    try:
+        await page.wait_for_selector(_VIDEO_SELECTORS, timeout=8000)
+    except Exception:
+        pass  # no matching elements — proceed with what we have
+
     try:
         await page.evaluate(_AUTOSCROLL_JS)
         try:
