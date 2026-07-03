@@ -414,4 +414,32 @@ def init_db():
             except Exception as e:
                 log.warning(f"FTS5 init failed (non-fatal): {e}")
 
+            # Continue watching: track per-video playback position
+            add_column_if_missing(db, "videos", "watch_position", "INTEGER DEFAULT 0")
+
+            # Saved searches
+            db.execute("""
+                CREATE TABLE IF NOT EXISTS saved_searches (
+                    id         INTEGER PRIMARY KEY AUTOINCREMENT,
+                    owner      TEXT NOT NULL,
+                    name       TEXT NOT NULL,
+                    params     TEXT NOT NULL,
+                    created_at TEXT NOT NULL
+                )
+            """)
+            db.execute("CREATE INDEX IF NOT EXISTS idx_saved_searches_owner ON saved_searches(owner)")
+
+            # Smart collections
+            db.execute("""
+                CREATE TABLE IF NOT EXISTS smart_collections (
+                    id         TEXT PRIMARY KEY,
+                    owner      TEXT NOT NULL,
+                    name       TEXT NOT NULL,
+                    rule_type  TEXT NOT NULL,
+                    rule_value TEXT NOT NULL,
+                    created_at TEXT NOT NULL
+                )
+            """)
+            db.execute("CREATE INDEX IF NOT EXISTS idx_smart_collections_owner ON smart_collections(owner)")
+
             db.commit()

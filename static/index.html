@@ -744,6 +744,14 @@
       </div>
     </div>
     <div id="site-items"></div>
+    <!-- Smart Collections -->
+    <div style="border-top:1px solid rgba(255,255,255,.08);margin-top:.5rem;padding-top:.5rem;">
+      <div style="display:flex;align-items:center;justify-content:space-between;padding:.25rem .75rem;">
+        <span style="font-size:.68rem;font-weight:700;color:rgba(255,255,255,.35);letter-spacing:.06em;text-transform:uppercase;">Smart Collections</span>
+        <button onclick="showCreateSmartCollection()" style="background:none;border:none;color:rgba(255,255,255,.35);cursor:pointer;font-size:.8rem;padding:0 2px;" title="New smart collection"><i class="bi bi-plus"></i></button>
+      </div>
+      <div id="smart-collection-items"></div>
+    </div>
   </div>
   <div class="sidebar-footer">
     <!-- Live scan progress -->
@@ -851,6 +859,21 @@
         style="height:32px;border:1px solid var(--border);border-radius:7px;padding:0 .6rem;font-size:.82rem;background:#fff;color:var(--ink);cursor:pointer;transition:background .15s;">
         <i class="bi bi-grid-3x3-gap-fill"></i>
       </button>
+      <div style="position:relative;">
+        <button id="btn-save-search" title="Saved searches" aria-label="Saved searches"
+          style="height:32px;border:1px solid var(--border);border-radius:7px;padding:0 .6rem;font-size:.82rem;background:#fff;color:var(--ink);cursor:pointer;transition:background .15s;"
+          onclick="toggleSavedSearchMenu()">
+          <i class="bi bi-bookmark"></i>
+        </button>
+        <div id="saved-search-menu" style="display:none;position:absolute;top:36px;right:0;min-width:220px;background:var(--card-bg);border:1px solid var(--border);border-radius:8px;box-shadow:0 8px 24px rgba(0,0,0,.15);z-index:200;padding:.5rem;">
+          <div style="font-size:.75rem;font-weight:600;color:var(--muted);padding:.25rem .5rem .4rem;">Saved Searches</div>
+          <div id="saved-search-list"></div>
+          <hr style="margin:.4rem 0;border-color:var(--border);">
+          <button onclick="saveCurrentSearch()" style="width:100%;text-align:left;background:none;border:none;padding:.35rem .5rem;font-size:.8rem;cursor:pointer;color:var(--brand);border-radius:5px;" onmouseenter="this.style.background='var(--border)'" onmouseleave="this.style.background='none'">
+            <i class="bi bi-plus me-1"></i>Save current search
+          </button>
+        </div>
+      </div>
     </div>
     </div>
     <div class="topbar-actions">
@@ -906,6 +929,14 @@
         <button onclick="dismissWelcome()" style="background:none;border:none;color:var(--muted);font-size:1.1rem;cursor:pointer;padding:.2rem .4rem;line-height:1;border-radius:6px;" title="Dismiss">✕</button>
       </div>
       <div id="welcome-videos-row" style="display:flex;gap:.75rem;overflow-x:auto;padding:.5rem 1rem 1rem;scrollbar-width:thin;"></div>
+    </div>
+
+    <!-- Continue Watching row -->
+    <div id="continue-watching" style="display:none;margin-bottom:1.25rem;">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:.5rem;">
+        <div style="font-size:.85rem;font-weight:700;color:var(--text);"><i class="bi bi-play-circle me-1" style="color:var(--brand);"></i>Continue Watching</div>
+      </div>
+      <div id="continue-watching-row" style="display:flex;gap:.75rem;overflow-x:auto;scrollbar-width:thin;padding-bottom:.25rem;"></div>
     </div>
 
     <!-- Bulk action toolbar (hidden until checkboxes are ticked) -->
@@ -2714,6 +2745,25 @@ async function renderSidebar() {
 
   // Re-apply any active search filter after re-render
   _applySiteFilter(document.getElementById('site-search')?.value || '');
+
+  // Smart collections section
+  try {
+    const scs = await api('/smart-collections').catch(() => []);
+    const scEl = document.getElementById('smart-collection-items');
+    if (!scEl) return;
+    if (!scs.length) {
+      scEl.innerHTML = '<div style="font-size:.75rem;color:rgba(255,255,255,.22);padding:.25rem .75rem;">No smart collections yet</div>';
+      return;
+    }
+    scEl.innerHTML = scs.map(sc => {
+      const icon = sc.rule_type === 'cast' ? 'bi-person' : sc.rule_type === 'platform' ? 'bi-play-circle' : sc.rule_type === 'tag' ? 'bi-tag' : 'bi-collection';
+      return `<div class="site-item${activeSmartCollection === sc.id ? ' active' : ''}" onclick="filterSmartCollection('${sc.id}','${_esc(sc.name)}')" style="cursor:pointer;">
+        <div class="site-favicon" style="font-size:.75rem;"><i class="bi ${icon}"></i></div>
+        <div class="site-name"><div>${_esc(sc.name)}</div><div class="site-meta">${sc.rule_type}: ${_esc(sc.rule_value)}</div></div>
+        <button onclick="event.stopPropagation();deleteSmartCollection('${sc.id}')" style="margin-left:auto;background:none;border:none;color:rgba(255,255,255,.3);cursor:pointer;padding:2px 4px;font-size:.75rem;" title="Delete"><i class="bi bi-x"></i></button>
+      </div>`;
+    }).join('');
+  } catch(_) {}
 }
 
 function _applySiteFilter(q) {
@@ -4143,6 +4193,7 @@ async function maybeShowOnboarding(st) {
     }
   }
   await refreshLog();
+  renderContinueWatching();
   if (!_restoreWelcomeState()) {
     setTimeout(() => checkActivityFeed(), 500);
   }
@@ -4249,6 +4300,181 @@ function _timeAgo(date) {
   if (diff < 86400) return `${Math.round(diff / 3600)}h ago`;
   return `${Math.round(diff / 86400)}d ago`;
 }
+
+// ── Saved Searches ────────────────────────────────────────────────────────────
+function toggleSavedSearchMenu() {
+  const menu = document.getElementById('saved-search-menu');
+  if (menu.style.display === 'none') {
+    loadSavedSearches();
+    menu.style.display = 'block';
+    setTimeout(() => document.addEventListener('click', _closeSavedSearchMenu, { once: true }), 0);
+  } else {
+    menu.style.display = 'none';
+  }
+}
+function _closeSavedSearchMenu(e) {
+  const menu = document.getElementById('saved-search-menu');
+  if (menu && !menu.contains(e.target)) menu.style.display = 'none';
+}
+async function loadSavedSearches() {
+  const list = document.getElementById('saved-search-list');
+  list.innerHTML = '<div style="font-size:.78rem;color:var(--muted);padding:.25rem .5rem;">Loading…</div>';
+  const searches = await api('/saved-searches').catch(() => []);
+  if (!searches.length) {
+    list.innerHTML = '<div style="font-size:.78rem;color:var(--muted);padding:.25rem .5rem;">No saved searches yet.</div>';
+    return;
+  }
+  list.innerHTML = searches.map(s => `
+    <div style="display:flex;align-items:center;gap:.25rem;padding:.2rem .25rem;border-radius:5px;" onmouseenter="this.style.background='var(--border)'" onmouseleave="this.style.background=''">
+      <button onclick="applySearch(${JSON.stringify(s.params).replace(/"/g,'&quot;')})" style="flex:1;text-align:left;background:none;border:none;font-size:.8rem;cursor:pointer;color:var(--text);padding:.15rem .25rem;">${_esc(s.name)}</button>
+      <button onclick="deleteSavedSearch(${s.id})" style="background:none;border:none;color:var(--muted);cursor:pointer;font-size:.75rem;padding:0 3px;" title="Delete"><i class="bi bi-x"></i></button>
+    </div>`).join('');
+}
+async function saveCurrentSearch() {
+  const name = prompt('Name this search:');
+  if (!name) return;
+  const params = {
+    search: searchTerm || undefined,
+    platform: platformFilt || undefined,
+    status: statusFilt || undefined,
+    tag: tagFilt || undefined,
+    cast: castFilt || undefined,
+    released_after: releasedAfter || undefined,
+    duration_min: durationMin || undefined,
+  };
+  await api('/saved-searches', { method: 'POST', body: JSON.stringify({ name, params }) });
+  showToast(`Search "${name}" saved`, 'success');
+  loadSavedSearches();
+}
+async function deleteSavedSearch(id) {
+  await api(`/saved-searches/${id}`, { method: 'DELETE' });
+  loadSavedSearches();
+}
+function applySearch(params) {
+  document.getElementById('saved-search-menu').style.display = 'none';
+  if (params.search) { searchTerm = params.search; document.getElementById('search-inp').value = searchTerm; }
+  if (params.platform) { platformFilt = params.platform; document.getElementById('platform-filter').value = platformFilt; }
+  if (params.status) statusFilt = params.status;
+  if (params.tag) { tagFilt = params.tag; }
+  if (params.cast) castFilt = params.cast;
+  if (params.released_after) { releasedAfter = params.released_after; document.getElementById('released-after').value = releasedAfter; }
+  if (params.duration_min) { durationMin = params.duration_min; }
+  currentPage = 1;
+  renderVideos();
+  showToast('Search applied', 'info');
+}
+
+// ── Continue Watching ─────────────────────────────────────────────────────────
+async function renderContinueWatching() {
+  try {
+    const videos = await api('/videos/continue-watching').catch(() => []);
+    const wrap = document.getElementById('continue-watching');
+    const row  = document.getElementById('continue-watching-row');
+    if (!wrap || !row || !videos.length) { if (wrap) wrap.style.display = 'none'; return; }
+    row.innerHTML = videos.map(v => {
+      const pct = v.duration ? Math.min(100, Math.round((v.watch_position / v.duration) * 100)) : 0;
+      const thumb = v.thumb ? `<img src="${_esc(v.thumb)}" style="width:100%;height:100%;object-fit:cover;" loading="lazy" onerror="this.style.display='none'">` : '';
+      return `<div onclick='openVideoModal(${JSON.stringify(v).replace(/'/g,"&#39;")},null)' style="flex:0 0 150px;cursor:pointer;border-radius:8px;overflow:hidden;border:1px solid var(--border);background:var(--card-bg);" onmouseenter="this.style.transform='translateY(-2px)'" onmouseleave="this.style.transform=''">
+        <div style="width:150px;height:85px;background:#1e293b;position:relative;">${thumb}
+          ${pct > 0 ? `<div style="position:absolute;bottom:0;left:0;right:0;height:3px;background:rgba(255,255,255,.2);"><div style="width:${pct}%;height:100%;background:var(--brand);"></div></div>` : ''}
+        </div>
+        <div style="padding:.35rem .45rem;font-size:.68rem;font-weight:600;color:var(--text);overflow:hidden;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;">${_esc(v.title||'Untitled')}</div>
+      </div>`;
+    }).join('');
+    wrap.style.display = 'block';
+  } catch(_) {}
+}
+
+// Track playback position every 5s for playable videos
+function _startPositionTracking(vid, videoId) {
+  if (!vid || !videoId) return;
+  const interval = setInterval(() => {
+    if (vid.paused || vid.ended) return;
+    const pos = Math.floor(vid.currentTime);
+    if (pos > 0) api(`/videos/${encodeURIComponent(videoId)}/position`, { method: 'PATCH', body: JSON.stringify({ position: pos }) }).catch(() => {});
+  }, 5000);
+  vid.addEventListener('ended', () => { clearInterval(interval); api(`/videos/${encodeURIComponent(videoId)}/position`, { method: 'PATCH', body: JSON.stringify({ position: 0 }) }).catch(() => {}); });
+  vid.addEventListener('pause', () => {
+    const pos = Math.floor(vid.currentTime);
+    if (pos > 0) api(`/videos/${encodeURIComponent(videoId)}/position`, { method: 'PATCH', body: JSON.stringify({ position: pos }) }).catch(() => {});
+  });
+  return interval;
+}
+
+// ── Similar Videos ────────────────────────────────────────────────────────────
+async function loadSimilarVideos(v) {
+  const list = document.getElementById('vp-similar-list');
+  if (!list) return;
+  list.innerHTML = '<div style="font-size:.75rem;color:#64748b;">Loading…</div>';
+  const cast = v.cast_names ? v.cast_names.split(',')[0].trim() : '';
+  const params = cast
+    ? `search=${encodeURIComponent(cast)}&per_page=6&page=1`
+    : `site_id=${encodeURIComponent(v.site_id)}&per_page=6&page=1`;
+  const data = await api(`/videos?${params}`).catch(() => ({ videos: [] }));
+  const similar = (data.videos || []).filter(x => x.id !== v.id).slice(0, 5);
+  if (!similar.length) { list.innerHTML = '<div style="font-size:.75rem;color:#64748b;">No similar videos found.</div>'; return; }
+  list.innerHTML = similar.map(s => `
+    <div onclick='openVideoModal(${JSON.stringify(s).replace(/'/g,"&#39;")},null)' style="display:flex;gap:.5rem;cursor:pointer;border-radius:6px;padding:.25rem;" onmouseenter="this.style.background='rgba(255,255,255,.05)'" onmouseleave="this.style.background=''">
+      ${s.thumb ? `<img src="${_esc(s.thumb)}" style="width:80px;height:45px;object-fit:cover;border-radius:4px;flex-shrink:0;" loading="lazy">` : '<div style="width:80px;height:45px;background:#1e293b;border-radius:4px;flex-shrink:0;"></div>'}
+      <div style="min-width:0;">
+        <div style="font-size:.72rem;font-weight:600;color:#e2e8f0;overflow:hidden;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;">${_esc(s.title||'Untitled')}</div>
+        <div style="font-size:.65rem;color:#64748b;margin-top:.1rem;">${_esc(s.site_name||'')}</div>
+      </div>
+    </div>`).join('');
+}
+
+// ── Smart Collections ─────────────────────────────────────────────────────────
+let activeSmartCollection = null;
+
+function filterSmartCollection(id, name) {
+  activeSmartCollection = id;
+  activeSite = null;
+  activeGroup = null;
+  currentPage = 1;
+  renderSmartCollectionVideos(id, name);
+  renderSidebar();
+}
+
+async function renderSmartCollectionVideos(id, name) {
+  const grid = document.getElementById('video-grid');
+  grid.innerHTML = '';
+  document.getElementById('topbar-title').textContent = name;
+  const data = await api(`/smart-collections/${encodeURIComponent(id)}/videos?page=${currentPage}&per_page=24`).catch(() => ({ videos: [] }));
+  const videos = data.videos || [];
+  if (!videos.length) {
+    grid.innerHTML = `<div class="col-12"><div class="empty-state"><i class="bi bi-collection"></i><p>No videos match this smart collection yet.</p></div></div>`;
+    return;
+  }
+  grid.innerHTML = '';
+  videos.forEach(v => {
+    const col = document.createElement('div');
+    col.className = gridDensity === 'compact' ? 'col-6 col-sm-4 col-lg-3 col-xl-2' : gridDensity === 'large' ? 'col-12 col-sm-6' : 'col-12 col-sm-6 col-lg-4';
+    col.innerHTML = `<div class="video-card" onclick='openVideoModal(${JSON.stringify(v).replace(/'/g,"&#39;")},null)' style="cursor:pointer;">
+      ${v.thumb ? `<div class="thumb-wrap"><img src="${_esc(v.thumb)}" loading="lazy" style="width:100%;aspect-ratio:16/9;object-fit:cover;border-radius:8px 8px 0 0;"></div>` : '<div class="thumb-wrap" style="aspect-ratio:16/9;background:#1e293b;border-radius:8px 8px 0 0;"></div>'}
+      <div style="padding:.5rem .6rem;"><div style="font-size:.8rem;font-weight:600;overflow:hidden;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;">${_esc(v.title||'Untitled')}</div></div>
+    </div>`;
+    grid.appendChild(col);
+  });
+}
+
+function showCreateSmartCollection() {
+  const name = prompt('Smart collection name:');
+  if (!name) return;
+  const type = prompt('Rule type (cast / platform / site_id / group_name / tag):');
+  if (!['cast','platform','site_id','group_name','tag'].includes(type)) { showToast('Invalid rule type', 'danger'); return; }
+  const value = prompt(`Value for "${type}":`);
+  if (!value) return;
+  api('/smart-collections', { method: 'POST', body: JSON.stringify({ name, rule_type: type, rule_value: value }) })
+    .then(() => { showToast(`Smart collection "${name}" created`, 'success'); renderSidebar(); })
+    .catch(e => showToast(e.message, 'danger'));
+}
+
+async function deleteSmartCollection(id) {
+  if (!confirm('Delete this smart collection?')) return;
+  await api(`/smart-collections/${encodeURIComponent(id)}`, { method: 'DELETE' });
+  if (activeSmartCollection === id) { activeSmartCollection = null; renderVideos(); }
+  renderSidebar();
+}
 </script>
 
 <!-- ── Video Player Modal ── -->
@@ -4278,6 +4504,11 @@ function _timeAgo(date) {
       <button id="vp-arch-btn"  class="btn btn-sm btn-outline-secondary" style="font-size:.78rem;" onclick="vpToggle('archive')"></button>
       <button id="vp-dl-btn" class="btn btn-sm btn-outline-secondary" style="font-size:.78rem;" onclick="if(_vpVideo)startDownload(_vpVideo.id,_vpVideo.title||_vpVideo.url)"><i class="bi bi-download me-1"></i>Download</button>
       <span id="vp-duration" style="margin-left:auto;font-size:.75rem;color:#64748b;"></span>
+    </div>
+    <!-- Similar videos -->
+    <div id="vp-similar" style="border-top:1px solid rgba(255,255,255,.08);padding:.6rem .75rem .75rem;max-height:180px;overflow-y:auto;">
+      <div style="font-size:.72rem;font-weight:600;color:#64748b;margin-bottom:.5rem;">More like this</div>
+      <div id="vp-similar-list" style="display:flex;flex-direction:column;gap:.4rem;"></div>
     </div>
   </div>
 </div>
@@ -4351,6 +4582,15 @@ function openVideoModal(v, list) {
 
   modal.style.display = 'flex';
   document.body.style.overflow = 'hidden';
+
+  // Load similar videos
+  loadSimilarVideos(v);
+
+  // Start position tracking for direct video
+  if (isDirectVideo) {
+    const vid = player.querySelector('video');
+    if (vid) _startPositionTracking(vid, v.id);
+  }
 
   // Mark as watched
   if (!Number(v.is_watched)) {

@@ -18,7 +18,7 @@ from pathlib import Path
 from urllib.parse import urlparse, parse_qs, urlunparse, urljoin
 
 import httpx
-from fastapi import APIRouter, HTTPException, BackgroundTasks, Query, status, Response, Request
+from fastapi import APIRouter, HTTPException, BackgroundTasks, Query, status, Response, Request, Body
 from fastapi.responses import StreamingResponse, JSONResponse, HTMLResponse, PlainTextResponse
 from pydantic import BaseModel
 import mimetypes
@@ -4118,6 +4118,158 @@ def video_collections(video_id: str, request: Request):
         ).fetchall()
     return [dict(r) for r in rows]
 
+
+# ── Saved Searches ────────────────────────────────────────────────────────────
+
+@router.get("/api/saved-searches")
+def list_saved_searches(request: Request):
+    owner = _api_auth(request)
+    with get_db() as db:
+        rows = db.execute(
+            "SELECT id, name, params FROM saved_searches WHERE owner=? ORDER BY id DESC",
+            (owner,)
+        ).fetchall()
+    return [{"id": r["id"], "name": r["name"], "params": json.loads(r["params"])} for r in rows]
+
+@router.post("/api/saved-searches")
+def create_saved_search(request: Request, body: dict = Body(...)):
+    owner = _api_auth(request)
+    name = (body.get("name") or "").strip()
+    params = body.get("params") or {}
+    if not name:
+        raise HTTPException(400, "Name required")
+    with write_lock:
+        with get_db() as db:
+            db.execute(
+                "INSERT INTO saved_searches (owner, name, params, created_at) VALUES (?,?,?,?)",
+                (owner, name, json.dumps(params), now_iso())
+            )
+            db.commit()
+    return {"ok": True}
+
+@router.delete("/api/saved-searches/{sid}")
+def delete_saved_search(sid: int, request: Request):
+    owner = _api_auth(request)
+    with write_lock:
+        with get_db() as db:
+            db.execute("DELETE FROM saved_searches WHERE id=? AND owner=?", (sid, owner))
+            db.commit()
+    return {"ok": True}
+
+# ── Watch Position ─────────────────────────────────────────────────────────────
+
+@router.patch("/api/videos/{vid}/position")
+def update_watch_position(vid: str, request: Request, body: dict = Body(...)):
+    _api_auth(request)
+    pos = int(body.get("position") or 0)
+    with write_lock:
+        with get_db() as db:
+            db.execute("UPDATE videos SET watch_position=? WHERE id=?", (pos, vid))
+            db.commit()
+    return {"ok": True}
+
+@router.get("/api/videos/continue-watching")
+def continue_watching(request: Request):
+    owner = _api_auth(request)
+    with get_db() as db:
+        rows = db.execute(
+            """SELECT v.*, s.name as site_name FROM videos v
+               LEFT JOIN sites s ON v.site_id=s.id
+               WHERE s.owner=? AND v.watch_position > 0 AND COALESCE(v.is_archived,0)=0
+               ORDER BY v.last_watched_at DESC LIMIT 20""",
+            (owner,)
+        ).fetchall()
+    return [dict(r) for r in rows]
+
+# ── Smart Collections ──────────────────────────────────────────────────────────
+
+@router.get("/api/smart-collections")
+def list_smart_collections(request: Request):
+    owner = _api_auth(request)
+    with get_db() as db:
+        rows = db.execute(
+            "SELECT * FROM smart_collections WHERE owner=? ORDER BY name",
+            (owner,)
+        ).fetchall()
+    return [dict(r) for r in rows]
+
+@router.post("/api/smart-collections")
+def create_smart_collection(request: Request, body: dict = Body(...)):
+    owner = _api_auth(request)
+    name = (body.get("name") or "").strip()
+    rule_type = (body.get("rule_type") or "").strip()
+    rule_value = (body.get("rule_value") or "").strip()
+    if not name or not rule_type or not rule_value:
+        raise HTTPException(400, "name, rule_type and rule_value required")
+    if rule_type not in ("cast", "platform", "site_id", "group_name", "tag"):
+        raise HTTPException(400, "Invalid rule_type")
+    sc_id = short_id(f"{owner}:{name}:{rule_type}:{rule_value}")
+    with write_lock:
+        with get_db() as db:
+            db.execute(
+                "INSERT OR IGNORE INTO smart_collections (id,owner,name,rule_type,rule_value,created_at) VALUES (?,?,?,?,?,?)",
+                (sc_id, owner, name, rule_type, rule_value, now_iso())
+            )
+            db.commit()
+    return {"id": sc_id, "name": name, "rule_type": rule_type, "rule_value": rule_value}
+
+@router.delete("/api/smart-collections/{sc_id}")
+def delete_smart_collection(sc_id: str, request: Request):
+    owner = _api_auth(request)
+    with write_lock:
+        with get_db() as db:
+            db.execute("DELETE FROM smart_collections WHERE id=? AND owner=?", (sc_id, owner))
+            db.commit()
+    return {"ok": True}
+
+@router.get("/api/smart-collections/{sc_id}/videos")
+def smart_collection_videos(sc_id: str, request: Request, page: int = 1, per_page: int = 24):
+    owner = _api_auth(request)
+    with get_db() as db:
+        sc = db.execute("SELECT * FROM smart_collections WHERE id=? AND owner=?", (sc_id, owner)).fetchone()
+        if not sc:
+            raise HTTPException(404, "Not found")
+        rt, rv = sc["rule_type"], sc["rule_value"]
+        if rt == "cast":
+            filt = "AND v.cast_names LIKE ?"
+            param = f"%{rv}%"
+        elif rt == "platform":
+            filt = "AND v.platform=?"
+            param = rv
+        elif rt == "site_id":
+            filt = "AND v.site_id=?"
+            param = rv
+        elif rt == "group_name":
+            filt = "AND s.group_name=?"
+            param = rv
+        elif rt == "tag":
+            filt = "AND EXISTS (SELECT 1 FROM video_tags vt WHERE vt.video_id=v.id AND vt.tag=? AND vt.owner=?)"
+            rows = db.execute(
+                f"""SELECT v.*, s.name as site_name FROM videos v LEFT JOIN sites s ON v.site_id=s.id
+                    WHERE s.owner=? {filt}
+                    ORDER BY COALESCE(v.released_at,v.found_at) DESC, v.id
+                    LIMIT ? OFFSET ?""",
+                (owner, rv, owner, per_page, (page-1)*per_page)
+            ).fetchall()
+            total = db.execute(
+                f"SELECT COUNT(*) FROM videos v LEFT JOIN sites s ON v.site_id=s.id WHERE s.owner=? {filt}",
+                (owner, rv, owner)
+            ).fetchone()[0]
+            return {"videos": [dict(r) for r in rows], "total": total, "page": page, "per_page": per_page, "total_pages": max(1, -(-total//per_page))}
+        else:
+            raise HTTPException(400, "Invalid rule_type")
+        rows = db.execute(
+            f"""SELECT v.*, s.name as site_name FROM videos v LEFT JOIN sites s ON v.site_id=s.id
+                WHERE s.owner=? {filt}
+                ORDER BY COALESCE(v.released_at,v.found_at) DESC, v.id
+                LIMIT ? OFFSET ?""",
+            (owner, param, per_page, (page-1)*per_page)
+        ).fetchall()
+        total = db.execute(
+            f"SELECT COUNT(*) FROM videos v LEFT JOIN sites s ON v.site_id=s.id WHERE s.owner=? {filt}",
+            (owner, param)
+        ).fetchone()[0]
+    return {"videos": [dict(r) for r in rows], "total": total, "page": page, "per_page": per_page, "total_pages": max(1, -(-total//per_page))}
 
 @router.get("/api/collections")
 def list_collections(request: Request):
