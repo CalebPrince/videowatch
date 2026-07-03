@@ -2655,6 +2655,9 @@ def _scan_worker():
             with _scan_queue_lock:
                 _scan_running = None
             _scan_queue.task_done()
+            # Brief cooldown between scans to prevent back-to-back CPU spikes
+            if not _scan_queue.empty():
+                time.sleep(10)
 
 
 _scan_worker_thread = threading.Thread(target=_scan_worker, daemon=True, name="scan-worker")
