@@ -843,6 +843,10 @@
         style="height:32px;border:1px solid var(--border);border-radius:7px;padding:0 .75rem;font-size:.82rem;background:#fff;color:var(--ink);cursor:pointer;white-space:nowrap;transition:background .15s,color .15s,border-color .15s;">
         🆕 New only
       </button>
+      <button id="btn-density" title="Toggle grid density" aria-label="Toggle grid density"
+        style="height:32px;border:1px solid var(--border);border-radius:7px;padding:0 .6rem;font-size:.82rem;background:#fff;color:var(--ink);cursor:pointer;transition:background .15s;">
+        <i class="bi bi-grid-3x3-gap-fill"></i>
+      </button>
     </div>
     </div>
     <div class="topbar-actions">
@@ -1461,12 +1465,16 @@ let searchTerm    = '';
 let platformFilt  = '';
 let statusFilt    = '';
 let tagFilt       = '';
+let castFilt      = '';
 let releasedAfter = '';
 let durationMin   = '';
 let durationMax   = '';
 let searchTimer   = null;
 let sseSource     = null;
 let wasDisconnected = false;
+let gridDensity   = localStorage.getItem('vw_grid_density') || 'normal';
+let _vpList       = [];
+let _vpIndex      = -1;
 let autoScanEnabled = true;
 
 function updateStatusQuickbar() {
@@ -2761,7 +2769,8 @@ async function renderVideos() {
   const params = new URLSearchParams();
   if (activeSite) params.set('site_id', activeSite);
   if (activeGroup) params.set('group_name', activeGroup === '__UNGROUPED__' ? '' : activeGroup);
-  if (searchTerm) params.set('search', searchTerm);
+  const effectiveSearch = castFilt || searchTerm;
+  if (effectiveSearch) params.set('search', effectiveSearch);
   if (releasedAfter) params.set('released_after', releasedAfter);
   if (durationMin) params.set('duration_min', durationMin);
   if (durationMax) params.set('duration_max', durationMax);
@@ -2821,7 +2830,9 @@ async function renderVideos() {
   grid.innerHTML = '';
   videos.forEach(v => {
     const col = document.createElement('div');
-    col.className = 'col-12 col-sm-6 col-lg-4';
+    col.className = gridDensity === 'compact' ? 'col-6 col-sm-4 col-lg-3 col-xl-2'
+                  : gridDensity === 'large'   ? 'col-12 col-sm-6'
+                  : 'col-12 col-sm-6 col-lg-4';
 
     // Thumb
     const thumbWrap = document.createElement('div');
@@ -2857,7 +2868,7 @@ async function renderVideos() {
     const overlay = document.createElement('div');
     overlay.className = 'play-overlay';
     overlay.innerHTML = '<i class="bi bi-play-circle-fill"></i>';
-    overlay.addEventListener('click', (e) => { e.preventDefault(); e.stopPropagation(); openVideoModal(v); });
+    overlay.addEventListener('click', (e) => { e.preventDefault(); e.stopPropagation(); openVideoModal(v, videos); });
     thumbWrap.appendChild(overlay);
 
     // Body
@@ -2888,7 +2899,18 @@ async function renderVideos() {
       const castIcon = document.createElement('i');
       castIcon.className = 'bi bi-person-fill me-1';
       castEl.appendChild(castIcon);
-      castEl.appendChild(document.createTextNode(v.cast_names));
+      const castLink = document.createElement('span');
+      castLink.textContent = v.cast_names;
+      castLink.title = `Filter by: ${v.cast_names}`;
+      castLink.style.cssText = 'cursor:pointer;text-decoration:underline dotted;';
+      castLink.addEventListener('click', e => {
+        e.stopPropagation();
+        castFilt = castFilt === v.cast_names ? '' : v.cast_names;
+        currentPage = 1;
+        renderVideos();
+        showToast(castFilt ? `Filtering by cast: ${castFilt}` : 'Cast filter cleared', 'info');
+      });
+      castEl.appendChild(castLink);
       body.appendChild(castEl);
     }
 
@@ -3889,6 +3911,23 @@ document.querySelectorAll('#status-quickbar button[data-status]').forEach(btn =>
 updateStatusQuickbar();
 
 // New-only toggle button
+// Grid density toggle
+const _btnDensity = document.getElementById('btn-density');
+const _densityIcons = { compact: 'bi-grid-fill', normal: 'bi-grid-3x3-gap-fill', large: 'bi-stop-fill' };
+const _densityCycle = { compact: 'normal', normal: 'large', large: 'compact' };
+function applyDensity() {
+  const icon = _btnDensity.querySelector('i');
+  if (icon) { icon.className = `bi ${_densityIcons[gridDensity]}`; }
+  _btnDensity.title = `Grid: ${gridDensity} (click to change)`;
+}
+applyDensity();
+_btnDensity.addEventListener('click', () => {
+  gridDensity = _densityCycle[gridDensity];
+  localStorage.setItem('vw_grid_density', gridDensity);
+  applyDensity();
+  renderVideos();
+});
+
 const _btnNewOnly = document.getElementById('btn-new-only');
 if (_btnNewOnly) {
   _btnNewOnly.addEventListener('click', () => {
@@ -4148,6 +4187,8 @@ function _timeAgo(date) {
     <div id="vp-player" style="position:relative;width:100%;background:#000;"></div>
     <!-- Footer actions -->
     <div id="vp-footer" style="padding:.6rem 1rem;display:flex;align-items:center;gap:.6rem;border-top:1px solid rgba(255,255,255,.08);flex-wrap:wrap;">
+      <button id="vp-prev-btn" class="btn btn-sm btn-outline-secondary" style="font-size:.78rem;" onclick="vpNavigate(-1)" title="Previous (←)"><i class="bi bi-chevron-left"></i></button>
+      <button id="vp-next-btn" class="btn btn-sm btn-outline-secondary" style="font-size:.78rem;" onclick="vpNavigate(1)" title="Next (→)"><i class="bi bi-chevron-right"></i></button>
       <button id="vp-fav-btn"   class="btn btn-sm btn-outline-secondary" style="font-size:.78rem;" onclick="vpToggle('favorite')"></button>
       <button id="vp-watch-btn" class="btn btn-sm btn-outline-secondary" style="font-size:.78rem;" onclick="vpToggle('watched')"></button>
       <button id="vp-arch-btn"  class="btn btn-sm btn-outline-secondary" style="font-size:.78rem;" onclick="vpToggle('archive')"></button>
@@ -4160,9 +4201,14 @@ function _timeAgo(date) {
 <script>
 let _vpVideo = null;
 
-function openVideoModal(v) {
+function openVideoModal(v, list) {
+  if (list) { _vpList = list; _vpIndex = list.findIndex(x => x.id === v.id); }
   _vpVideo = v;
   const modal = document.getElementById('vp-modal');
+  const prevBtn = document.getElementById('vp-prev-btn');
+  const nextBtn = document.getElementById('vp-next-btn');
+  if (prevBtn) prevBtn.disabled = _vpIndex <= 0;
+  if (nextBtn) nextBtn.disabled = _vpIndex < 0 || _vpIndex >= _vpList.length - 1;
   const player = document.getElementById('vp-player');
   player.innerHTML = '';
 
@@ -4200,6 +4246,7 @@ function openVideoModal(v) {
     vid.controls = true;
     vid.autoplay = true;
     vid.style.cssText = 'width:100%;aspect-ratio:16/9;display:block;background:#000;';
+    vid.addEventListener('ended', () => vpNavigate(1));
     player.appendChild(vid);
   } else {
     // Not playable inline — show thumb + message
@@ -4262,6 +4309,12 @@ async function vpToggle(action) {
   renderVideos();
 }
 
+function vpNavigate(dir) {
+  const newIndex = _vpIndex + dir;
+  if (newIndex < 0 || newIndex >= _vpList.length) return;
+  openVideoModal(_vpList[newIndex], _vpList);
+}
+
 function closeVideoModal(e) {
   if (e && e.target !== document.getElementById('vp-modal')) return;
   const modal = document.getElementById('vp-modal');
@@ -4286,10 +4339,23 @@ document.addEventListener('keydown', e => {
   // Modal shortcuts
   if (_vpVideo) {
     if (e.key === 'Escape') { closeVideoModal({ target: document.getElementById('vp-modal') }); return; }
+    if (e.key === 'ArrowRight') { e.preventDefault(); vpNavigate(1); return; }
+    if (e.key === 'ArrowLeft')  { e.preventDefault(); vpNavigate(-1); return; }
     if (e.key === 'f' || e.key === 'F') { vpToggle('favorite'); return; }
     if (e.key === 'a' || e.key === 'A') { vpToggle('archive'); return; }
     if (e.key === 'w' || e.key === 'W') { vpToggle('watched'); return; }
     if (e.key === 'Enter') { window.open(normalizeNavigablePageUrl(_vpVideo.url) || _vpVideo.url, '_blank', 'noopener'); return; }
+    if (e.key === ' ') {
+      e.preventDefault();
+      const vid = document.querySelector('#vp-player video');
+      if (vid) { vid.paused ? vid.play() : vid.pause(); }
+      return;
+    }
+    if (e.key === 'm' || e.key === 'M') {
+      const vid = document.querySelector('#vp-player video');
+      if (vid) vid.muted = !vid.muted;
+      return;
+    }
     return;
   }
 
@@ -4325,6 +4391,9 @@ function showKbHelp() {
     ['N', 'Toggle New filter'],
     ['?', 'Show / hide this help'],
     ['In video modal', ''],
+    ['← / →', 'Previous / Next video'],
+    ['Space', 'Pause / Play (direct video)'],
+    ['M', 'Mute / Unmute (direct video)'],
     ['F', 'Toggle favorite'],
     ['W', 'Toggle watched'],
     ['A', 'Toggle archive'],
