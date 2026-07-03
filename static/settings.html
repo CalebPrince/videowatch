@@ -983,6 +983,7 @@
     }
 
     // Scan queue auto-refresh
+    function _esc(s) { return (s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
     let _queueInterval = null;
     async function refreshQueue() {
       try {
@@ -995,14 +996,14 @@
         badge.style.background = q.total > 0 ? 'rgba(15,118,110,.15)' : '';
         if (q.running) {
           const eng = q.running.engine === 'apify' ? '☁' : '⚙';
-          runningEl.innerHTML = `<span style="color:var(--brand);font-weight:600;">▶ Running:</span> ${eng} ${escHtml(q.running.name || q.running.url)}`;
+          runningEl.innerHTML = `<span style="color:var(--brand);font-weight:600;">▶ Running:</span> ${eng} ${_esc(q.running.name || q.running.url)}`;
         } else {
           runningEl.textContent = 'Nothing running.';
         }
         if (q.queued.length) {
           listEl.innerHTML = q.queued.map((j, i) => {
             const eng = j.engine === 'apify' ? '☁' : '⚙';
-            return `<div style="padding:.25rem 0;border-bottom:1px solid var(--border);">${i + 1}. ${eng} ${escHtml(j.name || j.url)}</div>`;
+            return `<div style="padding:.25rem 0;border-bottom:1px solid var(--border);">${i + 1}. ${eng} ${_esc(j.name || j.url)}</div>`;
           }).join('');
         } else {
           listEl.innerHTML = '<div class="meta">Queue is empty.</div>';
@@ -1010,16 +1011,18 @@
       } catch {}
     }
 
-    // Start polling when General pane is active
+    // Start polling when General pane is active, stop on other panes
     document.querySelector('[data-target="general"]')?.addEventListener('click', () => {
-      refreshQueue();
       clearInterval(_queueInterval);
       _queueInterval = setInterval(refreshQueue, 5000);
+      refreshQueue();
     });
-    // Stop polling when leaving General pane
     document.querySelectorAll('.navbtn:not([data-target="general"])').forEach(btn => {
       btn.addEventListener('click', () => { clearInterval(_queueInterval); _queueInterval = null; });
     });
+    // Auto-start since General is the default pane
+    refreshQueue();
+    _queueInterval = setInterval(refreshQueue, 5000);
 
     // Apify token save / clear
     document.getElementById('btn-save-apify-token')?.addEventListener('click', async () => {
