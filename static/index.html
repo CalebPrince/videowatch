@@ -892,11 +892,16 @@
       </div>
     </div>
 
-    <!-- Activity feed banner -->
-    <div id="activity-banner" style="display:none;align-items:center;gap:.75rem;padding:.6rem .9rem;background:linear-gradient(135deg,rgba(15,118,110,.12),rgba(20,184,166,.08));border:1px solid rgba(15,118,110,.25);border-radius:.6rem;margin-bottom:.75rem;font-size:.83rem;">
-      <i class="bi bi-stars" style="color:var(--brand);font-size:1rem;flex-shrink:0;"></i>
-      <span id="activity-banner-text"></span>
-      <button onclick="document.getElementById('activity-banner').style.display='none'" style="margin-left:auto;background:none;border:none;color:var(--muted);font-size:1rem;cursor:pointer;padding:0 .2rem;line-height:1;">✕</button>
+    <!-- Welcome banner -->
+    <div id="welcome-banner" style="display:none;margin-bottom:1.25rem;border-radius:12px;overflow:hidden;border:1px solid var(--border);background:linear-gradient(135deg,rgba(15,118,110,.09),rgba(20,184,166,.05));">
+      <div style="display:flex;align-items:center;justify-content:space-between;padding:.85rem 1rem .5rem;">
+        <div>
+          <div id="welcome-greeting" style="font-size:1.15rem;font-weight:700;color:var(--text);"></div>
+          <div id="welcome-sub" style="font-size:.8rem;color:var(--muted);margin-top:.15rem;"></div>
+        </div>
+        <button onclick="dismissWelcome()" style="background:none;border:none;color:var(--muted);font-size:1.1rem;cursor:pointer;padding:.2rem .4rem;line-height:1;border-radius:6px;" title="Dismiss">✕</button>
+      </div>
+      <div id="welcome-videos-row" style="display:flex;gap:.75rem;overflow-x:auto;padding:.5rem 1rem 1rem;scrollbar-width:thin;"></div>
     </div>
 
     <!-- Bulk action toolbar (hidden until checkboxes are ticked) -->
@@ -4137,24 +4142,66 @@ async function maybeShowOnboarding(st) {
   checkActivityFeed();
 })();
 
+function dismissWelcome() {
+  const b = document.getElementById('welcome-banner');
+  if (b) b.style.display = 'none';
+  localStorage.setItem('vw_welcome_dismissed', new Date().toDateString());
+}
+
 function checkActivityFeed() {
   try {
     const key = 'vw_last_visit';
     const last = localStorage.getItem(key);
     const now = new Date().toISOString();
     localStorage.setItem(key, now);
-    if (!last) return; // first visit — nothing to compare
-    // Count videos found since last visit using the already-loaded _allVideos
-    const since = new Date(last);
-    const fresh = (_allVideos || []).filter(v => v.found_at && new Date(v.found_at) > since);
-    if (fresh.length === 0) return;
-    const banner = document.getElementById('activity-banner');
-    const text   = document.getElementById('activity-banner-text');
-    if (!banner || !text) return;
-    const label = fresh.length === 1 ? '1 new video' : `${fresh.length} new videos`;
-    const ago = _timeAgo(since);
-    text.innerHTML = `<strong>${label}</strong> found since your last visit${ago ? ' <span style="color:var(--muted)">(' + ago + ')</span>' : ''}.`;
-    banner.style.display = 'flex';
+
+    const banner = document.getElementById('welcome-banner');
+    const greeting = document.getElementById('welcome-greeting');
+    const sub = document.getElementById('welcome-sub');
+    const row = document.getElementById('welcome-videos-row');
+    if (!banner || !greeting || !sub || !row) return;
+
+    // Dismissed today already
+    const dismissed = localStorage.getItem('vw_welcome_dismissed');
+    if (dismissed === new Date().toDateString()) return;
+
+    // Greeting based on time of day
+    const hour = new Date().getHours();
+    const timeGreet = hour < 12 ? 'Good morning' : hour < 17 ? 'Good afternoon' : 'Good evening';
+    const username = (document.getElementById('topbar-username') || {}).textContent || '';
+    greeting.textContent = `${timeGreet}${username ? ', ' + username : ''}!`;
+
+    // New videos since last visit (or just is_new if first visit)
+    const since = last ? new Date(last) : null;
+    const fresh = (_allVideos || []).filter(v => {
+      if (since) return v.found_at && new Date(v.found_at) > since;
+      return v.is_new;
+    }).slice(0, 20);
+
+    if (fresh.length === 0) {
+      sub.textContent = 'Welcome back — no new videos since your last visit.';
+      banner.style.display = 'block';
+      row.style.display = 'none';
+      return;
+    }
+
+    const ago = since ? _timeAgo(since) : '';
+    sub.textContent = `${fresh.length} new video${fresh.length > 1 ? 's' : ''} since your last visit${ago ? ' (' + ago + ')' : ''}.`;
+
+    row.innerHTML = fresh.map(v => {
+      const thumb = v.thumb ? `<img src="${_esc(v.thumb)}" style="width:100%;height:100%;object-fit:cover;border-radius:8px;" loading="lazy" onerror="this.style.display='none'">` : '';
+      const title = _esc(v.title || v.url || 'Untitled');
+      const site  = _esc(v.site_name || '');
+      return `<div onclick='openVideoModal(${JSON.stringify(v).replace(/'/g, "&#39;")}, null)' style="flex:0 0 160px;cursor:pointer;border-radius:8px;overflow:hidden;border:1px solid var(--border);background:var(--card-bg);transition:transform .15s;" onmouseenter="this.style.transform='translateY(-2px)'" onmouseleave="this.style.transform=''">
+        <div style="width:160px;height:90px;background:#1e293b;position:relative;">${thumb}</div>
+        <div style="padding:.4rem .5rem;">
+          <div style="font-size:.72rem;font-weight:600;color:var(--text);overflow:hidden;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;line-height:1.3;">${title}</div>
+          ${site ? `<div style="font-size:.65rem;color:var(--muted);margin-top:.15rem;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${site}</div>` : ''}
+        </div>
+      </div>`;
+    }).join('');
+
+    banner.style.display = 'block';
   } catch (_) {}
 }
 
