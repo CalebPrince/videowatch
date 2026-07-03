@@ -378,7 +378,7 @@ class SiteIn(BaseModel):
     url:           str
     name:          str = ""
     group_name:    str = ""
-    max_pages:     int = 10
+    max_pages:     int = 1
     scan_interval: int = 300   # seconds
     rule_include_keywords: str = ""
     rule_exclude_keywords: str = ""
@@ -1497,6 +1497,8 @@ def _add_site_impl(body: SiteIn, request: Request):
         
     max_pages = max(1, min(body.max_pages, 20))
     rule_min_duration = max(0, body.rule_min_duration or 0)
+    # Multi-page Playwright scans are CPU-heavy — enforce at least 1h interval
+    _min_interval_for_pages = 3600 if max_pages > 1 else 60
     profile = (body.scan_profile or "balanced").strip().lower()
     if profile not in {"fast", "balanced", "deep"}:
         profile = "balanced"
@@ -1515,7 +1517,7 @@ def _add_site_impl(body: SiteIn, request: Request):
             # Enforce plan minimum scan interval
             # First site gets 5-minute interval regardless of plan (onboarding UX)
             effective_min = 300 if site_count == 0 else limits["min_interval"]
-            scan_interval = max(effective_min, max(60, body.scan_interval))
+            scan_interval = max(effective_min, max(_min_interval_for_pages, body.scan_interval))
 
             if db.execute("SELECT id FROM sites WHERE url=? AND owner=?", (url, owner)).fetchone():
                 raise HTTPException(409, "Site already monitored")
@@ -2261,7 +2263,9 @@ def update_site(site_id: str, body: SitePatch, request: Request):
             if body.scan_interval is not None:
                 owner = row["owner"] or current_user(request)
                 min_interval = _plan_limits(owner)["min_interval"]
-                updates["scan_interval"] = max(min_interval, max(60, body.scan_interval))
+                new_max_pages = updates.get("max_pages", row.get("max_pages", 1))
+                min_for_pages = 3600 if new_max_pages > 1 else 60
+                updates["scan_interval"] = max(min_interval, max(min_for_pages, body.scan_interval))
             if body.rule_include_keywords is not None:
                 updates["rule_include_keywords"] = body.rule_include_keywords.strip()
             if body.rule_exclude_keywords is not None:
