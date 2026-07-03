@@ -1099,6 +1099,13 @@ def scrape_videos(html: str, base_url: str, video_url_pattern: str = "") -> list
     VK_VIDEO_LINK_RE = re.compile(r'/video-?\d+_\d+', re.I)
     custom_re = re.compile(video_url_pattern, re.I) if video_url_pattern else None
 
+    # Temporary diagnostic: log first 15 hrefs to identify URL patterns
+    _all_hrefs = [t["href"] for t in soup.find_all("a", href=True)]
+    if _all_hrefs:
+        log.info(f"  scrape_videos sample hrefs ({len(_all_hrefs)} total): {_all_hrefs[:15]}")
+    else:
+        log.info(f"  scrape_videos: no <a href> tags in HTML ({len(html):,} chars)")
+
     for tag in soup.find_all("a", href=True):
         href = tag["href"]
         if len(href) < 8:
