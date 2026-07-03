@@ -1575,7 +1575,9 @@ function connectSSE() {
 
   sseSource.onopen = () => {
     if (wasDisconnected) {
-      window.location.reload();
+      wasDisconnected = false;
+      renderAll();
+      refreshLog();
     }
   };
 
