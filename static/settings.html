@@ -1203,6 +1203,7 @@
             <input data-k="inc" placeholder="include keywords" value="${(s.rule_include_keywords || '').replace(/"/g,'&quot;')}">
             <input data-k="exc" placeholder="exclude keywords" value="${(s.rule_exclude_keywords || '').replace(/"/g,'&quot;')}">
             <input data-k="dur" type="number" min="0" placeholder="min duration" value="${Number(s.rule_min_duration || 0)}">
+            <input data-k="pat" placeholder="video URL pattern e.g. /video/" value="${(s.video_url_pattern || '').replace(/"/g,'&quot;')}" title="Only links matching this pattern are treated as video pages">
             <select data-k="prof">
               <option value="fast" ${s.scan_profile === 'fast' ? 'selected' : ''}>fast</option>
               <option value="balanced" ${(!s.scan_profile || s.scan_profile === 'balanced') ? 'selected' : ''}>balanced</option>
@@ -1238,6 +1239,7 @@
                 rule_include_keywords: row.querySelector('[data-k="inc"]').value.trim(),
                 rule_exclude_keywords: row.querySelector('[data-k="exc"]').value.trim(),
                 rule_min_duration: parseInt(row.querySelector('[data-k="dur"]').value || '0', 10),
+                video_url_pattern: row.querySelector('[data-k="pat"]').value.trim(),
                 scan_profile: row.querySelector('[data-k="prof"]').value,
                 scan_engine: row.querySelector('[data-k="engine"]').value,
               }),
