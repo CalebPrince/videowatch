@@ -822,6 +822,11 @@
             </button>
           </li>
           <li>
+            <button class="dropdown-item" onclick="openStatsModal()" type="button">
+              <i class="bi bi-bar-chart-line me-1"></i> Stats &amp; History
+            </button>
+          </li>
+          <li>
             <a class="dropdown-item" href="/settings" title="Open full settings page">
               <i class="bi bi-sliders me-1"></i> Full settings
             </a>
@@ -1318,6 +1323,21 @@
         <button class="btn btn-sm btn-brand" id="btn-player-open-external">
           <i class="bi bi-box-arrow-up-right me-1"></i>Open in new tab
         </button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ── Stats Modal ── -->
+<div class="modal fade" id="statsModal" tabindex="-1">
+  <div class="modal-dialog modal-dialog-centered modal-xl modal-dialog-scrollable">
+    <div class="modal-content p-1">
+      <div class="modal-header border-0 pb-0">
+        <h5 class="modal-title" style="font-size:1rem;font-weight:700;"><i class="bi bi-bar-chart-line me-1"></i>Stats &amp; History</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body" id="stats-modal-body">
+        <div class="text-center py-5"><div class="spinner-border"></div></div>
       </div>
     </div>
   </div>
@@ -4721,6 +4741,129 @@ async function deleteSmartCollection(id) {
   await api(`/smart-collections/${encodeURIComponent(id)}`, { method: 'DELETE' });
   if (activeSmartCollection === id) { activeSmartCollection = null; renderVideos(); }
   renderSidebar();
+}
+
+// ── Stats & History ──────────────────────────────────────────────────────────
+async function openStatsModal() {
+  const body = document.getElementById('stats-modal-body');
+  body.innerHTML = '<div class="text-center py-5"><div class="spinner-border"></div></div>';
+  new bootstrap.Modal(document.getElementById('statsModal')).show();
+  try {
+    const [base, ext] = await Promise.all([api('/stats'), api('/stats/extended')]);
+
+    // Summary cards
+    const watched = ext.watched_count || 0;
+    const watchPct = base.total > 0 ? Math.round(watched / base.total * 100) : 0;
+    const watchHours = ext.total_watch_time ? (ext.total_watch_time / 3600).toFixed(1) : '0';
+    const storageMB = ext.storage_bytes ? (ext.storage_bytes / 1048576).toFixed(1) : '0';
+
+    const cards = [
+      { label: 'Total Videos', value: base.total, icon: 'bi-play-circle', color: '#0f766e' },
+      { label: 'Watched', value: `${watched} <span style="font-size:.7rem;font-weight:400;color:var(--muted)">(${watchPct}%)</span>`, icon: 'bi-eye', color: '#6366f1' },
+      { label: 'Watch Time', value: `${watchHours}h`, icon: 'bi-clock', color: '#0284c7' },
+      { label: 'Favorites', value: base.favorites, icon: 'bi-star-fill', color: '#f59e0b' },
+      { label: 'Archived', value: base.archived, icon: 'bi-archive', color: '#64748b' },
+      { label: 'Sites', value: base.sites, icon: 'bi-globe', color: '#10b981' },
+      { label: 'Total Scans', value: base.scans, icon: 'bi-arrow-repeat', color: '#8b5cf6' },
+      { label: 'Downloaded', value: `${ext.storage_count} <span style="font-size:.7rem;font-weight:400;color:var(--muted)">(${storageMB} MB)</span>`, icon: 'bi-download', color: '#e11d48' },
+    ].map(c => `
+      <div style="background:var(--card-bg);border:1px solid var(--border);border-radius:10px;padding:.75rem 1rem;display:flex;align-items:center;gap:.75rem;">
+        <i class="bi ${c.icon}" style="font-size:1.4rem;color:${c.color};flex-shrink:0;"></i>
+        <div>
+          <div style="font-size:1.1rem;font-weight:700;">${c.value}</div>
+          <div style="font-size:.72rem;color:var(--muted);">${c.label}</div>
+        </div>
+      </div>`).join('');
+
+    // Bar chart (videos per day, last 30 days)
+    const daily = ext.daily_discovery || [];
+    const chartSvg = _renderBarChart(daily);
+
+    // Top sites table
+    const topSitesRows = (ext.top_sites || []).map(s => `
+      <tr>
+        <td style="padding:5px 8px;font-size:.82rem;">${_esc(s.name || s.url)}</td>
+        <td style="padding:5px 8px;font-size:.82rem;text-align:right;font-weight:700;">${s.count}</td>
+        <td style="padding:5px 8px;width:120px;">
+          <div style="height:6px;background:rgba(255,255,255,.08);border-radius:3px;">
+            <div style="width:${Math.round(s.count / (ext.top_sites[0]?.count||1) * 100)}%;height:100%;background:var(--brand);border-radius:3px;"></div>
+          </div>
+        </td>
+      </tr>`).join('');
+
+    // Tag cloud
+    const tagCloud = (ext.tags || []).map(t => {
+      const size = 0.7 + (t.count / ((ext.tags[0]?.count) || 1)) * 0.6;
+      return `<span style="font-size:${size.toFixed(2)}rem;padding:.2rem .45rem;background:rgba(15,118,110,.15);border:1px solid rgba(15,118,110,.3);border-radius:20px;color:var(--brand);cursor:default;" title="${t.count} videos">${_esc(t.tag)}</span>`;
+    }).join(' ');
+
+    // Watch history timeline
+    const histItems = (ext.recent_history || []).map(v => {
+      const dur = v.duration ? `${Math.floor(v.duration/60)}m` : '';
+      const when = v.last_watched_at ? fmtDate(v.last_watched_at) : '';
+      const thumb = v.thumb ? `<img src="${_esc(v.thumb)}" style="width:80px;height:45px;object-fit:cover;border-radius:4px;flex-shrink:0;" loading="lazy">` : `<div style="width:80px;height:45px;background:#1e293b;border-radius:4px;flex-shrink:0;"></div>`;
+      return `<div onclick='openVideoModal(${JSON.stringify(v).replace(/'/g,"&#39;")},null)' style="display:flex;gap:.6rem;align-items:center;padding:.4rem;border-radius:6px;cursor:pointer;" onmouseenter="this.style.background='rgba(255,255,255,.05)'" onmouseleave="this.style.background=''">
+        ${thumb}
+        <div style="min-width:0;flex:1;">
+          <div style="font-size:.82rem;font-weight:600;overflow:hidden;white-space:nowrap;text-overflow:ellipsis;">${_esc(v.title||'Untitled')}</div>
+          <div style="font-size:.72rem;color:var(--muted);">${_esc(v.site_name||'')}${dur?' · '+dur:''}${when?' · '+when:''}</div>
+        </div>
+      </div>`;
+    }).join('');
+
+    body.innerHTML = `
+      <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:.65rem;margin-bottom:1.25rem;">${cards}</div>
+
+      <div style="margin-bottom:1.25rem;">
+        <div style="font-size:.82rem;font-weight:700;color:var(--muted);margin-bottom:.5rem;text-transform:uppercase;letter-spacing:.04em;">Videos discovered — last 30 days</div>
+        ${chartSvg}
+      </div>
+
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:1rem;margin-bottom:1.25rem;">
+        <div>
+          <div style="font-size:.82rem;font-weight:700;color:var(--muted);margin-bottom:.5rem;text-transform:uppercase;letter-spacing:.04em;">Top sites</div>
+          ${topSitesRows ? `<table style="width:100%;border-collapse:collapse;">${topSitesRows}</table>` : '<div style="color:var(--muted);font-size:.82rem;">No data yet.</div>'}
+        </div>
+        <div>
+          <div style="font-size:.82rem;font-weight:700;color:var(--muted);margin-bottom:.5rem;text-transform:uppercase;letter-spacing:.04em;">Tag cloud</div>
+          ${tagCloud || '<div style="color:var(--muted);font-size:.82rem;">No tags yet.</div>'}
+        </div>
+      </div>
+
+      <div>
+        <div style="font-size:.82rem;font-weight:700;color:var(--muted);margin-bottom:.5rem;text-transform:uppercase;letter-spacing:.04em;">Watch history</div>
+        ${histItems || '<div style="color:var(--muted);font-size:.82rem;">Nothing watched yet.</div>'}
+      </div>`;
+  } catch(e) {
+    body.innerHTML = `<div class="text-danger p-3">Failed to load stats: ${_esc(e.message)}</div>`;
+  }
+}
+
+function _renderBarChart(daily) {
+  if (!daily.length) return '<div style="color:var(--muted);font-size:.82rem;">No data for the last 30 days.</div>';
+  // Fill in all 30 days with 0s
+  const map = {};
+  daily.forEach(d => { map[d.day] = d.count; });
+  const days = [];
+  for (let i = 29; i >= 0; i--) {
+    const d = new Date(); d.setDate(d.getDate() - i);
+    const key = d.toISOString().slice(0,10);
+    days.push({ day: key, count: map[key] || 0 });
+  }
+  const maxVal = Math.max(...days.map(d => d.count), 1);
+  const W = 700, H = 90, barW = Math.floor((W - 40) / 30) - 1, gap = Math.floor((W - 40) / 30);
+  const bars = days.map((d, i) => {
+    const barH = Math.max(2, Math.round((d.count / maxVal) * (H - 20)));
+    const x = 20 + i * gap;
+    const y = H - barH - 2;
+    const label = d.day.slice(5); // MM-DD
+    const showLabel = i === 0 || i === 14 || i === 29;
+    return `<rect x="${x}" y="${y}" width="${barW}" height="${barH}" rx="2" fill="var(--brand)" opacity="${d.count ? 0.85 : 0.15}">
+      <title>${d.day}: ${d.count} video${d.count!==1?'s':''}</title></rect>
+      ${showLabel ? `<text x="${x + barW/2}" y="${H + 2}" text-anchor="middle" font-size="8" fill="var(--muted)">${label}</text>` : ''}
+      ${d.count ? `<text x="${x + barW/2}" y="${y - 2}" text-anchor="middle" font-size="7" fill="var(--muted)">${d.count}</text>` : ''}`;
+  }).join('');
+  return `<svg viewBox="0 0 ${W} ${H+14}" style="width:100%;height:auto;overflow:visible;">${bars}</svg>`;
 }
 
 // ── Site Health ───────────────────────────────────────────────────────────────

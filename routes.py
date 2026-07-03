@@ -3852,6 +3852,82 @@ def stats(request: Request):
             "favorites": favorites, "archived": archived, "ignored": ignored,
             "platforms": platforms, "site_list": site_list}
 
+@router.get("/api/stats/extended")
+def stats_extended(request: Request):
+    """Richer stats for the dashboard: per-day discovery, watch stats, top sites, storage."""
+    if not is_authenticated(request):
+        raise HTTPException(401)
+    username = current_user(request)
+    with get_db() as db:
+        # Videos discovered per day (last 30 days)
+        daily = db.execute(
+            """SELECT DATE(found_at) AS day, COUNT(*) AS count
+               FROM videos JOIN sites ON videos.site_id=sites.id
+               WHERE sites.owner=? AND found_at >= DATE('now','-30 days') AND is_ignored=0
+               GROUP BY day ORDER BY day""",
+            (username,),
+        ).fetchall()
+        # Watch stats
+        watched_count = db.execute(
+            "SELECT COUNT(*) FROM videos v JOIN sites s ON s.id=v.site_id WHERE s.owner=? AND v.is_watched=1",
+            (username,),
+        ).fetchone()[0]
+        total_watch_time = db.execute(
+            "SELECT COALESCE(SUM(v.duration),0) FROM videos v JOIN sites s ON s.id=v.site_id "
+            "WHERE s.owner=? AND v.is_watched=1 AND v.duration IS NOT NULL",
+            (username,),
+        ).fetchone()[0]
+        # Top sites by video count
+        top_sites = db.execute(
+            """SELECT s.name, s.url, COUNT(*) AS count
+               FROM videos v JOIN sites s ON s.id=v.site_id
+               WHERE s.owner=? AND v.is_ignored=0
+               GROUP BY s.id ORDER BY count DESC LIMIT 10""",
+            (username,),
+        ).fetchall()
+        # Recent watch history (last 20)
+        history = db.execute(
+            """SELECT v.id, v.title, v.url, v.thumb, v.duration, v.last_watched_at,
+                      s.name AS site_name
+               FROM videos v JOIN sites s ON s.id=v.site_id
+               WHERE s.owner=? AND v.is_watched=1 AND v.last_watched_at IS NOT NULL
+               ORDER BY v.last_watched_at DESC LIMIT 20""",
+            (username,),
+        ).fetchall()
+        # Tag cloud (top 20 tags)
+        tags = db.execute(
+            "SELECT tag, COUNT(*) AS count FROM video_tags WHERE owner=? GROUP BY tag ORDER BY count DESC LIMIT 20",
+            (username,),
+        ).fetchall()
+    # Storage: sum up actual file sizes in VIDEOS_DIR for this user's videos
+    storage_bytes = 0
+    storage_count = 0
+    try:
+        with get_db() as db:
+            local_files = db.execute(
+                "SELECT v.local_file FROM videos v JOIN sites s ON s.id=v.site_id "
+                "WHERE s.owner=? AND v.local_file IS NOT NULL",
+                (username,),
+            ).fetchall()
+        for row in local_files:
+            fp = VIDEOS_DIR / row["local_file"]
+            if fp.exists():
+                storage_bytes += fp.stat().st_size
+                storage_count += 1
+    except Exception:
+        pass
+    return {
+        "daily_discovery": [dict(r) for r in daily],
+        "watched_count": watched_count,
+        "total_watch_time": int(total_watch_time or 0),
+        "top_sites": [dict(r) for r in top_sites],
+        "recent_history": [dict(r) for r in history],
+        "tags": [dict(r) for r in tags],
+        "storage_bytes": storage_bytes,
+        "storage_count": storage_count,
+    }
+
+
 @router.get("/api/logs", response_class=HTMLResponse)
 def get_logs(lines: int = 300):
     """Tail the server log file in the browser."""
