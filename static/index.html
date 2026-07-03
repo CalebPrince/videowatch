@@ -4116,14 +4116,12 @@ async function maybeShowOnboarding(st) {
     playerModal.addEventListener('hidden.bs.modal', resetInlinePlayer);
   }
   connectSSE();
-  api('/auth/status').then(st => {
-    const el = document.getElementById('topbar-username');
-    if (el && st.user) el.textContent = st.user;
-    maybeShowOnboarding(st);
-    renderOnboardingChecklist(st);
-    // Apply DB theme, overriding localStorage if they differ
-    if (st.ui_theme) applyTheme(st.ui_theme === 'dark', false);
-  }).catch(() => {});
+  const authStatus = await api('/auth/status').catch(() => ({}));
+  const el = document.getElementById('topbar-username');
+  if (el && authStatus.user) el.textContent = authStatus.user;
+  maybeShowOnboarding(authStatus);
+  renderOnboardingChecklist(authStatus);
+  if (authStatus.ui_theme) applyTheme(authStatus.ui_theme === 'dark', false);
   // Normalise any saved site URLs (adds trailing slashes etc)
   await api('/sites/fix-urls', { method: 'POST' }).catch(() => {});
   for (let i = 0; i < 3; i++) {
