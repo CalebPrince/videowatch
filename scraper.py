@@ -52,6 +52,7 @@ _YTDLP_DOMAINS = {
     "vimeo.com", "www.vimeo.com",
     "dailymotion.com", "www.dailymotion.com",
     "vk.com", "vkvideo.ru",
+    "twitch.tv", "www.twitch.tv",
 }
 
 def _is_ytdlp_url(url: str) -> bool:
