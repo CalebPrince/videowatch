@@ -2382,7 +2382,7 @@ def list_videos(request: Request,
             except Exception:
                 pass
             if fts_available:
-                fts_query = " OR ".join(
+                fts_query = " AND ".join(
                     f'"{word}"*' if word.isalnum() else f'"{word}"'
                     for word in search.split()
                     if word
