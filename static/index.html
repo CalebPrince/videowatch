@@ -4146,7 +4146,7 @@ function dismissWelcome() {
   localStorage.setItem('vw_welcome_dismissed', new Date().toDateString());
 }
 
-function checkActivityFeed() {
+async function checkActivityFeed() {
   try {
     const key = 'vw_last_visit';
     const last = localStorage.getItem(key);
