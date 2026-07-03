@@ -190,6 +190,7 @@ def init_db():
             add_column_if_missing(db, "sites", "owner", "TEXT")
             add_column_if_missing(db, "sites", "consecutive_failures", "INTEGER DEFAULT 0")
             add_column_if_missing(db, "sites", "alert_sent", "INTEGER DEFAULT 0")
+            add_column_if_missing(db, "sites", "last_scan_duration", "INTEGER")
             add_column_if_missing(db, "collections", "share_token", "TEXT")
             add_column_if_missing(db, "collections", "description", "TEXT")
 

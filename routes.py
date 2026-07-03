@@ -2585,33 +2585,36 @@ _scan_queue: queue.Queue = queue.Queue()
 _scan_queue_lock = threading.Lock()
 _scan_queue_items: list[dict] = []   # shadow list for status queries
 _scan_running: dict | None = None    # currently running job
+_scan_started_at: float | None = None  # time.monotonic() when current job started
 
 
 _RETRY_DELAYS = [30, 120, 600]   # seconds: 30s, 2min, 10min
 
 
 def _scan_worker():
-    global _scan_running
+    global _scan_running, _scan_started_at
     while True:
         job = _scan_queue.get()
         if job is None:
             break
         with _scan_queue_lock:
             _scan_running = job
+            _scan_started_at = time.monotonic()
             if job in _scan_queue_items:
                 _scan_queue_items.remove(job)
         site = job["site"]
         attempt = job.get("attempt", 0)
         try:
             _run_scan_one_sync(site)
-            # Reset failure streak on success
+            # Record duration and reset failure streak on success
             site_id = site.get("id")
+            duration = int(time.monotonic() - (_scan_started_at or time.monotonic()))
             if site_id:
                 with write_lock:
                     with get_db() as db:
                         db.execute(
-                            "UPDATE sites SET consecutive_failures=0, alert_sent=0 WHERE id=?",
-                            (site_id,),
+                            "UPDATE sites SET consecutive_failures=0, alert_sent=0, last_scan_duration=? WHERE id=?",
+                            (duration, site_id),
                         )
                         db.commit()
         except Exception as e:
@@ -2690,20 +2693,45 @@ def get_scan_queue(request: Request):
         raise HTTPException(401, "Not authenticated")
     with _scan_queue_lock:
         running = _scan_running
+        started = _scan_started_at
         queued  = list(_scan_queue_items)
-    def _fmt(job):
+    def _est(site: dict) -> int:
+        """Estimated scan duration in seconds."""
+        dur = site.get("last_scan_duration")
+        if dur:
+            return int(dur)
+        return int(site.get("max_pages", 1)) * 25
+    def _fmt(job, elapsed: float | None = None):
         s = job.get("site", {})
-        return {
+        est = _est(s)
+        result = {
             "site_id":    s.get("id"),
             "name":       s.get("name") or s.get("url", ""),
             "group_name": s.get("group_name") or "",
             "url":        s.get("url", ""),
             "engine":     s.get("scan_engine", "basic"),
             "attempt":    job.get("attempt", 0),
+            "est_seconds": est,
         }
+        if elapsed is not None:
+            result["elapsed"] = int(elapsed)
+            result["remaining"] = max(0, est - int(elapsed))
+        return result
+    now = time.monotonic()
+    elapsed = (now - started) if (running and started) else None
+    fmt_running = _fmt(running, elapsed) if running else None
+    # ETA for each queued job = running remaining + sum of est durations before it
+    running_remaining = max(0, (fmt_running["est_seconds"] - int(elapsed or 0))) if fmt_running else 0
+    wait = running_remaining
+    fmt_queued = []
+    for j in queued:
+        s = j.get("site", {})
+        est = _est(s)
+        fmt_queued.append({**_fmt(j), "wait_seconds": int(wait)})
+        wait += est
     return {
-        "running": _fmt(running) if running else None,
-        "queued":  [_fmt(j) for j in queued],
+        "running": fmt_running,
+        "queued":  fmt_queued,
         "total":   len(queued) + (1 if running else 0),
     }
 
