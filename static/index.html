@@ -4143,15 +4143,17 @@ async function maybeShowOnboarding(st) {
 function dismissWelcome() {
   const b = document.getElementById('welcome-banner');
   if (b) b.style.display = 'none';
-  localStorage.setItem('vw_welcome_dismissed', new Date().toDateString());
+  _lsSet('vw_welcome_dismissed', new Date().toDateString());
 }
+
+function _lsGet(key) { try { return localStorage.getItem(key); } catch(_) { return null; } }
+function _lsSet(key, val) { try { localStorage.setItem(key, val); } catch(_) {} }
 
 async function checkActivityFeed() {
   try {
     const key = 'vw_last_visit';
-    const last = localStorage.getItem(key);
-    const now = new Date().toISOString();
-    localStorage.setItem(key, now);
+    const last = _lsGet(key);
+    _lsSet(key, new Date().toISOString());
 
     const banner = document.getElementById('welcome-banner');
     const greeting = document.getElementById('welcome-greeting');
@@ -4160,7 +4162,7 @@ async function checkActivityFeed() {
     if (!banner || !greeting || !sub || !row) return;
 
     // Dismissed today already
-    const dismissed = localStorage.getItem('vw_welcome_dismissed');
+    const dismissed = _lsGet('vw_welcome_dismissed');
     if (dismissed === new Date().toDateString()) return;
 
     // Greeting based on time of day
