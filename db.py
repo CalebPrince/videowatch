@@ -13,6 +13,7 @@ def get_db():
     """Context manager for SQLite connections with 30s timeout."""
     conn = sqlite3.connect(DB_PATH, timeout=30.0)
     conn.row_factory = sqlite3.Row
+    conn.execute("PRAGMA foreign_keys = ON")
     try:
         yield conn
     finally:
