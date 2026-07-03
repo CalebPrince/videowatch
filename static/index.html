@@ -4137,7 +4137,7 @@ async function maybeShowOnboarding(st) {
     }
   }
   await refreshLog();
-  checkActivityFeed();
+  setTimeout(() => checkActivityFeed(), 500);
 })();
 
 function dismissWelcome() {
