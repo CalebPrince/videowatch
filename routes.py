@@ -1175,10 +1175,13 @@ def _notify_scan_summary(site: dict, found: int, added: int):
     try:
         with get_db() as db:
             row = db.execute(
-                "SELECT email, notify_new_videos FROM users WHERE username=? AND email_verified=1",
+                "SELECT email, notify_new_videos, notify_digest FROM users WHERE username=? AND email_verified=1",
                 (owner,),
             ).fetchone()
         if not row or not row["notify_new_videos"] or not row["email"]:
+            return
+        # Digest users: skip instant email — they get a scheduled summary
+        if (row["notify_digest"] or "instant") != "instant":
             return
         site_url = site.get("url", "")
         subject = f"VideoWatch: {added} new video{'s' if added != 1 else ''} on {site_label}"
@@ -1258,6 +1261,79 @@ def _notify_scan_failure(site: dict, attempts: int):
         log.info(f"Scan failure alert sent to {row['email']} for {site_label}")
     except Exception as e:
         log.warning(f"Scan failure alert email failed: {e}")
+
+
+def _send_digest_emails(period: str):
+    """Send digest emails for all users with notify_digest == period ('daily' or 'weekly')."""
+    if not _email_configured():
+        return
+    from datetime import datetime, timedelta, timezone
+    cutoff_hours = 24 if period == "daily" else 168
+    cutoff = (datetime.now(timezone.utc) - timedelta(hours=cutoff_hours)).isoformat()
+    try:
+        with get_db() as db:
+            users = db.execute(
+                "SELECT username, email FROM users WHERE email IS NOT NULL AND email_verified=1 "
+                "AND notify_new_videos=1 AND notify_digest=?",
+                (period,),
+            ).fetchall()
+        for user in users:
+            try:
+                with get_db() as db:
+                    videos = db.execute(
+                        """SELECT v.title, v.url, v.thumb, s.name AS site_name
+                           FROM videos v JOIN sites s ON v.site_id=s.id
+                           WHERE s.owner=? AND v.found_at >= ? AND v.is_ignored=0
+                           ORDER BY v.found_at DESC LIMIT 50""",
+                        (user["username"], cutoff),
+                    ).fetchall()
+                if not videos:
+                    continue
+                rows_html = "".join(
+                    f'<tr><td style="padding:6px 4px;color:#64748b;white-space:nowrap">{v["site_name"] or ""}</td>'
+                    f'<td style="padding:6px 4px"><a href="{v["url"]}" style="color:#0f766e">{v["title"] or v["url"]}</a></td></tr>'
+                    for v in videos
+                )
+                label = "Daily" if period == "daily" else "Weekly"
+                subject = f"VideoWatch {label} Digest — {len(videos)} new video{'s' if len(videos)!=1 else ''}"
+                body_html = f"""
+                <div style="font-family:sans-serif;max-width:560px;margin:0 auto">
+                  <h2 style="color:#0f766e">VideoWatch {label} Digest</h2>
+                  <p>{len(videos)} new video{'s' if len(videos)!=1 else ''} found in the past {'24 hours' if period=='daily' else '7 days'}.</p>
+                  <table style="border-collapse:collapse;width:100%;font-size:.9rem">
+                    <thead><tr>
+                      <th style="text-align:left;padding:6px 4px;border-bottom:1px solid #e2e8f0">Site</th>
+                      <th style="text-align:left;padding:6px 4px;border-bottom:1px solid #e2e8f0">Video</th>
+                    </tr></thead>
+                    <tbody>{rows_html}</tbody>
+                  </table>
+                  <p style="margin-top:1.5rem">
+                    <a href="{_APP_BASE_URL}" style="background:#0f766e;color:#fff;padding:10px 22px;border-radius:8px;text-decoration:none;font-weight:700">
+                      Open VideoWatch
+                    </a>
+                  </p>
+                  <p style="color:#94a3b8;font-size:.8rem;margin-top:2rem">
+                    You're subscribed to {label.lower()} digests. Change this in Notification settings.<br>
+                    <a href="{_APP_BASE_URL}" style="color:#94a3b8">Manage settings</a>
+                  </p>
+                </div>"""
+                _send_email(user["email"], subject, body_html)
+                log.info(f"Digest ({period}) sent to {user['email']} — {len(videos)} videos")
+            except Exception as e:
+                log.warning(f"Digest email failed for {user['username']}: {e}")
+    except Exception as e:
+        log.warning(f"Digest job failed: {e}")
+
+
+@router.post("/api/internal/digest")
+def trigger_digest(request: Request, body: dict = {}):
+    """Internal endpoint called by the scheduler to send digest emails."""
+    require_admin(request)
+    period = body.get("period", "daily")
+    if period not in ("daily", "weekly"):
+        raise HTTPException(400, "period must be 'daily' or 'weekly'")
+    threading.Thread(target=_send_digest_emails, args=(period,), daemon=True).start()
+    return {"ok": True, "period": period}
 
 
 # ── Helper for SSRF verification ──────────────────────────────────────────────
@@ -2947,13 +3023,14 @@ def get_user_notifications(request: Request):
     username = current_user(request)
     with get_db() as db:
         row = db.execute(
-            "SELECT email, email_verified, notify_new_videos, plan FROM users WHERE username=?",
+            "SELECT email, email_verified, notify_new_videos, notify_digest, plan FROM users WHERE username=?",
             (username,),
         ).fetchone()
     if not row:
         raise HTTPException(404)
     return {
         "notify_new_videos": bool(row["notify_new_videos"]),
+        "notify_digest": row["notify_digest"] or "instant",
         "email": row["email"] or "",
         "email_verified": bool(row["email_verified"]),
         "plan": row["plan"] or "free",
@@ -2966,6 +3043,9 @@ def set_user_notifications(request: Request, body: dict):
         raise HTTPException(401, "Authentication required")
     username = current_user(request)
     notify = bool(body.get("notify_new_videos", False))
+    digest = body.get("notify_digest", "instant")
+    if digest not in ("instant", "daily", "weekly"):
+        digest = "instant"
     with get_db() as db:
         row = db.execute(
             "SELECT email_verified FROM users WHERE username=?", (username,)
@@ -2973,10 +3053,10 @@ def set_user_notifications(request: Request, body: dict):
         if notify and (not row or not row["email_verified"]):
             raise HTTPException(400, "A verified email address is required to enable email notifications.")
         db.execute(
-            "UPDATE users SET notify_new_videos=? WHERE username=?",
-            (1 if notify else 0, username),
+            "UPDATE users SET notify_new_videos=?, notify_digest=? WHERE username=?",
+            (1 if notify else 0, digest, username),
         )
-    return {"ok": True, "notify_new_videos": notify}
+    return {"ok": True, "notify_new_videos": notify, "notify_digest": digest}
 
 
 @router.patch("/api/user/prefs")

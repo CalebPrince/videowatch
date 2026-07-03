@@ -138,12 +138,13 @@ async def _scheduler():
             today = now_utc.strftime("%Y-%m-%d")
             if today != _last_backup_date:
                 _last_backup_date = today
-                from routes import _run_backup
+                from routes import _run_backup, _send_digest_emails
                 threading.Thread(target=_run_backup, daemon=True).start()
+                # Daily digest
+                threading.Thread(target=_send_digest_emails, args=("daily",), daemon=True).start()
                 # Weekly digest — send every Monday
                 if now_utc.weekday() == 0:
-                    from routes import send_weekly_digest
-                    threading.Thread(target=send_weekly_digest, daemon=True).start()
+                    threading.Thread(target=_send_digest_emails, args=("weekly",), daemon=True).start()
         except Exception as e:
             log.error(f"Nightly backup error: {e}")
         try:

@@ -1221,6 +1221,18 @@
         <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
       </div>
       <div class="modal-body">
+        <!-- Push notifications -->
+        <p style="font-size:.82rem;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.04em;margin-bottom:.6rem">Push Notifications</p>
+        <div class="d-flex align-items-center gap-2 mb-1">
+          <div class="form-check form-switch mb-0">
+            <input class="form-check-input" type="checkbox" id="notify-push-toggle">
+            <label class="form-check-label" for="notify-push-toggle" style="font-size:.9rem;">Notify me on this device</label>
+          </div>
+          <span id="notify-push-status" style="font-size:.75rem;color:var(--muted);"></span>
+        </div>
+        <div id="notify-push-hint" style="font-size:.78rem;color:var(--muted);margin-left:2.5rem;display:none;"></div>
+
+        <hr class="my-3">
         <!-- Per-user email notifications -->
         <p style="font-size:.82rem;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.04em;margin-bottom:.6rem">Email</p>
         <div class="form-check form-switch mb-1">
@@ -1228,6 +1240,14 @@
           <label class="form-check-label" for="notify-email-new-videos" style="font-size:.9rem;">Email me when new videos are found</label>
         </div>
         <div id="notify-email-hint" style="font-size:.78rem;color:var(--muted);margin-left:2.5rem;display:none;"></div>
+        <div id="notify-digest-section" style="display:none;margin-left:2.5rem;margin-top:.5rem;">
+          <label style="font-size:.82rem;color:var(--muted);">Email frequency</label>
+          <select id="notify-digest-mode" class="form-select form-select-sm mt-1" style="width:auto;">
+            <option value="instant">Instant (per scan)</option>
+            <option value="daily">Daily digest</option>
+            <option value="weekly">Weekly digest</option>
+          </select>
+        </div>
 
         <!-- Admin: webhook -->
         <div id="notify-webhook-section" style="display:none">
@@ -3817,6 +3837,85 @@ if (savePwdBtn) {
   };
 }
 
+// ── Push notification helpers ─────────────────────────────────────────────────
+let _swReg = null;
+
+async function _registerSW() {
+  if (!('serviceWorker' in navigator) || !('PushManager' in window)) return null;
+  try {
+    _swReg = await navigator.serviceWorker.register('/static/sw.js');
+    return _swReg;
+  } catch (e) {
+    console.warn('SW registration failed:', e);
+    return null;
+  }
+}
+
+function _urlBase64ToUint8Array(b64) {
+  const pad = '='.repeat((4 - b64.length % 4) % 4);
+  const raw = atob((b64 + pad).replace(/-/g, '+').replace(/_/g, '/'));
+  return Uint8Array.from([...raw].map(c => c.charCodeAt(0)));
+}
+
+async function _getPushSubscription() {
+  const reg = _swReg || await _registerSW();
+  if (!reg) return null;
+  return reg.pushManager.getSubscription();
+}
+
+async function _subscribePush() {
+  const reg = _swReg || await _registerSW();
+  if (!reg) throw new Error('Service workers not supported');
+  const perm = await Notification.requestPermission();
+  if (perm !== 'granted') throw new Error('Notification permission denied');
+  const { public_key } = await api('/push/vapid-public');
+  const sub = await reg.pushManager.subscribe({
+    userVisibleOnly: true,
+    applicationServerKey: _urlBase64ToUint8Array(public_key),
+  });
+  const j = sub.toJSON();
+  await api('/push/subscribe', {
+    method: 'POST',
+    body: JSON.stringify({ endpoint: j.endpoint, p256dh: j.keys.p256dh, auth: j.keys.auth }),
+  });
+  return sub;
+}
+
+async function _unsubscribePush() {
+  const sub = await _getPushSubscription();
+  if (!sub) return;
+  await api('/push/subscribe', {
+    method: 'DELETE',
+    body: JSON.stringify({ endpoint: sub.endpoint }),
+  });
+  await sub.unsubscribe();
+}
+
+async function _updatePushUI() {
+  const toggle = document.getElementById('notify-push-toggle');
+  const status = document.getElementById('notify-push-status');
+  const hint   = document.getElementById('notify-push-hint');
+  if (!toggle) return;
+  if (!('serviceWorker' in navigator) || !('PushManager' in window)) {
+    toggle.disabled = true;
+    hint.textContent = 'Push notifications are not supported in this browser.';
+    hint.style.display = 'block';
+    return;
+  }
+  if (Notification.permission === 'denied') {
+    toggle.disabled = true;
+    hint.textContent = 'Notifications are blocked. Allow them in browser settings.';
+    hint.style.display = 'block';
+    return;
+  }
+  const sub = await _getPushSubscription();
+  toggle.checked = !!sub;
+  status.textContent = sub ? '(active)' : '';
+}
+
+// Register SW at startup
+_registerSW();
+
 const notifyBtn = document.getElementById('btn-notifications-open');
 if (notifyBtn) {
   notifyBtn.onclick = async () => {
@@ -3826,17 +3925,49 @@ if (notifyBtn) {
         api('/notifications'),
         api('/auth/status'),
       ]);
+      // Push toggle
+      await _updatePushUI();
+      const pushToggle = document.getElementById('notify-push-toggle');
+      if (pushToggle) {
+        pushToggle.onchange = async () => {
+          const status = document.getElementById('notify-push-status');
+          const hint   = document.getElementById('notify-push-hint');
+          try {
+            if (pushToggle.checked) {
+              await _subscribePush();
+              status.textContent = '(active)';
+            } else {
+              await _unsubscribePush();
+              status.textContent = '';
+            }
+            hint.style.display = 'none';
+          } catch (e) {
+            pushToggle.checked = !pushToggle.checked;
+            hint.textContent = e.message;
+            hint.style.display = 'block';
+          }
+        };
+      }
       // Email toggle
       const emailToggle = document.getElementById('notify-email-new-videos');
       emailToggle.checked = !!userN.notify_new_videos;
+      const digestSection = document.getElementById('notify-digest-section');
+      const digestMode    = document.getElementById('notify-digest-mode');
+      if (digestSection) digestSection.style.display = userN.notify_new_videos ? 'block' : 'none';
+      if (digestMode)    digestMode.value = userN.notify_digest || 'instant';
+      emailToggle.onchange = () => {
+        if (digestSection) digestSection.style.display = emailToggle.checked ? 'block' : 'none';
+      };
       const hint = document.getElementById('notify-email-hint');
       if (!userN.email_verified) {
         hint.textContent = 'You need a verified email address to receive notifications.';
         hint.style.display = 'block';
         emailToggle.disabled = true;
+        if (digestMode) digestMode.disabled = true;
       } else {
         hint.style.display = 'none';
         emailToggle.disabled = false;
+        if (digestMode) digestMode.disabled = false;
       }
       // Admin webhook section
       const webhookSection = document.getElementById('notify-webhook-section');
@@ -3870,6 +4001,7 @@ if (notifySaveBtn) {
         method: 'POST',
         body: JSON.stringify({
           notify_new_videos: document.getElementById('notify-email-new-videos').checked,
+          notify_digest: document.getElementById('notify-digest-mode')?.value || 'instant',
         }),
       });
       // Save admin webhook if section is visible

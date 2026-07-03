@@ -315,6 +315,7 @@ def init_db():
             db.execute("CREATE INDEX IF NOT EXISTS idx_push_owner ON push_subscriptions(owner)")
             add_column_if_missing(db, "users", "referral_code", "TEXT")
             add_column_if_missing(db, "users", "referred_by",  "TEXT")
+            add_column_if_missing(db, "users", "notify_digest", "TEXT DEFAULT 'instant'")
             db.execute("""
                 CREATE TABLE IF NOT EXISTS roadmap_items (
                     id         TEXT PRIMARY KEY,
