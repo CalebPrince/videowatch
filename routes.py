@@ -2445,7 +2445,7 @@ def export_sites(request: Request):
 
 
 @router.post("/api/sites/import")
-def import_sites(request: Request, body: list):
+def import_sites(request: Request, body: list = Body(...)):
     """Import sites from a JSON array. Skips duplicates."""
     if not is_authenticated(request):
         raise HTTPException(401)
