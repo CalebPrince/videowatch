@@ -4743,6 +4743,44 @@ async function deleteSmartCollection(id) {
   renderSidebar();
 }
 
+// ── Playback: PiP, speed, position tracking ──────────────────────────────────
+let _posTrackTimer = null;
+
+function _fmtPos(secs) {
+  const m = Math.floor(secs / 60), s = Math.floor(secs % 60);
+  return `${m}:${String(s).padStart(2,'0')}`;
+}
+
+function _startPositionTracking(vid, videoId) {
+  clearInterval(_posTrackTimer);
+  _posTrackTimer = setInterval(() => {
+    if (vid.paused || vid.ended || !vid.currentTime) return;
+    const pos = Math.floor(vid.currentTime);
+    api(`/videos/${videoId}/position`, { method: 'PATCH', body: JSON.stringify({ position: pos }) }).catch(() => {});
+  }, 5000);
+  vid.addEventListener('ended', () => {
+    clearInterval(_posTrackTimer);
+    api(`/videos/${videoId}/position`, { method: 'PATCH', body: JSON.stringify({ position: 0 }) }).catch(() => {});
+  }, { once: true });
+}
+
+function vpTogglePiP() {
+  const vid = document.querySelector('#vp-player video');
+  if (!vid) return;
+  if (document.pictureInPictureElement) {
+    document.exitPictureInPicture().catch(() => {});
+  } else {
+    vid.requestPictureInPicture().catch(e => showToast('PiP not available: ' + e.message, 'warning'));
+  }
+}
+
+function vpSetSpeed(val) {
+  const vid = document.querySelector('#vp-player video');
+  const speed = parseFloat(val) || 1;
+  if (vid) vid.playbackRate = speed;
+  _lsSet('vw_playback_speed', String(speed));
+}
+
 // ── Stats & History ──────────────────────────────────────────────────────────
 async function openStatsModal() {
   const body = document.getElementById('stats-modal-body');
@@ -5056,6 +5094,17 @@ async function doBulkSiteEdit() {
       <button id="vp-watch-btn" class="btn btn-sm btn-outline-secondary" style="font-size:.78rem;" onclick="vpToggle('watched')"></button>
       <button id="vp-arch-btn"  class="btn btn-sm btn-outline-secondary" style="font-size:.78rem;" onclick="vpToggle('archive')"></button>
       <button id="vp-dl-btn" class="btn btn-sm btn-outline-secondary" style="font-size:.78rem;" onclick="if(_vpVideo)startDownload(_vpVideo.id,_vpVideo.title||_vpVideo.url)"><i class="bi bi-download me-1"></i>Download</button>
+      <!-- PiP + speed (only shown for direct video) -->
+      <button id="vp-pip-btn" class="btn btn-sm btn-outline-secondary" style="font-size:.78rem;display:none;" onclick="vpTogglePiP()" title="Picture-in-Picture"><i class="bi bi-pip"></i></button>
+      <select id="vp-speed-sel" style="display:none;font-size:.78rem;padding:.2rem .4rem;background:var(--card-bg);color:var(--text);border:1px solid var(--border);border-radius:6px;cursor:pointer;" title="Playback speed" onchange="vpSetSpeed(this.value)">
+        <option value="0.5">0.5×</option>
+        <option value="0.75">0.75×</option>
+        <option value="1" selected>1×</option>
+        <option value="1.25">1.25×</option>
+        <option value="1.5">1.5×</option>
+        <option value="2">2×</option>
+      </select>
+      <span id="vp-position-hint" style="font-size:.72rem;color:#64748b;display:none;"></span>
       <span id="vp-duration" style="margin-left:auto;font-size:.75rem;color:#64748b;"></span>
     </div>
     <!-- Similar videos -->
@@ -5139,10 +5188,36 @@ function openVideoModal(v, list) {
   // Load similar videos
   loadSimilarVideos(v);
 
-  // Start position tracking for direct video
+  // PiP + speed + position for direct video
+  const pipBtn   = document.getElementById('vp-pip-btn');
+  const speedSel = document.getElementById('vp-speed-sel');
+  const posHint  = document.getElementById('vp-position-hint');
   if (isDirectVideo) {
     const vid = player.querySelector('video');
-    if (vid) _startPositionTracking(vid, v.id);
+    if (vid) {
+      // Restore saved position
+      const savedPos = Number(v.watch_position) || 0;
+      if (savedPos > 5) {
+        vid.addEventListener('loadedmetadata', () => {
+          if (savedPos < (vid.duration || 0) - 5) {
+            vid.currentTime = savedPos;
+            if (posHint) { posHint.textContent = `Resuming from ${_fmtPos(savedPos)}`; posHint.style.display = 'inline'; setTimeout(() => { posHint.style.display = 'none'; }, 3000); }
+          }
+        }, { once: true });
+      }
+      // Restore saved speed
+      const savedSpeed = parseFloat(_lsGet('vw_playback_speed') || '1');
+      vid.playbackRate = savedSpeed;
+      if (speedSel) speedSel.value = String(savedSpeed);
+      // Show controls
+      if (pipBtn)   pipBtn.style.display   = document.pictureInPictureEnabled ? '' : 'none';
+      if (speedSel) speedSel.style.display  = '';
+      _startPositionTracking(vid, v.id);
+    }
+  } else {
+    if (pipBtn)   pipBtn.style.display   = 'none';
+    if (speedSel) speedSel.style.display  = 'none';
+    if (posHint)  posHint.style.display   = 'none';
   }
 
   // Mark as watched
@@ -5197,6 +5272,8 @@ function closeVideoModal(e) {
   const modal = document.getElementById('vp-modal');
   modal.style.display = 'none';
   document.body.style.overflow = '';
+  clearInterval(_posTrackTimer);
+  _posTrackTimer = null;
   // Stop any playing media
   const player = document.getElementById('vp-player');
   player.querySelectorAll('iframe,video').forEach(el => {
