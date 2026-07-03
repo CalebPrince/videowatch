@@ -2357,6 +2357,7 @@ def list_videos(request: Request,
                 watched_only: bool = False,
                 archived_only: bool = False,
                 ignored_only: bool = False,
+                new_only: bool = False,
                 tag: str = "",
                 sort: str = ""):
     offset = (page - 1) * per_page
@@ -2422,6 +2423,8 @@ def list_videos(request: Request,
             filters.append("COALESCE(videos.is_archived, 0)=1")
         if ignored_only:
             filters.append("COALESCE(videos.is_ignored, 0)=1")
+        if new_only:
+            filters.append("COALESCE(videos.is_new, 0)=1")
         if tag:
             filters.append(
                 "EXISTS (SELECT 1 FROM video_tags vt WHERE vt.video_id=videos.id AND vt.tag=? AND vt.owner=?)"

@@ -839,6 +839,10 @@
       <select id="tag-filter" aria-label="Filter by tag">
         <option value="">All tags</option>
       </select>
+      <button id="btn-new-only" data-status="new" aria-label="Show new videos only"
+        style="height:32px;border:1px solid var(--border);border-radius:7px;padding:0 .75rem;font-size:.82rem;background:#fff;color:var(--ink);cursor:pointer;white-space:nowrap;transition:background .15s,color .15s,border-color .15s;">
+        🆕 New only
+      </button>
     </div>
     </div>
     <div class="topbar-actions">
@@ -2767,6 +2771,7 @@ async function renderVideos() {
   if (statusFilt === 'archived') { params.set('include_archived', 'true'); params.set('archived_only', 'true'); }
   if (statusFilt === 'ignored') { params.set('include_ignored', 'true'); params.set('ignored_only', 'true'); }
   if (statusFilt === 'unwatched') params.set('unwatched_only', 'true');
+  if (statusFilt === 'new') params.set('new_only', 'true');
   params.set('page', String(currentPage));
   params.set('per_page', String(PER_PAGE));
 
@@ -3882,6 +3887,18 @@ document.querySelectorAll('#status-quickbar button[data-status]').forEach(btn =>
   btn.addEventListener('click', () => setStatusFilter(btn.getAttribute('data-status') || ''));
 });
 updateStatusQuickbar();
+
+// New-only toggle button
+const _btnNewOnly = document.getElementById('btn-new-only');
+if (_btnNewOnly) {
+  _btnNewOnly.addEventListener('click', () => {
+    const active = statusFilt === 'new';
+    setStatusFilter(active ? '' : 'new');
+    _btnNewOnly.style.background = active ? '#fff' : 'var(--brand)';
+    _btnNewOnly.style.color = active ? 'var(--ink)' : '#fff';
+    _btnNewOnly.style.borderColor = active ? 'var(--border)' : 'var(--brand)';
+  });
+}
 
 // ── Periodic UI refresh (every 30 s) ─────────────────────────────────────────
 setInterval(() => {
