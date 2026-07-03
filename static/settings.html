@@ -349,6 +349,14 @@
         <div class="meta mt-2">Auto-scan can also be controlled from the dashboard quick actions.</div>
 
         <hr style="border-color:var(--border);margin-top:1.25rem;">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:.5rem;">
+          <h6 style="font-size:.9rem;margin:0;"><i class="bi bi-stack me-1" style="color:var(--brand)"></i>Scan Queue</h6>
+          <span id="queue-badge" class="pill" style="font-size:.72rem;">--</span>
+        </div>
+        <div id="queue-running" class="meta" style="font-size:.8rem;margin-bottom:.4rem;"></div>
+        <div id="queue-list" style="font-size:.78rem;"></div>
+
+        <hr style="border-color:var(--border);margin-top:1.25rem;">
         <h6 style="font-size:.9rem;margin-bottom:.25rem;"><i class="bi bi-cloud me-1" style="color:var(--brand)"></i>Apify Integration</h6>
         <p class="meta" style="font-size:.8rem;margin-bottom:.75rem;">Apify is a cloud scraping platform that handles JS-heavy and Cloudflare-protected sites. Enter your API token to enable the Apify scan engine per site. <a href="https://console.apify.com/account/integrations" target="_blank" rel="noopener" style="color:var(--brand);">Get your token ↗</a></p>
         <div id="apify-token-status" class="meta" style="font-size:.78rem;margin-bottom:.5rem;"></div>
@@ -973,6 +981,45 @@
         }
       } catch {}
     }
+
+    // Scan queue auto-refresh
+    let _queueInterval = null;
+    async function refreshQueue() {
+      try {
+        const q = await api('/scan/queue');
+        const badge = document.getElementById('queue-badge');
+        const runningEl = document.getElementById('queue-running');
+        const listEl = document.getElementById('queue-list');
+        if (!badge) return;
+        badge.textContent = `${q.total} job${q.total !== 1 ? 's' : ''}`;
+        badge.style.background = q.total > 0 ? 'rgba(15,118,110,.15)' : '';
+        if (q.running) {
+          const eng = q.running.engine === 'apify' ? '☁' : '⚙';
+          runningEl.innerHTML = `<span style="color:var(--brand);font-weight:600;">▶ Running:</span> ${eng} ${escHtml(q.running.name || q.running.url)}`;
+        } else {
+          runningEl.textContent = 'Nothing running.';
+        }
+        if (q.queued.length) {
+          listEl.innerHTML = q.queued.map((j, i) => {
+            const eng = j.engine === 'apify' ? '☁' : '⚙';
+            return `<div style="padding:.25rem 0;border-bottom:1px solid var(--border);">${i + 1}. ${eng} ${escHtml(j.name || j.url)}</div>`;
+          }).join('');
+        } else {
+          listEl.innerHTML = '<div class="meta">Queue is empty.</div>';
+        }
+      } catch {}
+    }
+
+    // Start polling when General pane is active
+    document.querySelector('[data-target="general"]')?.addEventListener('click', () => {
+      refreshQueue();
+      clearInterval(_queueInterval);
+      _queueInterval = setInterval(refreshQueue, 5000);
+    });
+    // Stop polling when leaving General pane
+    document.querySelectorAll('.navbtn:not([data-target="general"])').forEach(btn => {
+      btn.addEventListener('click', () => { clearInterval(_queueInterval); _queueInterval = null; });
+    });
 
     // Apify token save / clear
     document.getElementById('btn-save-apify-token')?.addEventListener('click', async () => {
