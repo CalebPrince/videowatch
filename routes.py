@@ -2422,6 +2422,149 @@ def remove_site(site_id: str, request: Request):
     _audit(request, "site_delete", f"site_id={site_id}")
     return {"ok": True}
 
+@router.get("/api/sites/export")
+def export_sites(request: Request):
+    """Export all sites owned by the current user as JSON."""
+    if not is_authenticated(request):
+        raise HTTPException(401)
+    owner = current_user(request)
+    with get_db() as db:
+        rows = db.execute(
+            "SELECT url, name, group_name, max_pages, scan_interval, scan_profile, scan_engine, "
+            "rule_include_keywords, rule_exclude_keywords, rule_min_duration, video_url_pattern, notify_enabled "
+            "FROM sites WHERE owner=? ORDER BY name",
+            (owner,),
+        ).fetchall()
+    data = [dict(r) for r in rows]
+    filename = f"videowatch-sites-{datetime.now(timezone.utc).strftime('%Y%m%d')}.json"
+    return Response(
+        content=json.dumps(data, indent=2),
+        media_type="application/json",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
+
+
+@router.post("/api/sites/import")
+def import_sites(request: Request, body: list):
+    """Import sites from a JSON array. Skips duplicates."""
+    if not is_authenticated(request):
+        raise HTTPException(401)
+    owner = current_user(request)
+    added = skipped = 0
+    for item in body:
+        url = (item.get("url") or "").strip()
+        if not url:
+            continue
+        site_id = short_id(f"{owner}:{url}")
+        try:
+            with write_lock:
+                with get_db() as db:
+                    existing = db.execute("SELECT id FROM sites WHERE url=? AND owner=?", (url, owner)).fetchone()
+                    if existing:
+                        skipped += 1
+                        continue
+                    db.execute(
+                        "INSERT INTO sites (id, url, name, group_name, added_at, max_pages, scan_interval, "
+                        "rule_include_keywords, rule_exclude_keywords, rule_min_duration, scan_profile, "
+                        "scan_engine, notify_enabled, owner, video_url_pattern) "
+                        "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                        (
+                            site_id, url,
+                            (item.get("name") or "").strip() or None,
+                            (item.get("group_name") or "").strip() or None,
+                            now_iso(),
+                            int(item.get("max_pages") or 1),
+                            int(item.get("scan_interval") or 300),
+                            (item.get("rule_include_keywords") or "").strip(),
+                            (item.get("rule_exclude_keywords") or "").strip(),
+                            int(item.get("rule_min_duration") or 0),
+                            item.get("scan_profile") or "balanced",
+                            item.get("scan_engine") or "basic",
+                            1 if item.get("notify_enabled", True) else 0,
+                            owner,
+                            (item.get("video_url_pattern") or "").strip(),
+                        ),
+                    )
+                    db.commit()
+                    added += 1
+        except Exception as e:
+            log.warning(f"Import site {url} failed: {e}")
+            skipped += 1
+    _audit(request, "sites_import", f"added={added} skipped={skipped}")
+    return {"ok": True, "added": added, "skipped": skipped}
+
+
+@router.get("/api/sites/{site_id}/health")
+def site_health(site_id: str, request: Request):
+    """Detailed health info for one site."""
+    if not is_authenticated(request):
+        raise HTTPException(401)
+    owner = current_user(request)
+    with get_db() as db:
+        site = db.execute("SELECT * FROM sites WHERE id=?", (site_id,)).fetchone()
+        if not site:
+            raise HTTPException(404)
+        if site["owner"] != owner and not is_super_admin(request):
+            raise HTTPException(403)
+        logs = db.execute(
+            "SELECT scanned_at, found, added, message FROM scan_log WHERE site_id=? ORDER BY scanned_at DESC LIMIT 20",
+            (site_id,),
+        ).fetchall()
+        total_videos = db.execute("SELECT COUNT(*) FROM videos WHERE site_id=? AND is_ignored=0", (site_id,)).fetchone()[0]
+        new_count    = db.execute("SELECT COUNT(*) FROM videos WHERE site_id=? AND is_new=1", (site_id,)).fetchone()[0]
+    return {
+        "id": site["id"],
+        "url": site["url"],
+        "name": site["name"],
+        "last_scan": site["last_scan"],
+        "last_scan_duration": site["last_scan_duration"],
+        "consecutive_failures": site["consecutive_failures"] or 0,
+        "alert_sent": bool(site["alert_sent"]),
+        "total_videos": total_videos,
+        "new_count": new_count,
+        "scan_history": [dict(r) for r in logs],
+    }
+
+
+@router.post("/api/sites/bulk-edit")
+def bulk_edit_sites(request: Request, body: dict):
+    """Apply settings to multiple sites at once."""
+    if not is_authenticated(request):
+        raise HTTPException(401)
+    owner = current_user(request)
+    site_ids = body.get("site_ids") or []
+    if not site_ids:
+        return {"ok": True, "affected": 0}
+    updates = {}
+    if body.get("scan_interval") is not None:
+        updates["scan_interval"] = max(60, int(body["scan_interval"]))
+    if body.get("max_pages") is not None:
+        updates["max_pages"] = max(1, int(body["max_pages"]))
+    if body.get("group_name") is not None:
+        updates["group_name"] = (body["group_name"] or "").strip() or None
+    if body.get("scan_profile") is not None and body["scan_profile"] in ("fast", "balanced", "thorough"):
+        updates["scan_profile"] = body["scan_profile"]
+    if body.get("notify_enabled") is not None:
+        updates["notify_enabled"] = 1 if body["notify_enabled"] else 0
+    if not updates:
+        return {"ok": True, "affected": 0}
+    placeholders = ",".join("?" * len(site_ids))
+    set_clause = ", ".join(f"{k}=?" for k in updates)
+    with write_lock:
+        with get_db() as db:
+            db.execute(
+                f"UPDATE sites SET {set_clause} WHERE id IN ({placeholders}) AND owner=?",
+                list(updates.values()) + site_ids + [owner],
+            )
+            affected = db.execute(
+                f"SELECT COUNT(*) FROM sites WHERE id IN ({placeholders}) AND owner=?",
+                site_ids + [owner],
+            ).fetchone()[0]
+            db.commit()
+    _audit(request, "sites_bulk_edit", f"count={affected} fields={list(updates.keys())}")
+    return {"ok": True, "affected": affected}
+
+
 @router.get("/api/videos")
 def list_videos(request: Request,
                 site_id: str | None = None,

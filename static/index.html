@@ -735,12 +735,28 @@
     <small>Monitors websites for new videos</small>
   </div>
   <div id="site-list">
-    <div class="list-label">Monitored sites</div>
-    <div style="padding:.4rem .75rem .2rem;">
+    <div style="display:flex;align-items:center;justify-content:space-between;padding:.35rem .75rem .1rem;">
+      <span class="list-label" style="padding:0;margin:0;">Monitored sites</span>
+      <div style="display:flex;gap:4px;">
+        <button id="btn-sites-export" title="Export sites" style="background:none;border:none;color:rgba(255,255,255,.35);cursor:pointer;font-size:.8rem;padding:2px 4px;" onclick="exportSites()"><i class="bi bi-box-arrow-up"></i></button>
+        <button id="btn-sites-import" title="Import sites" style="background:none;border:none;color:rgba(255,255,255,.35);cursor:pointer;font-size:.8rem;padding:2px 4px;" onclick="showImportSites()"><i class="bi bi-box-arrow-in-down"></i></button>
+        <button id="btn-sites-bulk" title="Bulk edit" style="background:none;border:none;color:rgba(255,255,255,.35);cursor:pointer;font-size:.8rem;padding:2px 4px;" onclick="toggleBulkSiteMode()"><i class="bi bi-check2-square"></i></button>
+      </div>
+    </div>
+    <div style="padding:.3rem .75rem .2rem;">
       <div style="position:relative;">
         <i class="bi bi-search" style="position:absolute;left:.5rem;top:50%;transform:translateY(-50%);font-size:.75rem;color:rgba(255,255,255,.4);pointer-events:none;"></i>
         <input id="site-search" type="search" placeholder="Filter sites…" autocomplete="off"
           style="width:100%;padding:.3rem .5rem .3rem 1.7rem;font-size:.78rem;background:rgba(255,255,255,.07);border:1px solid rgba(255,255,255,.12);border-radius:6px;color:var(--sidebar-text);outline:none;">
+      </div>
+    </div>
+    <!-- Bulk edit bar -->
+    <div id="bulk-site-bar" style="display:none;padding:.35rem .75rem;background:rgba(15,118,110,.25);border-bottom:1px solid rgba(15,118,110,.4);">
+      <div style="font-size:.75rem;color:#bbf7d0;margin-bottom:.35rem;"><span id="bulk-site-count">0</span> selected</div>
+      <div style="display:flex;gap:.4rem;flex-wrap:wrap;">
+        <button onclick="bulkSiteSelectAll()" style="font-size:.72rem;padding:.2rem .5rem;background:rgba(255,255,255,.08);border:1px solid rgba(255,255,255,.15);border-radius:4px;color:#fff;cursor:pointer;">All</button>
+        <button onclick="bulkSiteSelectNone()" style="font-size:.72rem;padding:.2rem .5rem;background:rgba(255,255,255,.08);border:1px solid rgba(255,255,255,.15);border-radius:4px;color:#fff;cursor:pointer;">None</button>
+        <button onclick="openBulkSiteEdit()" style="font-size:.72rem;padding:.2rem .5rem;background:var(--brand);border:none;border-radius:4px;color:#fff;cursor:pointer;"><i class="bi bi-pencil me-1"></i>Edit</button>
       </div>
     </div>
     <div id="site-items"></div>
@@ -1302,6 +1318,94 @@
         <button class="btn btn-sm btn-brand" id="btn-player-open-external">
           <i class="bi bi-box-arrow-up-right me-1"></i>Open in new tab
         </button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ── Site Health Modal ── -->
+<div class="modal fade" id="siteHealthModal" tabindex="-1">
+  <div class="modal-dialog modal-dialog-centered modal-lg">
+    <div class="modal-content p-1">
+      <div class="modal-header border-0 pb-0">
+        <h5 class="modal-title" style="font-size:1rem;font-weight:700;"><i class="bi bi-heart-pulse me-1"></i>Site Health</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body" id="site-health-body">
+        <div class="text-center py-4"><div class="spinner-border spinner-border-sm"></div></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ── Import Sites Modal ── -->
+<div class="modal fade" id="importSitesModal" tabindex="-1">
+  <div class="modal-dialog modal-dialog-centered">
+    <div class="modal-content p-1">
+      <div class="modal-header border-0 pb-0">
+        <h5 class="modal-title" style="font-size:1rem;font-weight:700;"><i class="bi bi-box-arrow-in-down me-1"></i>Import Sites</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body">
+        <p style="font-size:.83rem;color:var(--muted);">Paste JSON exported from VideoWatch, or upload a file.</p>
+        <div class="mb-2">
+          <input type="file" id="import-sites-file" accept=".json" class="form-control form-control-sm">
+        </div>
+        <textarea id="import-sites-json" class="form-control" rows="8" placeholder='[{"url":"https://example.com","name":"My Site"}]' style="font-size:.78rem;font-family:monospace;"></textarea>
+        <div id="import-sites-result" style="font-size:.82rem;margin-top:.5rem;display:none;"></div>
+      </div>
+      <div class="modal-footer border-0 pt-0">
+        <button class="btn btn-sm btn-secondary" data-bs-dismiss="modal">Cancel</button>
+        <button class="btn btn-sm btn-brand" onclick="doImportSites()">Import</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ── Bulk Edit Sites Modal ── -->
+<div class="modal fade" id="bulkSiteEditModal" tabindex="-1">
+  <div class="modal-dialog modal-dialog-centered">
+    <div class="modal-content p-1">
+      <div class="modal-header border-0 pb-0">
+        <h5 class="modal-title" style="font-size:1rem;font-weight:700;"><i class="bi bi-pencil me-1"></i>Bulk Edit Sites</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body">
+        <p id="bulk-edit-count-label" style="font-size:.83rem;color:var(--muted);"></p>
+        <div class="mb-2">
+          <label style="font-size:.82rem;">Group name <span style="color:var(--muted)">(leave blank to keep existing)</span></label>
+          <input type="text" id="bulk-edit-group" class="form-control form-control-sm mt-1" placeholder="e.g. Favorites">
+        </div>
+        <div class="mb-2">
+          <label style="font-size:.82rem;">Scan interval <span style="color:var(--muted)">(leave blank to keep existing)</span></label>
+          <select id="bulk-edit-interval" class="form-select form-select-sm mt-1">
+            <option value="">— keep existing —</option>
+            <option value="300">5 minutes</option>
+            <option value="600">10 minutes</option>
+            <option value="1800">30 minutes</option>
+            <option value="3600">1 hour</option>
+            <option value="21600">6 hours</option>
+            <option value="86400">24 hours</option>
+          </select>
+        </div>
+        <div class="mb-2">
+          <label style="font-size:.82rem;">Max pages <span style="color:var(--muted)">(leave blank to keep existing)</span></label>
+          <input type="number" id="bulk-edit-maxpages" class="form-control form-control-sm mt-1" min="1" max="10" placeholder="—">
+        </div>
+        <div class="mb-2">
+          <label style="font-size:.82rem;">Scan profile</label>
+          <select id="bulk-edit-profile" class="form-select form-select-sm mt-1">
+            <option value="">— keep existing —</option>
+            <option value="fast">Fast</option>
+            <option value="balanced">Balanced</option>
+            <option value="thorough">Thorough</option>
+          </select>
+        </div>
+        <div id="bulk-edit-error" class="text-danger mt-2" style="font-size:.82rem;display:none;"></div>
+      </div>
+      <div class="modal-footer border-0 pt-0">
+        <button class="btn btn-sm btn-secondary" data-bs-dismiss="modal">Cancel</button>
+        <button class="btn btn-sm btn-brand" onclick="doBulkSiteEdit()">Apply</button>
       </div>
     </div>
   </div>
@@ -2711,6 +2815,15 @@ async function renderSidebar() {
         <div>${s.name || hostname(s.url)}${isCritical ? ` <span style="font-size:.7rem;font-weight:600;color:#f87171;background:rgba(248,113,113,.12);border-radius:.3rem;padding:.05rem .35rem;vertical-align:middle;">${failCount} fails</span>` : ''}</div>
         <div class="site-meta">${s.group_name ? `${s.group_name} · ` : ''}${statusText}</div>`;
 
+      // Bulk checkbox (hidden unless bulk mode active)
+      const bulkCb = document.createElement('input');
+      bulkCb.type = 'checkbox';
+      bulkCb.className = 'bulk-site-cb';
+      bulkCb.dataset.siteId = s.id;
+      bulkCb.style.cssText = 'display:none;margin-right:.25rem;accent-color:var(--brand);flex-shrink:0;';
+      bulkCb.addEventListener('click', e => { e.stopPropagation(); _updateBulkCount(); });
+      item.insertBefore(bulkCb, item.firstChild);
+
       const actions = document.createElement('div');
       actions.className = 'site-actions';
       actions.innerHTML = `
@@ -2722,6 +2835,7 @@ async function renderSidebar() {
           <option value="21600">6h</option>
           <option value="86400">24h</option>
         </select>
+        <button class="btn-icon" title="Health"><i class="bi bi-heart-pulse"></i></button>
         <button class="btn-icon" title="Settings"><i class="bi bi-gear"></i></button>
         <button class="btn-icon danger" title="Remove"><i class="bi bi-trash"></i></button>`;
       const intervalSel = actions.querySelector('.site-interval-sel');
@@ -2735,8 +2849,9 @@ async function renderSidebar() {
           await renderSidebar();
         } catch (err) { showToast(err.message, 'danger'); }
       });
-      actions.children[1].onclick = e => { e.stopPropagation(); openSettings(s); };
-      actions.children[2].onclick = e => removeSite(e, s.id);
+      actions.children[1].onclick = e => { e.stopPropagation(); openSiteHealth(s.id); };
+      actions.children[2].onclick = e => { e.stopPropagation(); openSettings(s); };
+      actions.children[3].onclick = e => removeSite(e, s.id);
 
       if (s.new_count) {
         const badge = document.createElement('span');
@@ -4606,6 +4721,169 @@ async function deleteSmartCollection(id) {
   await api(`/smart-collections/${encodeURIComponent(id)}`, { method: 'DELETE' });
   if (activeSmartCollection === id) { activeSmartCollection = null; renderVideos(); }
   renderSidebar();
+}
+
+// ── Site Health ───────────────────────────────────────────────────────────────
+async function openSiteHealth(siteId) {
+  const body = document.getElementById('site-health-body');
+  body.innerHTML = '<div class="text-center py-4"><div class="spinner-border spinner-border-sm"></div></div>';
+  new bootstrap.Modal(document.getElementById('siteHealthModal')).show();
+  try {
+    const h = await api(`/sites/${siteId}/health`);
+    const statusColor = h.consecutive_failures >= 3 ? '#f87171' : h.consecutive_failures > 0 ? '#fb923c' : '#34d399';
+    const statusLabel = h.consecutive_failures >= 3 ? 'Failing' : h.consecutive_failures > 0 ? 'Warning' : 'Healthy';
+    const histRows = (h.scan_history || []).map(r => {
+      const added = r.added > 0 ? `<span style="color:#34d399">+${r.added}</span>` : '0';
+      const err = r.message && r.message.toLowerCase().includes('error') ? `<span style="color:#f87171;font-size:.72rem;">${_esc(r.message.slice(0,80))}</span>` : '';
+      return `<tr>
+        <td style="padding:4px 6px;font-size:.78rem;white-space:nowrap;color:var(--muted)">${fmtDate(r.scanned_at)}</td>
+        <td style="padding:4px 6px;font-size:.78rem;">${r.found}</td>
+        <td style="padding:4px 6px;font-size:.78rem;">${added}</td>
+        <td style="padding:4px 6px;font-size:.78rem;">${err}</td>
+      </tr>`;
+    }).join('');
+    body.innerHTML = `
+      <div style="display:flex;gap:1.5rem;flex-wrap:wrap;margin-bottom:1rem;">
+        <div style="flex:1;min-width:120px;background:var(--card-bg);border-radius:10px;padding:.75rem 1rem;border:1px solid var(--border);">
+          <div style="font-size:.72rem;color:var(--muted);margin-bottom:.25rem;">STATUS</div>
+          <div style="font-weight:700;color:${statusColor}">${statusLabel}</div>
+          ${h.consecutive_failures > 0 ? `<div style="font-size:.75rem;color:#f87171">${h.consecutive_failures} failure${h.consecutive_failures!==1?'s':''} in a row</div>` : ''}
+        </div>
+        <div style="flex:1;min-width:120px;background:var(--card-bg);border-radius:10px;padding:.75rem 1rem;border:1px solid var(--border);">
+          <div style="font-size:.72rem;color:var(--muted);margin-bottom:.25rem;">VIDEOS</div>
+          <div style="font-weight:700;">${h.total_videos}</div>
+          <div style="font-size:.75rem;color:var(--muted)">${h.new_count} new</div>
+        </div>
+        <div style="flex:1;min-width:120px;background:var(--card-bg);border-radius:10px;padding:.75rem 1rem;border:1px solid var(--border);">
+          <div style="font-size:.72rem;color:var(--muted);margin-bottom:.25rem;">LAST SCAN</div>
+          <div style="font-weight:700;font-size:.88rem;">${h.last_scan ? fmtDate(h.last_scan) : '—'}</div>
+          ${h.last_scan_duration ? `<div style="font-size:.75rem;color:var(--muted)">${h.last_scan_duration}s</div>` : ''}
+        </div>
+      </div>
+      ${histRows ? `<div style="font-size:.78rem;font-weight:700;color:var(--muted);margin-bottom:.4rem;">Scan history (last 20)</div>
+      <div style="overflow-x:auto;">
+        <table style="width:100%;border-collapse:collapse;">
+          <thead><tr style="border-bottom:1px solid var(--border);">
+            <th style="padding:4px 6px;font-size:.72rem;text-align:left;color:var(--muted);">Time</th>
+            <th style="padding:4px 6px;font-size:.72rem;text-align:left;color:var(--muted);">Found</th>
+            <th style="padding:4px 6px;font-size:.72rem;text-align:left;color:var(--muted);">Added</th>
+            <th style="padding:4px 6px;font-size:.72rem;text-align:left;color:var(--muted);">Note</th>
+          </tr></thead>
+          <tbody>${histRows}</tbody>
+        </table>
+      </div>` : '<div style="color:var(--muted);font-size:.83rem;">No scan history yet.</div>'}`;
+  } catch(e) {
+    body.innerHTML = `<div class="text-danger">Failed to load health data: ${_esc(e.message)}</div>`;
+  }
+}
+
+// ── Import / Export Sites ─────────────────────────────────────────────────────
+function exportSites() {
+  window.open('/api/sites/export', '_blank');
+}
+
+function showImportSites() {
+  document.getElementById('import-sites-json').value = '';
+  document.getElementById('import-sites-file').value = '';
+  document.getElementById('import-sites-result').style.display = 'none';
+  new bootstrap.Modal(document.getElementById('importSitesModal')).show();
+}
+
+document.getElementById('import-sites-file')?.addEventListener('change', function() {
+  const file = this.files[0];
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = e => { document.getElementById('import-sites-json').value = e.target.result; };
+  reader.readAsText(file);
+});
+
+async function doImportSites() {
+  const txt = document.getElementById('import-sites-json').value.trim();
+  const res = document.getElementById('import-sites-result');
+  res.style.display = 'none';
+  if (!txt) { res.textContent = 'Paste JSON first.'; res.className = 'text-danger'; res.style.display = 'block'; return; }
+  let data;
+  try { data = JSON.parse(txt); } catch(e) { res.textContent = 'Invalid JSON: ' + e.message; res.className = 'text-danger'; res.style.display = 'block'; return; }
+  if (!Array.isArray(data)) { res.textContent = 'Expected a JSON array.'; res.className = 'text-danger'; res.style.display = 'block'; return; }
+  try {
+    const r = await api('/sites/import', { method: 'POST', body: JSON.stringify(data) });
+    res.textContent = `Done: ${r.added} added, ${r.skipped} skipped.`;
+    res.className = 'text-success';
+    res.style.display = 'block';
+    renderSidebar();
+    setTimeout(() => bootstrap.Modal.getInstance(document.getElementById('importSitesModal'))?.hide(), 1500);
+  } catch(e) {
+    res.textContent = e.message;
+    res.className = 'text-danger';
+    res.style.display = 'block';
+  }
+}
+
+// ── Bulk Edit Sites ───────────────────────────────────────────────────────────
+let _bulkSiteMode = false;
+
+function _updateBulkCount() {
+  const count = document.querySelectorAll('.bulk-site-cb:checked').length;
+  const el = document.getElementById('bulk-site-count');
+  if (el) el.textContent = count;
+}
+
+function toggleBulkSiteMode() {
+  _bulkSiteMode = !_bulkSiteMode;
+  const bar = document.getElementById('bulk-site-bar');
+  if (bar) bar.style.display = _bulkSiteMode ? 'block' : 'none';
+  document.querySelectorAll('.bulk-site-cb').forEach(cb => {
+    cb.style.display = _bulkSiteMode ? 'inline-block' : 'none';
+    if (!_bulkSiteMode) cb.checked = false;
+  });
+  _updateBulkCount();
+}
+
+function bulkSiteSelectAll() {
+  document.querySelectorAll('.bulk-site-cb').forEach(cb => cb.checked = true);
+  _updateBulkCount();
+}
+
+function bulkSiteSelectNone() {
+  document.querySelectorAll('.bulk-site-cb').forEach(cb => cb.checked = false);
+  _updateBulkCount();
+}
+
+function openBulkSiteEdit() {
+  const ids = [...document.querySelectorAll('.bulk-site-cb:checked')].map(cb => cb.dataset.siteId);
+  if (!ids.length) { showToast('Select at least one site', 'warning'); return; }
+  document.getElementById('bulk-edit-count-label').textContent = `Editing ${ids.length} site${ids.length!==1?'s':''}.`;
+  document.getElementById('bulk-edit-group').value = '';
+  document.getElementById('bulk-edit-interval').value = '';
+  document.getElementById('bulk-edit-maxpages').value = '';
+  document.getElementById('bulk-edit-profile').value = '';
+  document.getElementById('bulk-edit-error').style.display = 'none';
+  new bootstrap.Modal(document.getElementById('bulkSiteEditModal')).show();
+}
+
+async function doBulkSiteEdit() {
+  const ids = [...document.querySelectorAll('.bulk-site-cb:checked')].map(cb => cb.dataset.siteId);
+  if (!ids.length) return;
+  const body = { site_ids: ids };
+  const group    = document.getElementById('bulk-edit-group').value.trim();
+  const interval = document.getElementById('bulk-edit-interval').value;
+  const maxPages = document.getElementById('bulk-edit-maxpages').value;
+  const profile  = document.getElementById('bulk-edit-profile').value;
+  if (group !== '')    body.group_name    = group;
+  if (interval !== '') body.scan_interval = parseInt(interval, 10);
+  if (maxPages !== '') body.max_pages     = parseInt(maxPages, 10);
+  if (profile !== '')  body.scan_profile  = profile;
+  const errEl = document.getElementById('bulk-edit-error');
+  try {
+    const r = await api('/sites/bulk-edit', { method: 'POST', body: JSON.stringify(body) });
+    showToast(`Updated ${r.affected} site${r.affected!==1?'s':''}`, 'success');
+    bootstrap.Modal.getInstance(document.getElementById('bulkSiteEditModal'))?.hide();
+    toggleBulkSiteMode();
+    renderSidebar();
+  } catch(e) {
+    errEl.textContent = e.message;
+    errEl.style.display = 'block';
+  }
 }
 </script>
 
