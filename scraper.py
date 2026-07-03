@@ -2202,6 +2202,19 @@ async def scan_site(site: dict, push_func=None):
             vid_id = short_id(f"{target_site_id}:{v['url']}")
             title = v["title"] or f"Scene {vid_id}"
 
+            # Cross-site dedup: skip if this exact URL already exists under another
+            # site belonging to the same owner (e.g. model page + category page overlap).
+            if owner:
+                existing_url = db_conn.execute(
+                    "SELECT id FROM videos "
+                    "WHERE url=? AND site_id IN (SELECT id FROM sites WHERE owner=?) "
+                    "AND site_id != ? LIMIT 1",
+                    (v["url"], owner, target_site_id),
+                ).fetchone()
+                if existing_url:
+                    log.debug(f"  Cross-site dup skipped: {v['url']}")
+                    continue
+
             # Some sources rotate URL tokens for the same scene. If title+release
             # match an existing row for this site, refresh that row instead.
             released_at = v.get("released_at")
