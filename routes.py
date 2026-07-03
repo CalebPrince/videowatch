@@ -2437,19 +2437,19 @@ def list_videos(request: Request,
 
         where = ("WHERE " + " AND ".join(filters)) if filters else ""
         if sort == "last_watched":
-            order = "ORDER BY COALESCE(videos.last_watched_at, '') DESC"
+            order = "ORDER BY COALESCE(videos.last_watched_at, '') DESC, videos.id"
         elif sort == "found":
-            order = "ORDER BY videos.found_at DESC"
+            order = "ORDER BY videos.found_at DESC, videos.id"
         elif sort == "oldest":
-            order = "ORDER BY SUBSTR(COALESCE(videos.released_at, videos.found_at), 1, 19) ASC"
+            order = "ORDER BY SUBSTR(COALESCE(videos.released_at, videos.found_at), 1, 19) ASC, videos.id"
         elif sort == "duration_desc":
-            order = "ORDER BY COALESCE(videos.duration, 0) DESC"
+            order = "ORDER BY COALESCE(videos.duration, 0) DESC, videos.id"
         elif sort == "duration_asc":
-            order = "ORDER BY COALESCE(videos.duration, 0) ASC"
+            order = "ORDER BY COALESCE(videos.duration, 0) ASC, videos.id"
         elif sort == "title_asc":
-            order = "ORDER BY LOWER(videos.title) ASC"
+            order = "ORDER BY LOWER(videos.title) ASC, videos.id"
         else:
-            order = "ORDER BY SUBSTR(COALESCE(videos.released_at, videos.found_at), 1, 19) DESC"
+            order = "ORDER BY SUBSTR(COALESCE(videos.released_at, videos.found_at), 1, 19) DESC, videos.id"
 
         total = db.execute(
             f"SELECT COUNT(*) FROM videos LEFT JOIN sites ON videos.site_id = sites.id {where}",
