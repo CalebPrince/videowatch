@@ -4137,13 +4137,44 @@ async function maybeShowOnboarding(st) {
     }
   }
   await refreshLog();
-  setTimeout(() => checkActivityFeed(), 500);
+  if (!_restoreWelcomeState()) {
+    setTimeout(() => checkActivityFeed(), 500);
+  }
 })();
 
 function dismissWelcome() {
   const b = document.getElementById('welcome-banner');
   if (b) b.style.display = 'none';
   _lsSet('vw_welcome_dismissed', new Date().toDateString());
+  try { sessionStorage.removeItem('vw_welcome_html'); } catch(_) {}
+}
+
+function _saveWelcomeState() {
+  try {
+    const b = document.getElementById('welcome-banner');
+    const g = document.getElementById('welcome-greeting');
+    const s = document.getElementById('welcome-sub');
+    const r = document.getElementById('welcome-videos-row');
+    if (!b || b.style.display === 'none') return;
+    sessionStorage.setItem('vw_welcome_html', JSON.stringify({
+      greeting: g.textContent,
+      sub: s.textContent,
+      row: r.innerHTML,
+    }));
+  } catch(_) {}
+}
+
+function _restoreWelcomeState() {
+  try {
+    const raw = sessionStorage.getItem('vw_welcome_html');
+    if (!raw) return false;
+    const state = JSON.parse(raw);
+    document.getElementById('welcome-greeting').textContent = state.greeting;
+    document.getElementById('welcome-sub').textContent = state.sub;
+    document.getElementById('welcome-videos-row').innerHTML = state.row;
+    document.getElementById('welcome-banner').style.display = 'block';
+    return true;
+  } catch(_) { return false; }
 }
 
 function _lsGet(key) { try { return localStorage.getItem(key); } catch(_) { return null; } }
@@ -4201,6 +4232,7 @@ async function checkActivityFeed() {
     }).join('');
 
     banner.style.display = 'block';
+    _saveWelcomeState();
   } catch (_) {}
 }
 
