@@ -40,6 +40,26 @@ COOKIES_DIR = Path("cookies")
 COOKIES_DIR.mkdir(exist_ok=True)
 log = logging.getLogger(__name__)
 
+# ── CPU throttle settings ─────────────────────────────────────────────────────
+try:
+    _SCAN_PAGE_DELAY = float(os.environ.get("SCAN_PAGE_DELAY", "2.0"))
+except ValueError:
+    _SCAN_PAGE_DELAY = 2.0
+
+# Domains that yt-dlp can handle natively — prefer it over Playwright
+_YTDLP_DOMAINS = {
+    "youtube.com", "www.youtube.com",
+    "vimeo.com", "www.vimeo.com",
+    "dailymotion.com", "www.dailymotion.com",
+    "vk.com", "vkvideo.ru",
+}
+
+def _is_ytdlp_url(url: str) -> bool:
+    if not HAS_YT_DLP:
+        return False
+    host = urlparse(url).netloc.lower().lstrip("www.")
+    return host in _YTDLP_DOMAINS or any(d in host for d in ("youtube.com", "vimeo.com", "dailymotion.com", "vk.com"))
+
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
 def short_id(text: str) -> str:
@@ -1753,6 +1773,29 @@ def _scan_site_sync(site: dict) -> list[dict]:
         log.info(f"  [sync] Detected YouTube channel — using yt-dlp")
         return _scrape_youtube_channel(base_url, max_videos=None)
 
+    # ── Generic yt-dlp shortcut for supported platforms ───────────────────
+    if _is_ytdlp_url(base_url) and not _is_vk_channel_url(base_url):
+        log.info(f"  [sync] yt-dlp supported domain — trying yt-dlp first")
+        try:
+            ydl_opts = {"quiet": True, "extract_flat": "in_playlist", "skip_download": True}
+            with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+                info = ydl.extract_info(base_url, download=False)
+            entries = (info or {}).get("entries") or ([info] if info else [])
+            videos = []
+            for e in entries:
+                if not e:
+                    continue
+                vid_url = e.get("webpage_url") or e.get("url") or ""
+                if not vid_url:
+                    continue
+                videos.append({"url": vid_url, "title": e.get("title") or "", "thumb": e.get("thumbnail") or ""})
+            if videos:
+                log.info(f"  [sync] yt-dlp found {len(videos)} video(s) — skipping Playwright")
+                return videos
+            log.info(f"  [sync] yt-dlp returned nothing — falling back to Playwright")
+        except Exception as e:
+            log.info(f"  [sync] yt-dlp failed ({e}) — falling back to Playwright")
+
     # ── VK Video channel shortcut (sync path) ────────────────────────────
     if _is_vk_channel_url(base_url):
         if HAS_YT_DLP:
@@ -1834,6 +1877,9 @@ def _scan_site_sync(site: dict) -> list[dict]:
                 except Exception as e:
                     log.error(f"  [sync] Error on page {page_num}: {e}")
                     break
+                finally:
+                    if page_num < max_pages and _SCAN_PAGE_DELAY > 0:
+                        time.sleep(_SCAN_PAGE_DELAY)
 
             try:
                 cookies = context.cookies()
@@ -2293,9 +2339,9 @@ async def scan_all_sites(push_func=None):
         return
 
     try:
-        concurrency = int(os.environ.get("SCAN_CONCURRENCY", "3"))
+        concurrency = int(os.environ.get("SCAN_CONCURRENCY", "1"))
     except ValueError:
-        concurrency = 3
+        concurrency = 1
     concurrency = max(1, min(concurrency, len(sites)))
     sem = asyncio.Semaphore(concurrency)
 

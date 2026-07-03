@@ -167,8 +167,11 @@ async def _scheduler():
                     except Exception:
                         due = True
                 if due:
+                    from routes import _enqueue_scan, _scan_running
+                    if _scan_running:
+                        log.info(f"Scheduler: scan already running — deferring {site['url']}")
+                        continue
                     log.info(f"Scheduler: queuing auto-scan for {site['url']}")
-                    from routes import _enqueue_scan
                     _enqueue_scan(site)
         except Exception as e:
             log.error(f"Scheduler error: {e}", exc_info=True)
