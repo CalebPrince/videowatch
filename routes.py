@@ -2690,11 +2690,12 @@ def get_scan_queue(request: Request):
     def _fmt(job):
         s = job.get("site", {})
         return {
-            "site_id":  s.get("id"),
-            "name":     s.get("name") or s.get("url", ""),
-            "url":      s.get("url", ""),
-            "engine":   s.get("scan_engine", "basic"),
-            "attempt":  job.get("attempt", 0),
+            "site_id":    s.get("id"),
+            "name":       s.get("name") or s.get("url", ""),
+            "group_name": s.get("group_name") or "",
+            "url":        s.get("url", ""),
+            "engine":     s.get("scan_engine", "basic"),
+            "attempt":    job.get("attempt", 0),
         }
     return {
         "running": _fmt(running) if running else None,

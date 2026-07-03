@@ -1000,7 +1000,7 @@
           runningEl.innerHTML = `
             <div style="background:rgba(15,118,110,.07);border:1px solid var(--border);border-radius:8px;padding:.5rem .75rem;">
               <div style="font-weight:700;color:var(--brand);">▶ Running${retry}</div>
-              <div style="font-weight:600;margin-top:.15rem;">${_esc(q.running.name || q.running.url)}</div>
+              <div style="font-weight:600;margin-top:.15rem;">${_esc(q.running.group_name ? q.running.group_name + ' — ' + (q.running.name || q.running.url) : (q.running.name || q.running.url))}</div>
               <div class="meta" style="font-size:.75rem;">${_esc(q.running.url)} &nbsp;·&nbsp; ${eng}</div>
             </div>`;
         } else {
@@ -1013,7 +1013,7 @@
             return `<div style="display:flex;justify-content:space-between;align-items:flex-start;padding:.35rem 0;border-bottom:1px solid var(--border);gap:.5rem;">
               <div>
                 <span style="color:var(--muted);font-size:.72rem;margin-right:.3rem;">${i + 1}.</span>
-                <span style="font-weight:600;">${_esc(j.name || j.url)}</span>${retry}
+                <span style="font-weight:600;">${_esc(j.group_name ? j.group_name + ' — ' + (j.name || j.url) : (j.name || j.url))}</span>${retry}
                 <div class="meta" style="font-size:.72rem;margin-top:.1rem;">${_esc(j.url)}</div>
               </div>
               <span class="meta" style="font-size:.72rem;white-space:nowrap;">${eng}</span>
