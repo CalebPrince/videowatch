@@ -4181,6 +4181,7 @@ async function checkActivityFeed() {
       return;
     }
 
+    const since = last ? new Date(last) : null;
     const ago = since ? _timeAgo(since) : '';
     sub.textContent = `${fresh.length} new video${fresh.length > 1 ? 's' : ''} since your last visit${ago ? ' (' + ago + ')' : ''}.`;
 
