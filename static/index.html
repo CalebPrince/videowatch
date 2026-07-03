@@ -4169,12 +4169,10 @@ function checkActivityFeed() {
     const username = (document.getElementById('topbar-username') || {}).textContent || '';
     greeting.textContent = `${timeGreet}${username ? ', ' + username : ''}!`;
 
-    // New videos since last visit (or just is_new if first visit)
-    const since = last ? new Date(last) : null;
-    const fresh = (_allVideos || []).filter(v => {
-      if (since) return v.found_at && new Date(v.found_at) > since;
-      return v.is_new;
-    }).slice(0, 20);
+    // Fetch new videos from API
+    const params = new URLSearchParams({ new_only: 'true', per_page: '20', page: '1' });
+    const data = await api(`/videos?${params}`).catch(() => ({ videos: [] }));
+    const fresh = data.videos || [];
 
     if (fresh.length === 0) {
       sub.textContent = 'Welcome back — no new videos since your last visit.';
