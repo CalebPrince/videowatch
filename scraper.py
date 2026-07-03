@@ -1622,6 +1622,14 @@ async def _fetch_page(context: BrowserContext, url: str, first_page: bool = Fals
 
     page.on("response", lambda r: asyncio.ensure_future(on_response(r)))
 
+    main_status: list[int] = []
+
+    async def on_main_response(response):
+        if response.url == url or response.url.rstrip("/") == url.rstrip("/"):
+            main_status.append(response.status)
+
+    page.on("response", lambda r: asyncio.ensure_future(on_main_response(r)))
+
     try:
         await page.goto(url, timeout=60000, wait_until="networkidle")
     except Exception:
@@ -1668,6 +1676,11 @@ async def _fetch_page(context: BrowserContext, url: str, first_page: bool = Fals
     except Exception:
         pass
 
+    if main_status and main_status[0] == 404:
+        log.warning(f"  Browser: 404 for {url} — skipping")
+        await page.close()
+        return ""
+
     html = await page.content()
     await page.close()
 
@@ -1690,6 +1703,14 @@ def _fetch_page_sync(context, url: str, first_page: bool = False) -> str:
             except Exception:
                 pass
 
+        main_status: list[int] = []
+
+        def _on_resp(response):
+            if response.url == url or response.url.rstrip("/") == url.rstrip("/"):
+                main_status.append(response.status)
+
+        page.on("response", _on_resp)
+
         if first_page:
             for sel in AGE_GATE_SELECTORS:
                 try:
@@ -1704,6 +1725,10 @@ def _fetch_page_sync(context, url: str, first_page: bool = False) -> str:
                         break
                 except Exception:
                     continue
+
+        if main_status and main_status[0] == 404:
+            log.warning(f"  Browser: 404 for {url} — skipping")
+            return ""
 
         page.wait_for_timeout(1000)
         try:
