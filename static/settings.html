@@ -995,18 +995,32 @@
         badge.textContent = `${q.total} job${q.total !== 1 ? 's' : ''}`;
         badge.style.background = q.total > 0 ? 'rgba(15,118,110,.15)' : '';
         if (q.running) {
-          const eng = q.running.engine === 'apify' ? '☁' : '⚙';
-          runningEl.innerHTML = `<span style="color:var(--brand);font-weight:600;">▶ Running:</span> ${eng} ${_esc(q.running.name || q.running.url)}`;
+          const eng = q.running.engine === 'apify' ? '☁ Apify' : '⚙ Basic';
+          const retry = q.running.attempt > 0 ? ` <span style="color:#f59e0b;font-size:.72rem;">retry ${q.running.attempt}</span>` : '';
+          runningEl.innerHTML = `
+            <div style="background:rgba(15,118,110,.07);border:1px solid var(--border);border-radius:8px;padding:.5rem .75rem;">
+              <div style="font-weight:700;color:var(--brand);">▶ Running${retry}</div>
+              <div style="font-weight:600;margin-top:.15rem;">${_esc(q.running.name || q.running.url)}</div>
+              <div class="meta" style="font-size:.75rem;">${_esc(q.running.url)} &nbsp;·&nbsp; ${eng}</div>
+            </div>`;
         } else {
-          runningEl.textContent = 'Nothing running.';
+          runningEl.innerHTML = '<div class="meta" style="font-style:italic;">Nothing running.</div>';
         }
         if (q.queued.length) {
           listEl.innerHTML = q.queued.map((j, i) => {
-            const eng = j.engine === 'apify' ? '☁' : '⚙';
-            return `<div style="padding:.25rem 0;border-bottom:1px solid var(--border);">${i + 1}. ${eng} ${_esc(j.name || j.url)}</div>`;
+            const eng = j.engine === 'apify' ? '☁ Apify' : '⚙ Basic';
+            const retry = j.attempt > 0 ? ` <span style="color:#f59e0b;font-size:.7rem;">retry ${j.attempt}</span>` : '';
+            return `<div style="display:flex;justify-content:space-between;align-items:flex-start;padding:.35rem 0;border-bottom:1px solid var(--border);gap:.5rem;">
+              <div>
+                <span style="color:var(--muted);font-size:.72rem;margin-right:.3rem;">${i + 1}.</span>
+                <span style="font-weight:600;">${_esc(j.name || j.url)}</span>${retry}
+                <div class="meta" style="font-size:.72rem;margin-top:.1rem;">${_esc(j.url)}</div>
+              </div>
+              <span class="meta" style="font-size:.72rem;white-space:nowrap;">${eng}</span>
+            </div>`;
           }).join('');
         } else {
-          listEl.innerHTML = '<div class="meta">Queue is empty.</div>';
+          listEl.innerHTML = '<div class="meta" style="font-style:italic;">Queue is empty.</div>';
         }
       } catch {}
     }
