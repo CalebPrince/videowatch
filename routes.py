@@ -3542,10 +3542,8 @@ async def scan_stream(request: Request):
 @router.get("/api/stats")
 def stats(request: Request):
     with get_db() as db:
-        if is_super_admin(request):
-            ow, op = "", []
-        else:
-            ow, op = "AND sites.owner=?", [current_user(request) or ""]
+        user = current_user(request) or ""
+        ow, op = "AND sites.owner=?", [user]
         vj = f"FROM videos LEFT JOIN sites ON videos.site_id=sites.id WHERE 1=1 {ow}"
         total     = db.execute(f"SELECT COUNT(*) {vj}", op).fetchone()[0]
         new       = db.execute(f"SELECT COUNT(*) {vj} AND videos.is_new=1", op).fetchone()[0]
@@ -3553,14 +3551,22 @@ def stats(request: Request):
         archived  = db.execute(f"SELECT COUNT(*) {vj} AND COALESCE(videos.is_archived,0)=1", op).fetchone()[0]
         ignored   = db.execute(f"SELECT COUNT(*) {vj} AND COALESCE(videos.is_ignored,0)=1", op).fetchone()[0]
         if is_super_admin(request):
-            sites = db.execute("SELECT COUNT(*) FROM sites").fetchone()[0]
-            scans = db.execute("SELECT COUNT(*) FROM scan_log").fetchone()[0]
-            last  = db.execute("SELECT MAX(scanned_at) FROM scan_log").fetchone()[0]
+            sites = db.execute("SELECT COUNT(*) FROM sites WHERE owner=?", (user,)).fetchone()[0]
+            scans = db.execute(
+                "SELECT COUNT(*) FROM scan_log LEFT JOIN sites ON scan_log.site_id=sites.id WHERE sites.owner=?",
+                (user,),
+            ).fetchone()[0]
+            last  = db.execute(
+                "SELECT MAX(scan_log.scanned_at) FROM scan_log LEFT JOIN sites ON scan_log.site_id=sites.id WHERE sites.owner=?",
+                (user,),
+            ).fetchone()[0]
             platforms = [dict(r) for r in db.execute(
-                "SELECT platform, COUNT(*) as count FROM videos GROUP BY platform ORDER BY count DESC"
+                "SELECT videos.platform, COUNT(*) as count FROM videos LEFT JOIN sites ON videos.site_id=sites.id WHERE sites.owner=? GROUP BY videos.platform ORDER BY count DESC",
+                (user,),
             ).fetchall()]
             site_list = [dict(r) for r in db.execute(
-                "SELECT id, name, url, group_name FROM sites ORDER BY group_name, name"
+                "SELECT id, name, url, group_name FROM sites WHERE owner=? ORDER BY group_name, name",
+                (user,),
             ).fetchall()]
         else:
             user = current_user(request) or ""
