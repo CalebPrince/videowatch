@@ -1129,7 +1129,9 @@ def scrape_videos(html: str, base_url: str, video_url_pattern: str = "") -> list
         if LISTING_RE.match(href):
             continue
         # Custom video URL pattern defined per-site by admin
-        if custom_re and custom_re.search(href):
+        if custom_re:
+            if not custom_re.search(href):
+                continue  # pattern set but URL doesn't match — skip entirely
             title_text = (tag.get("title") or tag.get("aria-label") or tag.get("data-title") or "").strip()
             if not title_text:
                 for sel in ["[class*='title']", "[class*='name']", "h3", "h4", "span"]:
