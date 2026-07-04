@@ -1014,6 +1014,9 @@
   </div>
 </div>
 <div id="toast-container" aria-live="polite" aria-atomic="true"></div>
+<div id="offline-banner" style="display:none;position:fixed;top:0;left:0;right:0;z-index:9999;background:#f59e0b;color:#000;text-align:center;padding:.4rem 1rem;font-size:.8rem;font-weight:600;">
+  <i class="bi bi-wifi-off me-1"></i>You're offline — showing cached content
+</div>
 
 <!-- ── Downloads Modal ── -->
 <div class="modal fade" id="downloadsModal" tabindex="-1">
@@ -4005,7 +4008,14 @@ if (savePwdBtn) {
 let _swReg = null;
 
 async function _registerSW() {
-  if (!('serviceWorker' in navigator) || !('PushManager' in window)) return null;
+  // Offline banner
+  const _offlineBanner = document.getElementById('offline-banner');
+  const _updateOffline = () => { if (_offlineBanner) _offlineBanner.style.display = navigator.onLine ? 'none' : 'block'; };
+  window.addEventListener('online',  _updateOffline);
+  window.addEventListener('offline', _updateOffline);
+  _updateOffline();
+
+  if (!('serviceWorker' in navigator)) return null;
   try {
     _swReg = await navigator.serviceWorker.register('/static/sw.js');
     return _swReg;
