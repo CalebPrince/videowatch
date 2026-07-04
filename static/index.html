@@ -5434,7 +5434,7 @@ async function startDownload(videoId, title) {
     await api('/downloads', { method: 'POST', body: JSON.stringify({ video_id: videoId }) });
     showToast(`Download queued: ${title || videoId}`);
     // Open downloads modal
-    const modal = bootstrap.Modal.getOrCreate(document.getElementById('downloadsModal'));
+    const modal = bootstrap.Modal.getOrCreateInstance(document.getElementById('downloadsModal'));
     modal.show();
     loadDownloads();
   } catch (e) {
