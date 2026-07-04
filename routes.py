@@ -3073,6 +3073,16 @@ def set_scan_automation_status(body: AutomationToggleIn):
                 ("1" if body.enabled else "0",),
             )
             db.commit()
+    # When disabling, drain any pending queued jobs so they don't keep running
+    if not body.enabled:
+        with _scan_queue_lock:
+            _scan_queue_items.clear()
+        # Empty the queue by draining it
+        try:
+            while True:
+                _scan_queue.get_nowait()
+        except Exception:
+            pass
     return {"ok": True, "enabled": body.enabled}
 
 @router.get("/api/scan/status")
