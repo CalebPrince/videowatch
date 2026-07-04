@@ -2158,8 +2158,9 @@ async def scan_site(site: dict, push_func=None):
     seen = set()
     unique = []
     for v in all_videos:
-        if v["url"] not in seen:
-            seen.add(v["url"])
+        key = _video_dedup_key(v["url"])
+        if key not in seen:
+            seen.add(key)
             unique.append(v)
 
     unique = _apply_site_rules(site, unique)
