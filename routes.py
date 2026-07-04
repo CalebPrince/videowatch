@@ -42,20 +42,21 @@ import smtplib
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 
-# ── Anthropic client (lazy init) ──────────────────────────────────────────────
-_anthropic_client = None
+# ── Gemini client (lazy init) ─────────────────────────────────────────────────
+_gemini_model = None
 
-def _get_anthropic():
-    global _anthropic_client
-    if _anthropic_client is not None:
-        return _anthropic_client
-    api_key = os.environ.get("ANTHROPIC_API_KEY", "").strip()
+def _get_anthropic():  # name kept for compatibility
+    global _gemini_model
+    if _gemini_model is not None:
+        return _gemini_model
+    api_key = os.environ.get("GEMINI_API_KEY", "").strip()
     if not api_key:
         return None
     try:
-        import anthropic
-        _anthropic_client = anthropic.Anthropic(api_key=api_key)
-        return _anthropic_client
+        import google.generativeai as genai
+        genai.configure(api_key=api_key)
+        _gemini_model = genai.GenerativeModel("gemini-1.5-flash")
+        return _gemini_model
     except Exception as e:
         log.warning(f"Anthropic client init failed: {e}")
         return None
@@ -3973,10 +3974,10 @@ Return ONLY the JSON object."""
 
 
 def _tag_video_sync(video_id: str) -> bool:
-    """Tag a single video with Claude. Returns True on success."""
+    """Tag a single video with Gemini. Returns True on success."""
     client = _get_anthropic()
     if not client:
-        log.debug("AI tagging skipped — ANTHROPIC_API_KEY not set")
+        log.debug("AI tagging skipped — GEMINI_API_KEY not set")
         return False
     try:
         with get_db() as db:
@@ -3996,12 +3997,8 @@ def _tag_video_sync(video_id: str) -> bool:
             f"platform: {row['platform'] or 'unknown'}\n"
             f"url: {row['url']}"
         )
-        message = client.messages.create(
-            model="claude-sonnet-4-6",
-            max_tokens=256,
-            messages=[{"role": "user", "content": _AI_TAG_PROMPT.format(metadata=meta)}],
-        )
-        raw = message.content[0].text.strip()
+        response = client.generate_content(_AI_TAG_PROMPT.format(metadata=meta))
+        raw = response.text.strip()
         import json as _json
         data = _json.loads(raw)
         tags    = ",".join(str(t).strip().lower() for t in (data.get("tags") or [])[:6])
@@ -4035,7 +4032,7 @@ def tag_videos(request: Request, body: dict):
     if not is_authenticated(request):
         raise HTTPException(401)
     if not _get_anthropic():
-        raise HTTPException(503, "ANTHROPIC_API_KEY not configured on this server")
+        raise HTTPException(503, "GEMINI_API_KEY not configured on this server")
     ids = body.get("video_ids") or []
     if isinstance(ids, str):
         ids = [ids]
@@ -4053,7 +4050,7 @@ def bulk_tag_videos(request: Request):
     if not is_authenticated(request):
         raise HTTPException(401)
     if not _get_anthropic():
-        raise HTTPException(503, "ANTHROPIC_API_KEY not configured on this server")
+        raise HTTPException(503, "GEMINI_API_KEY not configured on this server")
     owner = current_user(request)
     with get_db() as db:
         rows = db.execute(
