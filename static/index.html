@@ -1855,6 +1855,10 @@ function setProgress(pct, label = '') {
 }
 
 // ── Utilities ───────────────────────────────────────────────────────────────
+function _esc(s) {
+  return String(s ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;');
+}
+
 function timeAgo(iso) {
   if (!iso) return '—';
   const d = Math.floor((Date.now() - new Date(iso)) / 1000);
