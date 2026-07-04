@@ -5580,7 +5580,8 @@ import uuid as _uuid
 
 _dl_lock   = threading.Lock()
 _dl_queue: queue.Queue = queue.Queue()
-_dl_active: dict = {}   # download_id -> True while running
+_dl_active: dict = {}   # download_id -> subprocess.Popen
+_DL_WORKERS = 3         # concurrent downloads
 
 _YOUTUBE_DOMAINS = {"youtube.com", "youtu.be", "www.youtube.com", "m.youtube.com"}
 
@@ -5633,11 +5634,17 @@ def _dl_worker():
 
             for line in proc.stdout:
                 line = line.strip()
-                # Parse progress lines: [download]  45.3% ...
+                # [download]  45.3% of 156.43MiB at 2.50MiB/s ETA 00:50
                 m = re.search(r'\[download\]\s+([\d.]+)%', line)
                 if m:
                     pct = int(float(m.group(1)))
-                    _dl_set_status(dl_id, "downloading", progress=pct)
+                    speed = (re.search(r'at\s+([\d.]+\s*\S+/s)', line) or ['',''])[1] if hasattr(re.search(r'at\s+([\d.]+\s*\S+/s)', line), 'group') else ''
+                    eta   = (re.search(r'ETA\s+(\S+)', line) or ['',''])[1] if hasattr(re.search(r'ETA\s+(\S+)', line), 'group') else ''
+                    sm = re.search(r'at\s+([\d.]+\s*\S+/s)', line)
+                    em = re.search(r'ETA\s+(\S+)', line)
+                    _dl_set_status(dl_id, "downloading", progress=pct,
+                                   speed=sm.group(1) if sm else None,
+                                   eta=em.group(1) if em else None)
 
             proc.wait()
             _dl_active.pop(dl_id, None)
@@ -5670,20 +5677,21 @@ def _dl_worker():
             _dl_queue.task_done()
 
 
-def _dl_set_status(dl_id: str, status: str, progress: int = None, error: str = None):
+def _dl_set_status(dl_id: str, status: str, progress: int = None, error: str = None,
+                   speed: str = None, eta: str = None):
     with write_lock:
         with get_db() as db:
             db.execute(
                 "UPDATE downloads SET status=?, progress=COALESCE(?,progress), "
-                "error=?, updated_at=? WHERE id=?",
-                (status, progress, error, datetime.now(timezone.utc).isoformat(), dl_id),
+                "error=?, speed=COALESCE(?,speed), eta=COALESCE(?,eta), updated_at=? WHERE id=?",
+                (status, progress, error, speed, eta, datetime.now(timezone.utc).isoformat(), dl_id),
             )
             db.commit()
 
 
-# Start worker thread once
-_dl_thread = threading.Thread(target=_dl_worker, daemon=True, name="dl-worker")
-_dl_thread.start()
+# Start N concurrent worker threads
+for _i in range(_DL_WORKERS):
+    threading.Thread(target=_dl_worker, daemon=True, name=f"dl-worker-{_i}").start()
 
 
 @router.post("/api/downloads")
@@ -5782,6 +5790,38 @@ def delete_download(request: Request, dl_id: str):
         with get_db() as db:
             db.execute("DELETE FROM downloads WHERE id=?", (dl_id,))
             db.commit()
+    return {"ok": True}
+
+
+@router.post("/api/downloads/{dl_id}/pause")
+def pause_download(request: Request, dl_id: str):
+    if not is_authenticated(request):
+        raise HTTPException(401)
+    proc = _dl_active.get(dl_id)
+    if not proc:
+        raise HTTPException(404, "Download not active")
+    try:
+        import signal as _signal
+        proc.send_signal(_signal.SIGSTOP)
+        _dl_set_status(dl_id, "paused")
+    except Exception as e:
+        raise HTTPException(500, str(e))
+    return {"ok": True}
+
+
+@router.post("/api/downloads/{dl_id}/resume")
+def resume_download(request: Request, dl_id: str):
+    if not is_authenticated(request):
+        raise HTTPException(401)
+    proc = _dl_active.get(dl_id)
+    if not proc:
+        raise HTTPException(404, "Download not active")
+    try:
+        import signal as _signal
+        proc.send_signal(_signal.SIGCONT)
+        _dl_set_status(dl_id, "downloading")
+    except Exception as e:
+        raise HTTPException(500, str(e))
     return {"ok": True}
 
 

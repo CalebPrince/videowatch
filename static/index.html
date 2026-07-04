@@ -5475,50 +5475,88 @@ async function renderDownloads() {
   }
 
   let hasActive = false;
+  const prev = _dlKnownDone || new Set();
+  const nowDone = new Set();
+
   list.innerHTML = items.map(d => {
     const isDone    = d.status === 'done';
     const isFailed  = d.status === 'failed';
-    const isPending = d.status === 'queued' || d.status === 'downloading';
+    const isPaused  = d.status === 'paused';
+    const isActive  = d.status === 'downloading';
+    const isPending = d.status === 'queued' || isActive || isPaused;
     if (isPending) hasActive = true;
+    if (isDone) nowDone.add(d.id);
 
-    const pct = d.progress || 0;
+    const pct  = d.progress || 0;
     const size = d.file_size ? (d.file_size / 1024 / 1024).toFixed(1) + ' MB' : '';
 
+    // Progress bar + speed/ETA row
+    const barColor = isPaused ? '#f59e0b' : 'var(--brand)';
+    const statusText = d.status === 'queued' ? 'Queued…'
+      : isPaused ? `Paused · ${pct}%`
+      : isActive  ? `${pct}%${d.speed ? ' · ' + d.speed : ''}${d.eta ? ' · ETA ' + d.eta : ''}`
+      : '';
     const bar = isPending ? `
-      <div style="height:4px;background:#e2e8f0;border-radius:2px;margin:.4rem 0;">
-        <div style="height:4px;background:var(--brand);border-radius:2px;width:${pct}%;transition:width .3s;"></div>
+      <div style="height:5px;background:#e2e8f0;border-radius:3px;margin:.4rem 0;">
+        <div style="height:5px;background:${barColor};border-radius:3px;width:${pct}%;transition:width .4s;"></div>
       </div>
-      <small class="text-muted">${d.status === 'queued' ? 'Queued…' : `Downloading ${pct}%`}</small>` : '';
+      <small class="text-muted">${statusText}</small>` : '';
+
+    const pauseBtn = isActive
+      ? `<button class="btn btn-sm btn-outline-warning" onclick="pauseDownload('${d.id}')" title="Pause"><i class="bi bi-pause-fill"></i></button>`
+      : isPaused
+      ? `<button class="btn btn-sm btn-outline-success" onclick="resumeDownload('${d.id}')" title="Resume"><i class="bi bi-play-fill"></i></button>`
+      : '';
 
     const actions = isDone ? `
-      <a href="/api/downloads/${d.id}/file" class="btn btn-sm btn-outline-secondary" download title="Save file">
+      <a href="/api/downloads/${d.id}/file" class="btn btn-sm btn-outline-secondary" download title="Save to device">
         <i class="bi bi-cloud-download"></i> Save
       </a>
-      <button class="btn btn-sm btn-outline-danger" onclick="deleteDownload('${d.id}')" title="Delete">
-        <i class="bi bi-trash"></i>
-      </button>` :
+      <button class="btn btn-sm btn-outline-danger" onclick="deleteDownload('${d.id}')" title="Delete"><i class="bi bi-trash"></i></button>` :
       isFailed ? `
-      <span class="text-danger small me-2"><i class="bi bi-exclamation-circle"></i> ${d.error || 'Failed'}</span>
-      <button class="btn btn-sm btn-outline-danger" onclick="deleteDownload('${d.id}')" title="Delete">
-        <i class="bi bi-trash"></i>
-      </button>` :
-      `<button class="btn btn-sm btn-outline-secondary" onclick="deleteDownload('${d.id}')" title="Cancel">
-        <i class="bi bi-x-lg"></i> Cancel
-      </button>`;
+      <span class="text-danger small me-2" title="${_esc(d.error||'')}"><i class="bi bi-exclamation-circle"></i> Failed</span>
+      <button class="btn btn-sm btn-outline-danger" onclick="deleteDownload('${d.id}')" title="Delete"><i class="bi bi-trash"></i></button>` :
+      `${pauseBtn}
+      <button class="btn btn-sm btn-outline-secondary" onclick="deleteDownload('${d.id}')" title="Cancel"><i class="bi bi-x-lg"></i></button>`;
 
     return `<div class="d-flex align-items-start gap-3 py-2 border-bottom" style="gap:.75rem!important">
-      ${d.thumb ? `<img src="${d.thumb}" style="width:72px;height:48px;object-fit:cover;border-radius:6px;flex-shrink:0;">` :
+      ${d.thumb ? `<img src="${_esc(d.thumb)}" style="width:72px;height:48px;object-fit:cover;border-radius:6px;flex-shrink:0;">` :
         `<div style="width:72px;height:48px;background:#e2e8f0;border-radius:6px;flex-shrink:0;display:flex;align-items:center;justify-content:center;"><i class="bi bi-film text-muted"></i></div>`}
       <div style="flex:1;min-width:0;">
-        <div style="font-size:.85rem;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${d.title || d.video_url || d.video_id}</div>
+        <div style="font-size:.85rem;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${_esc(d.title || d.video_url || d.video_id)}</div>
         ${bar}
-        ${isDone ? `<small class="text-muted">${size} · Ready</small>` : ''}
+        ${isDone ? `<small class="text-muted">${size} · Ready to save</small>` : ''}
       </div>
       <div class="d-flex align-items-center gap-1 flex-shrink-0">${actions}</div>
     </div>`;
   }).join('');
 
+  // Auto-trigger browser save for newly completed downloads
+  nowDone.forEach(id => {
+    if (!prev.has(id)) {
+      const a = document.createElement('a');
+      a.href = `/api/downloads/${id}/file`;
+      a.download = '';
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+    }
+  });
+  _dlKnownDone = nowDone;
+
   return hasActive;
+}
+
+let _dlKnownDone = new Set();
+
+async function pauseDownload(dlId) {
+  try { await api(`/downloads/${dlId}/pause`, { method: 'POST' }); await renderDownloads(); }
+  catch (e) { showToast('Pause failed: ' + e.message, 'danger'); }
+}
+
+async function resumeDownload(dlId) {
+  try { await api(`/downloads/${dlId}/resume`, { method: 'POST' }); await renderDownloads(); }
+  catch (e) { showToast('Resume failed: ' + e.message, 'danger'); }
 }
 
 async function deleteDownload(dlId) {

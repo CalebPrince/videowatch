@@ -360,6 +360,9 @@ def init_db():
                 )
             """)
             db.execute("CREATE INDEX IF NOT EXISTS idx_downloads_owner ON downloads(owner)")
+            add_column_if_missing(db, "downloads", "speed",  "TEXT")
+            add_column_if_missing(db, "downloads", "eta",    "TEXT")
+            add_column_if_missing(db, "downloads", "paused", "INTEGER DEFAULT 0")
             db.execute("""
                 CREATE TABLE IF NOT EXISTS user_sessions (
                     token       TEXT PRIMARY KEY,
