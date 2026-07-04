@@ -2358,7 +2358,7 @@ def update_site(site_id: str, body: SitePatch, request: Request):
             if body.scan_interval is not None:
                 owner = row["owner"] or current_user(request)
                 min_interval = _plan_limits(owner)["min_interval"]
-                new_max_pages = updates.get("max_pages", row.get("max_pages", 1))
+                new_max_pages = updates.get("max_pages", row["max_pages"] or 1)
                 min_for_pages = 3600 if new_max_pages > 1 else 60
                 updates["scan_interval"] = max(min_interval, max(min_for_pages, body.scan_interval))
             if body.rule_include_keywords is not None:
