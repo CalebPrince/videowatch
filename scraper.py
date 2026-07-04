@@ -7,6 +7,7 @@ import hashlib
 import logging
 import asyncio
 import warnings
+import threading
 from datetime import datetime, timezone, timedelta
 from pathlib import Path
 from urllib.parse import urljoin, urlparse, parse_qs, urlunparse, urldefrag, urlencode
@@ -2335,6 +2336,15 @@ async def scan_site(site: dict, push_func=None):
         _send_scan_notification(site, len(unique), added)
         await push(f"SCAN_DONE|{site_id}|{len(unique)}|{added}")
         log.info(f"  {msg}")
+
+        # AI auto-tag newly inserted videos in background
+        if inserted_ids:
+            try:
+                from routes import _tag_video_bg
+                for vid_id in inserted_ids:
+                    threading.Thread(target=_tag_video_bg, args=(vid_id,), daemon=True).start()
+            except Exception as e:
+                log.warning(f"  AI auto-tag dispatch failed: {e}")
 
     except Exception as e:
         err = f"ERROR: {repr(e)}"

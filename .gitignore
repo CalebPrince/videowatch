@@ -16,6 +16,7 @@ thumbcache/
 
 # Code Editor settings
 .vscode/
+.claude/
 *.swp
 
 # JavaScript dependencies

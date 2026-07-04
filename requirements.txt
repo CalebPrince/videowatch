@@ -11,3 +11,4 @@ itsdangerous>=2.2.0
 pytest>=8.0.0
 httpx2>=0.28.0
 yt-dlp>=2023.12.0
+anthropic>=0.25.0

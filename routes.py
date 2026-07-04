@@ -42,6 +42,24 @@ import smtplib
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 
+# ── Anthropic client (lazy init) ──────────────────────────────────────────────
+_anthropic_client = None
+
+def _get_anthropic():
+    global _anthropic_client
+    if _anthropic_client is not None:
+        return _anthropic_client
+    api_key = os.environ.get("ANTHROPIC_API_KEY", "").strip()
+    if not api_key:
+        return None
+    try:
+        import anthropic
+        _anthropic_client = anthropic.Anthropic(api_key=api_key)
+        return _anthropic_client
+    except Exception as e:
+        log.warning(f"Anthropic client init failed: {e}")
+        return None
+
 from db import get_db, write_lock, DB_PATH
 
 # ── Rate limiting ─────────────────────────────────────────────────────────────
@@ -3936,6 +3954,131 @@ def stats_extended(request: Request):
         "storage_bytes": storage_bytes,
         "storage_count": storage_count,
     }
+
+
+# ── AI Auto-Tagging ───────────────────────────────────────────────────────────
+
+_AI_TAG_PROMPT = """\
+You are a video metadata tagger. Given video metadata, return ONLY a valid JSON object with no markdown, no explanation, and no extra text.
+
+The JSON must have exactly these keys:
+- "tags": array of 3 to 6 short lowercase topic/genre/category tags (e.g. ["lesbian", "amateur", "pov"])
+- "mood": single lowercase string describing the overall tone (e.g. "passionate", "playful", "intense", "romantic")
+- "summary": one concise sentence describing what the video is likely about
+
+Video metadata:
+{metadata}
+
+Return ONLY the JSON object."""
+
+
+def _tag_video_sync(video_id: str) -> bool:
+    """Tag a single video with Claude. Returns True on success."""
+    client = _get_anthropic()
+    if not client:
+        log.debug("AI tagging skipped — ANTHROPIC_API_KEY not set")
+        return False
+    try:
+        with get_db() as db:
+            row = db.execute(
+                "SELECT id, title, cast_names, duration, platform, url, ai_tags "
+                "FROM videos WHERE id=?", (video_id,)
+            ).fetchone()
+        if not row:
+            return False
+        if row["ai_tags"]:
+            return True  # already tagged
+        dur = f"{row['duration'] // 60}m {row['duration'] % 60}s" if row["duration"] else "unknown"
+        meta = (
+            f"title: {row['title'] or 'unknown'}\n"
+            f"cast: {row['cast_names'] or 'unknown'}\n"
+            f"duration: {dur}\n"
+            f"platform: {row['platform'] or 'unknown'}\n"
+            f"url: {row['url']}"
+        )
+        message = client.messages.create(
+            model="claude-sonnet-4-6",
+            max_tokens=256,
+            messages=[{"role": "user", "content": _AI_TAG_PROMPT.format(metadata=meta)}],
+        )
+        raw = message.content[0].text.strip()
+        import json as _json
+        data = _json.loads(raw)
+        tags    = ",".join(str(t).strip().lower() for t in (data.get("tags") or [])[:6])
+        mood    = str(data.get("mood") or "").strip().lower()[:64]
+        summary = str(data.get("summary") or "").strip()[:512]
+        with write_lock:
+            with get_db() as db:
+                db.execute(
+                    "UPDATE videos SET ai_tags=?, ai_mood=?, ai_summary=? WHERE id=?",
+                    (tags or None, mood or None, summary or None, video_id),
+                )
+                db.commit()
+        log.info(f"AI tagged video {video_id}: tags={tags} mood={mood}")
+        return True
+    except Exception as e:
+        log.warning(f"AI tagging failed for {video_id}: {e}")
+        return False
+
+
+def _tag_video_bg(video_id: str):
+    """Background wrapper — fire and forget."""
+    try:
+        _tag_video_sync(video_id)
+    except Exception as e:
+        log.warning(f"AI tag bg task error {video_id}: {e}")
+
+
+@router.post("/api/tag")
+def tag_videos(request: Request, body: dict):
+    """Tag one or more videos by ID. Skips already-tagged ones."""
+    if not is_authenticated(request):
+        raise HTTPException(401)
+    if not _get_anthropic():
+        raise HTTPException(503, "ANTHROPIC_API_KEY not configured on this server")
+    ids = body.get("video_ids") or []
+    if isinstance(ids, str):
+        ids = [ids]
+    if not ids:
+        raise HTTPException(400, "video_ids required")
+    results = {}
+    for vid in ids[:20]:  # cap single request at 20
+        results[vid] = _tag_video_sync(str(vid))
+    return {"ok": True, "results": results}
+
+
+@router.post("/api/tag/bulk")
+def bulk_tag_videos(request: Request):
+    """Tag all untagged videos in background batches of 10."""
+    if not is_authenticated(request):
+        raise HTTPException(401)
+    if not _get_anthropic():
+        raise HTTPException(503, "ANTHROPIC_API_KEY not configured on this server")
+    owner = current_user(request)
+    with get_db() as db:
+        rows = db.execute(
+            "SELECT v.id FROM videos v JOIN sites s ON s.id=v.site_id "
+            "WHERE s.owner=? AND v.ai_tags IS NULL AND v.is_ignored=0 "
+            "ORDER BY v.found_at DESC LIMIT 200",
+            (owner,),
+        ).fetchall()
+    ids = [r["id"] for r in rows]
+    if not ids:
+        return {"ok": True, "queued": 0, "message": "No untagged videos found"}
+
+    def _run_bulk():
+        import time as _time
+        tagged = 0
+        for i in range(0, len(ids), 10):
+            batch = ids[i:i+10]
+            for vid in batch:
+                if _tag_video_sync(vid):
+                    tagged += 1
+            _time.sleep(1)  # brief pause between batches
+        log.info(f"Bulk AI tagging complete: {tagged}/{len(ids)} tagged")
+
+    threading.Thread(target=_run_bulk, daemon=True).start()
+    return {"ok": True, "queued": len(ids), "message": f"Tagging {len(ids)} videos in background"}
 
 
 @router.get("/api/logs", response_class=HTMLResponse)

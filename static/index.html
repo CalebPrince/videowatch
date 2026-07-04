@@ -341,6 +341,10 @@
     }
     .tag-chip .tag-rm:hover { opacity: 1; }
     .tag-chips-wrap { display: flex; flex-wrap: wrap; gap: 3px; margin-top: .3rem; min-height: 0; }
+    .ai-tags-wrap { display: flex; flex-wrap: wrap; gap: 3px; margin-top: .3rem; }
+    .ai-tag-pill { display: inline-block; padding: 1px 7px; border-radius: 99px; font-size: .6rem; font-weight: 600; letter-spacing: .02em; background: rgba(var(--brand-rgb, 15,118,110),.12); color: var(--brand); border: 1px solid rgba(var(--brand-rgb, 15,118,110),.25); }
+    .ai-mood-badge { font-size: .6rem; font-weight: 600; color: var(--accent, #7c3aed); opacity: .8; margin-left: .25rem; }
+    [data-theme="dark"] .ai-tag-pill { background: rgba(20,184,166,.15); }
     /* Tag popover */
     .tag-popover {
       position: absolute; z-index: 200; background: var(--card-bg);
@@ -3094,6 +3098,7 @@ async function renderVideos() {
     const titleEl  = document.createElement('div');
     titleEl.className   = 'v-title';
     titleEl.textContent = v.title || 'Untitled video';
+    if (v.ai_summary) titleEl.title = v.ai_summary;
     body.appendChild(titleEl);
 
     // Release date — shown whenever available
@@ -3138,6 +3143,14 @@ async function renderVideos() {
     ico.className = `bi ${icons[v.platform] || 'bi-play-circle'}`;
     ico.style.fontSize = '11px';
     meta.appendChild(ico);
+
+    if (v.ai_mood) {
+      const moodEl = document.createElement('span');
+      moodEl.className = 'ai-mood-badge';
+      moodEl.textContent = v.ai_mood;
+      moodEl.title = 'AI mood';
+      meta.appendChild(moodEl);
+    }
 
     const site = document.createElement('span');
     site.textContent = hostname(v.url);
@@ -3269,6 +3282,22 @@ async function renderVideos() {
       await startDownload(v.id, v.title || v.url);
     };
     meta.appendChild(cardDlBtn);
+
+    // AI tag pills
+    if (v.ai_tags) {
+      const aiTags = v.ai_tags.split(',').map(t => t.trim()).filter(Boolean);
+      if (aiTags.length) {
+        const aiWrap = document.createElement('div');
+        aiWrap.className = 'ai-tags-wrap';
+        aiTags.forEach(tag => {
+          const pill = document.createElement('span');
+          pill.className = 'ai-tag-pill';
+          pill.textContent = tag;
+          aiWrap.appendChild(pill);
+        });
+        body.appendChild(aiWrap);
+      }
+    }
 
     // Tag chips
     const chipsWrap = document.createElement('div');

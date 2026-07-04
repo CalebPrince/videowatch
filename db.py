@@ -418,6 +418,11 @@ def init_db():
             # Continue watching: track per-video playback position
             add_column_if_missing(db, "videos", "watch_position", "INTEGER DEFAULT 0")
 
+            # AI auto-tagging
+            add_column_if_missing(db, "videos", "ai_tags",    "TEXT")
+            add_column_if_missing(db, "videos", "ai_mood",    "TEXT")
+            add_column_if_missing(db, "videos", "ai_summary", "TEXT")
+
             # Saved searches
             db.execute("""
                 CREATE TABLE IF NOT EXISTS saved_searches (
