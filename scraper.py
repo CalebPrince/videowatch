@@ -72,7 +72,7 @@ def now_iso() -> str:
 def _video_dedup_key(url: str) -> str:
     """For deduplication only: strip slug after numeric ID so /video/123/slug-a and /video/123/slug-b match."""
     p = urlparse(url)
-    path = re.sub(r'^(/(?:video|scene|movie|episode|clip)s?/\d+)/[^/]+$', r'\1', p.path.rstrip("/"))
+    path = re.sub(r'(/\d+)/[^/]+$', r'\1', p.path.rstrip("/"))
     return f"{p.netloc}{path}"
 
 def normalize_url(url: str) -> str:
