@@ -3190,17 +3190,6 @@ async function renderVideos() {
     extLink.innerHTML = '<i class="bi bi-box-arrow-up-right"></i>';
     meta.appendChild(extLink);
 
-    const dlBtn = document.createElement('button');
-    dlBtn.className = `btn-icon${v.local_file ? ' is-active' : ''}`;
-    dlBtn.title = v.local_file ? 'Open downloaded file' : 'Download direct file to server';
-    dlBtn.innerHTML = `<i class="bi ${v.local_file ? 'bi-download' : 'bi-download'}"></i>`;
-    dlBtn.onclick = async (e) => {
-      e.preventDefault();
-      e.stopPropagation();
-      await handleVideoDownload(v);
-    };
-    meta.appendChild(dlBtn);
-
     const favBtn = document.createElement('button');
     favBtn.className = `btn-icon${Number(v.is_favorite) ? ' is-active' : ''}`;
     favBtn.title = 'Toggle favorite';
