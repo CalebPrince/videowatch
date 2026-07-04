@@ -5359,6 +5359,36 @@ document.addEventListener('keydown', e => {
   }
 });
 
+// ── Swipe gestures (modal) ────────────────────────────────────────────────────
+(function () {
+  let _tx = 0, _ty = 0, _swiping = false;
+  const modal = () => document.getElementById('vp-modal');
+
+  document.addEventListener('touchstart', e => {
+    if (!_vpVideo || modal()?.style.display === 'none') return;
+    _tx = e.touches[0].clientX;
+    _ty = e.touches[0].clientY;
+    _swiping = true;
+  }, { passive: true });
+
+  document.addEventListener('touchend', e => {
+    if (!_swiping || !_vpVideo) return;
+    _swiping = false;
+    const dx = e.changedTouches[0].clientX - _tx;
+    const dy = e.changedTouches[0].clientY - _ty;
+    const absDx = Math.abs(dx), absDy = Math.abs(dy);
+    // Need at least 50px movement and horizontal/vertical intent
+    if (absDx < 50 && absDy < 50) return;
+    if (absDy > absDx && dy > 80) {
+      // Swipe down → close
+      closeVideoModal({ target: modal() });
+    } else if (absDx > absDy) {
+      // Swipe left → next, swipe right → prev
+      vpNavigate(dx < 0 ? 1 : -1);
+    }
+  }, { passive: true });
+})();
+
 function showKbHelp() {
   const existing = document.getElementById('kb-help-overlay');
   if (existing) { existing.remove(); return; }
