@@ -2,19 +2,30 @@
 One-shot script to merge duplicate videos that share the same site + numeric video ID.
 Keeps the row with the most data; merges watched/favorite/archived states from all dupes.
 Run once: python3 dedup_videos.py
+Preview without changing anything: python3 dedup_videos.py --dry-run
 """
 import re
+import sys
 import sqlite3
 from pathlib import Path
+
+DRY_RUN = "--dry-run" in sys.argv
 
 DB_PATH = str(Path(__file__).resolve().parent / "videowatch.db")
 
 def canonical_key(url: str) -> str:
-    """Dedup key: strip slug after numeric ID so slug variants match."""
+    """Dedup key: strip slug after numeric ID so slug variants match.
+    Only collapses when that specific pattern is found; otherwise keeps the
+    full path+query so distinct videos aren't merged (e.g. YouTube's
+    /watch?v=... puts the id in the query string, not the path — collapsing
+    on path alone would treat every video on a channel as the same one)."""
     from urllib.parse import urlparse
     p = urlparse(url)
-    path = re.sub(r'^(/(?:video|scene|movie|episode|clip)s?/\d+)/[^/]+$', r'\1', p.path.rstrip("/"))
-    return f"{p.netloc}{path}"
+    path = p.path.rstrip("/")
+    new_path, n = re.subn(r'^(/(?:video|scene|movie|episode|clip)s?/\d+)/[^/]+$', r'\1', path)
+    if n:
+        return f"{p.netloc}{new_path}"
+    return f"{p.netloc}{path}?{p.query}" if p.query else f"{p.netloc}{path}"
 
 def score(row: dict) -> int:
     """Higher score = more complete row. Prefer to keep this one."""
@@ -71,6 +82,13 @@ for key, group in groups.items():
 
     canonical = canonical_key(best['url'])
 
+    if DRY_RUN:
+        print(f"[dry-run] site={key[0]} keep={best['id']} ({best['title'] or best['url']})")
+        for o in others:
+            print(f"           delete={o['id']} ({o['title'] or o['url']})")
+        merged += 1
+        continue
+
     # Move collection memberships from dupes to keeper before deleting
     for other in others:
         cur.execute("""
@@ -102,7 +120,10 @@ for key, group in groups.items():
           best['id']))
     merged += 1
 
-conn.commit()
-conn.close()
-
-print(f"Done. Found {dupes_found} duplicate(s) across {merged} group(s). Merged and cleaned up.")
+if DRY_RUN:
+    conn.close()
+    print(f"\n[dry-run] Would find {dupes_found} duplicate(s) across {merged} group(s). Nothing changed — rerun without --dry-run to apply.")
+else:
+    conn.commit()
+    conn.close()
+    print(f"Done. Found {dupes_found} duplicate(s) across {merged} group(s). Merged and cleaned up.")
