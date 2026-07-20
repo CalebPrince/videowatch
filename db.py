@@ -191,8 +191,6 @@ def init_db():
             add_column_if_missing(db, "sites", "consecutive_failures", "INTEGER DEFAULT 0")
             add_column_if_missing(db, "sites", "alert_sent", "INTEGER DEFAULT 0")
             add_column_if_missing(db, "sites", "last_scan_duration", "INTEGER")
-            add_column_if_missing(db, "collections", "share_token", "TEXT")
-            add_column_if_missing(db, "collections", "description", "TEXT")
 
             # Migrate sites table: replace UNIQUE(url) with UNIQUE(url, owner)
             idx_rows = db.execute("PRAGMA index_list(sites)").fetchall()
@@ -302,6 +300,8 @@ def init_db():
                 )
             """)
             db.execute("CREATE INDEX IF NOT EXISTS idx_collections_owner ON collections(owner)")
+            add_column_if_missing(db, "collections", "share_token", "TEXT")
+            add_column_if_missing(db, "collections", "description", "TEXT")
             db.execute("""
                 CREATE TABLE IF NOT EXISTS push_subscriptions (
                     id         INTEGER PRIMARY KEY AUTOINCREMENT,

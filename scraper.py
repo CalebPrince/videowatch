@@ -71,10 +71,17 @@ def now_iso() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 def _video_dedup_key(url: str) -> str:
-    """For deduplication only: strip slug after numeric ID so /video/123/slug-a and /video/123/slug-b match."""
+    """For deduplication only: strip slug after numeric ID so /video/123/slug-a and /video/123/slug-b match.
+    Only collapses when a numeric-id-in-path pattern is actually found; otherwise keeps the
+    full path+query so distinct videos aren't merged (e.g. YouTube's /watch?v=... puts the
+    id in the query string, not the path — collapsing on path alone would treat every video
+    on a channel as the same one)."""
     p = urlparse(url)
-    path = re.sub(r'(/\d+)/[^/]+$', r'\1', p.path.rstrip("/"))
-    return f"{p.netloc}{path}"
+    path = p.path.rstrip("/")
+    new_path, n = re.subn(r'(/\d+)/[^/]+$', r'\1', path)
+    if n:
+        return f"{p.netloc}{new_path}"
+    return f"{p.netloc}{path}?{p.query}" if p.query else f"{p.netloc}{path}"
 
 def normalize_url(url: str) -> str:
     """Strip fragments, sort query params, remove common tracking params."""
@@ -2187,8 +2194,8 @@ async def scan_site(site: dict, push_func=None):
 
         # Enforce free plan video limit
         site_row = db_conn.execute("SELECT owner FROM sites WHERE id=?", (target_site_id,)).fetchone()
-        if site_row and site_row["owner"]:
-            owner = site_row["owner"]
+        owner = site_row["owner"] if site_row else None
+        if owner:
             user_row = db_conn.execute("SELECT plan FROM users WHERE username=?", (owner,)).fetchone()
             plan = (user_row["plan"] if user_row and user_row["plan"] else "free")
             from routes import PLAN_LIMITS
@@ -2201,6 +2208,14 @@ async def scan_site(site: dict, push_func=None):
                 if current_count >= video_limit:
                     log.warning(f"Video limit ({video_limit}) reached for user {owner} on plan '{plan}'. Skipping inserts.")
                     return inserted_count, inserted_ids
+
+        # Canonical-URL map of videos already stored for this site, so that a
+        # source rotating its URL slug/token for the same video (e.g.
+        # /video/123/title-a -> /video/123/title-b) refreshes the existing row
+        # instead of coming back as a fresh "new" duplicate on every scan.
+        canonical_map: dict[str, str] = {}
+        for r in db_conn.execute("SELECT id, url FROM videos WHERE site_id=?", (target_site_id,)).fetchall():
+            canonical_map.setdefault(_video_dedup_key(r["url"]), r["id"])
 
         for v in videos:
             vid_id = short_id(f"{target_site_id}:{v['url']}")
@@ -2218,6 +2233,38 @@ async def scan_site(site: dict, push_func=None):
                 if existing_url:
                     log.debug(f"  Cross-site dup skipped: {v['url']}")
                     continue
+
+            # Same-site canonical-URL match: the slug/token portion of the URL
+            # rotated but the underlying video (numeric id in the path) is the
+            # same one we already have. Refresh that row instead of inserting
+            # a new "duplicate" row that would also get flagged as new.
+            canon_key = _video_dedup_key(v["url"])
+            existing_canon_id = canonical_map.get(canon_key)
+            if existing_canon_id:
+                db_conn.execute(
+                    "UPDATE videos SET "
+                    "url = ?, "
+                    "title = CASE WHEN title IS NULL OR title = '' THEN ? ELSE title END, "
+                    "thumb = COALESCE(thumb, ?), "
+                    "embed_url = COALESCE(embed_url, ?), "
+                    "platform = COALESCE(platform, ?), "
+                    "cast_names = COALESCE(cast_names, ?), "
+                    "duration = COALESCE(duration, ?), "
+                    "released_at = COALESCE(released_at, ?) "
+                    "WHERE id = ?",
+                    (
+                        v["url"],
+                        title,
+                        v.get("thumb"),
+                        v.get("embed_url"),
+                        v.get("platform"),
+                        v.get("cast_names"),
+                        v.get("duration"),
+                        v.get("released_at"),
+                        existing_canon_id,
+                    ),
+                )
+                continue
 
             # Some sources rotate URL tokens for the same scene. If title+release
             # match an existing row for this site, refresh that row instead.
@@ -2275,6 +2322,7 @@ async def scan_site(site: dict, push_func=None):
             if cur.rowcount:
                 inserted_count += 1
                 inserted_ids.append(vid_id)
+                canonical_map[canon_key] = vid_id
 
             # Backfill sparse fields on already-known rows without overwriting data.
             db_conn.execute(

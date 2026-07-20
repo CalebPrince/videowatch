@@ -302,6 +302,13 @@
       padding:2px 7px; border-radius:4px; text-transform:uppercase; letter-spacing:.4px;
       animation: none !important;
     }
+    .group-pill {
+      position: absolute; top:8px; right:8px;
+      background: rgba(15,118,110,.85); color:#fff; font-size:.63rem; font-weight:600;
+      padding:2px 7px; border-radius:4px; max-width:70%;
+      white-space:nowrap; overflow:hidden; text-overflow:ellipsis;
+      animation: none !important;
+    }
     .play-overlay {
       position: absolute;
       inset: 0;
@@ -3091,6 +3098,13 @@ async function renderVideos() {
       pill.textContent = PLATFORM_LABELS[v.platform] || v.platform;
       thumbWrap.appendChild(pill);
     }
+    if (v.group_name) {
+      const gPill = document.createElement('span');
+      gPill.className = 'group-pill';
+      gPill.textContent = v.group_name;
+      gPill.title = `Group: ${v.group_name}`;
+      thumbWrap.appendChild(gPill);
+    }
 
     const overlay = document.createElement('div');
     overlay.className = 'play-overlay';
@@ -5166,6 +5180,7 @@ function openVideoModal(v, list) {
 
   const metaParts = [];
   if (v.site_name) metaParts.push(v.site_name);
+  if (v.group_name) metaParts.push(v.group_name);
   if (v.released_at) metaParts.push(fmtDate(v.released_at));
   document.getElementById('vp-meta').textContent = metaParts.join(' · ');
 

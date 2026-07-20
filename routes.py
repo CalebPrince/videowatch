@@ -2693,7 +2693,8 @@ def list_videos(request: Request,
             f"SELECT COUNT(*) FROM videos LEFT JOIN sites ON videos.site_id = sites.id {where}",
             params).fetchone()[0]
         rows = db.execute(
-            f"SELECT videos.* FROM videos LEFT JOIN sites ON videos.site_id = sites.id {where} {order} LIMIT ? OFFSET ?",
+            f"SELECT videos.*, sites.name AS site_name, sites.group_name AS group_name "
+            f"FROM videos LEFT JOIN sites ON videos.site_id = sites.id {where} {order} LIMIT ? OFFSET ?",
             params + [per_page, offset]).fetchall()
         owner = current_user(request) or ""
         video_ids = [r["id"] for r in rows]
